@@ -1,0 +1,26 @@
+# Traefik as the cluster's ingress controller (design D0.5). Chart traefik/traefik 43.x.
+deployment:
+  replicas: 2
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+providers:
+  kubernetesIngress:
+    publishedService:
+      enabled: true
+service:
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-name: eps-prototype-ams3-lb
+    service.beta.kubernetes.io/do-loadbalancer-size-unit: "1"
+  spec:
+    type: LoadBalancer
+ports:
+  web:
+    # cert-manager answers HTTP-01 challenges on port 80; everything else goes to HTTPS.
+    allowACMEByPass: true
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true

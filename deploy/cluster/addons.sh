@@ -8,7 +8,7 @@ set -euo pipefail
 ACME_EMAIL="${ACME_EMAIL:-}"
 DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-sslip.io}"   # fall back to nip.io if Let's Encrypt refuses sslip.io
 LB_NAME="${LB_NAME:-eps-prototype-ams3-lb}"
-TRAEFIK_VERSION="${TRAEFIK_VERSION:-}"         # empty: the chart's latest release
+TRAEFIK_VERSION="${TRAEFIK_VERSION:-43.0.0}"   # values in traefik-values.yaml follow this chart version
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-}"
 METRICS_SERVER_VERSION="${METRICS_SERVER_VERSION:-}"
 
@@ -23,16 +23,8 @@ echo "== Traefik"
 # shellcheck disable=SC2046
 helm upgrade --install traefik traefik/traefik $(ver "$TRAEFIK_VERSION") \
   --namespace traefik --create-namespace --wait --timeout 10m \
-  --set ingressClass.enabled=true \
-  --set ingressClass.isDefaultClass=true \
-  --set providers.kubernetesIngress.publishedService.enabled=true \
-  --set service.type=LoadBalancer \
-  --set-string "service.annotations.service\.beta\.kubernetes\.io/do-loadbalancer-name=$LB_NAME" \
-  --set-string "service.annotations.service\.beta\.kubernetes\.io/do-loadbalancer-size-unit=1" \
-  --set ports.web.redirections.entryPoint.to=websecure \
-  --set ports.web.redirections.entryPoint.scheme=https \
-  --set ports.web.redirections.entryPoint.permanent=true \
-  --set deployment.replicas=2
+  -f "$(dirname "$0")/traefik-values.yaml" \
+  --set-string "service.annotations.service\.beta\.kubernetes\.io/do-loadbalancer-name=$LB_NAME"
 
 echo "== cert-manager"
 # shellcheck disable=SC2046
@@ -43,7 +35,8 @@ helm upgrade --install cert-manager jetstack/cert-manager $(ver "$CERT_MANAGER_V
 echo "== metrics-server"
 # shellcheck disable=SC2046
 helm upgrade --install metrics-server metrics-server/metrics-server $(ver "$METRICS_SERVER_VERSION") \
-  --namespace kube-system --wait --timeout 5m
+  --namespace kube-system
+# Not waited on: metrics only feed autoscaling (step 12) and must not block a deploy.
 
 echo "== ClusterIssuer letsencrypt-prod (HTTP-01 through Traefik)"
 email_line=""
