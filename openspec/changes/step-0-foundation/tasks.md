@@ -47,9 +47,9 @@
 ## 7. Infrastructure
 
 - [x] 7.1 Write `deploy/cluster/up.sh` (idempotent, curl + jq, `DO_TOKEN` defaulting to `proxy-injected`; region ams3, 1.37.2-do.0, `s-2vcpu-4gb` pool autoscaling 2 to 4, matching the cluster already created); run it from the session; verify it finds the existing cluster `eps-prototype-ams3` running and creates nothing
-- [ ] 7.2 Write `deploy/cluster/addons.sh` (Traefik, cert-manager with Let's Encrypt HTTP-01 ClusterIssuer, metrics-server; prints the load balancer IP) and the `cluster-bootstrap.yml` workflow; verify the workflow run prints the IP and `kubectl get clusterissuer` is Ready
-- [ ] 7.3 Write the umbrella chart `deploy/helm/eps` with sub-charts per binary (Deployment, Service, probes, Ingress with cert-manager annotations for `core.<slug>` and `gw.<slug>`; simulator Job disabled) and values for preview and production; verify `helm lint` and `helm template` in CI
-- [ ] 7.4 Create the Vercel project `eps-web` (team devblocks, root `apps/web`, fra1) through the Vercel connector, link the repo, turn off preview deployment protection, set `CORE_BASE_DOMAIN` and `EPS_DEMO_SIGNIN`; verify `get_project` shows the settings and a branch push builds
+- [x] 7.2 Write `deploy/cluster/addons.sh` (Traefik, cert-manager with Let's Encrypt HTTP-01 ClusterIssuer, metrics-server; prints the load balancer IP) and the `cluster-bootstrap.yml` workflow; verify the workflow run prints the IP and `kubectl get clusterissuer` is Ready
+- [x] 7.3 Write the umbrella chart `deploy/helm/eps` with sub-charts per binary (Deployment, Service, probes, Ingress with cert-manager annotations for `core.<slug>` and `gw.<slug>`; simulator Job disabled) and values for preview and production; verify `helm lint` and `helm template` in CI
+- [x] 7.4 Create the Vercel project `eps-web` (team devblocks, root `apps/web`, fra1) through the Vercel connector, link the repo, turn off preview deployment protection, set `CORE_BASE_DOMAIN` and `EPS_DEMO_SIGNIN`; verify `get_project` shows the settings and a branch push builds
 - [ ] 7.5 Add `bootstrap-secrets.yml` to generate `BETTER_AUTH_SECRET` per Vercel environment; if no `VERCEL_TOKEN` Actions secret exists, stop and ask the owner; verify the variable exists (value hidden) in `filter_project_envs`
 
 ## 8. CI and deploys
