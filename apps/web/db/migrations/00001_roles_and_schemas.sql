@@ -32,3 +32,6 @@ GRANT USAGE ON SCHEMA sales TO eps_web, eps_core;
 -- explicit read grants on the few control tables it needs.
 ALTER DEFAULT PRIVILEGES IN SCHEMA control GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO eps_web;
 ALTER DEFAULT PRIVILEGES IN SCHEMA control GRANT USAGE, SELECT ON SEQUENCES TO eps_web;
+
+-- The version table was created by the migrator before the default privileges above existed.
+GRANT SELECT ON control.goose_db_version TO eps_web, eps_core;

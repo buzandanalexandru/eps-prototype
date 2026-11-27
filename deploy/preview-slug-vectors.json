@@ -1,0 +1,18 @@
+{
+  "$comment": "Branch name -> environment slug (design D0.5). Checked by apps/web/tests/unit/core-url.test.ts against both envSlug (TypeScript) and deploy/scripts/slug.sh (CI).",
+  "vectors": [
+    { "branch": "main", "slug": "prod" },
+    { "branch": "step-0-foundation", "slug": "step-0-foundation" },
+    { "branch": "feature/Squad_Buy-and-a-very-long-description-of-the-change", "slug": "feature-squad-buy-and-a-very-long-descri-018276" },
+    { "branch": "UPPER/Case", "slug": "upper-case" },
+    { "branch": "___", "slug": "env-bda251" },
+    { "branch": "a--b", "slug": "a-b" },
+    { "branch": "dependabot/npm_and_yarn/apps/web/next-16.4.7", "slug": "dependabot-npm-and-yarn-apps-web-next-16-e2a7dc" },
+    { "branch": "x", "slug": "x" },
+    { "branch": "fix/ăîșț-diacritics", "slug": "fix-diacritics" },
+    { "branch": "release/2026.11.27", "slug": "release-2026-11-27" },
+    { "branch": "-leading-and-trailing-", "slug": "leading-and-trailing" },
+    { "branch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbb", "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-b855e2" },
+    { "branch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+  ]
+}

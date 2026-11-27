@@ -27,3 +27,6 @@ CREATE POLICY organiser_isolation ON sales.probe
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON sales.probe TO eps_core;
 GRANT SELECT ON sales.probe TO eps_web;
+
+-- The version table was created by the migrator before the default privileges above existed.
+GRANT SELECT ON sales.goose_db_version TO eps_core, eps_web;

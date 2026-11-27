@@ -35,7 +35,7 @@ export function demoSignIn(opts: { domain: string }): BetterAuthPlugin {
             const email = demoOrganiserEmail(opts.domain);
             user = (await adapter.findUserByEmail(email))?.user;
             if (!user) {
-              user = await adapter.createUser({ email, name: "Demo organiser", emailVerified: true });
+              user = await adapter.createUser({ email, name: "Demo organiser", emailVerified: true }, { method: "demo" });
             }
           } else {
             // A fresh fan per click, so two visitors never share a cart.
@@ -44,7 +44,7 @@ export function demoSignIn(opts: { domain: string }): BetterAuthPlugin {
               email: `demo-fan-${id}@${opts.domain}`,
               name: `Demo fan ${id.slice(0, 4)}`,
               emailVerified: true,
-            });
+            }, { method: "demo" });
           }
           const session = await adapter.createSession(user.id);
           await setSessionCookie(ctx, { session, user });
