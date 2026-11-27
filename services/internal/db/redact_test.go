@@ -12,9 +12,9 @@ import (
 func TestRedactURLAndKeyValue(t *testing.T) {
 	cases := map[string]string{
 		"postgres://app:s3cr3t-pa55@ep-x.eu-central-1.aws.neon.tech/neondb?sslmode=require": "postgres://app:xxxxx@ep-x.eu-central-1.aws.neon.tech/neondb?sslmode=require",
-		"host=db.example user=app password=s3cr3t-pa55 dbname=x":                           "host=db.example user=app password=xxxxx dbname=x",
-		"password='s3cr3t pa55' host=h":                                                    "password=xxxxx host=h",
-		"failed: postgresql://u:s3cr3t-pa55@h:5432/d: dial error":                          "failed: postgresql://u:xxxxx@h:5432/d: dial error",
+		"host=db.example user=app password=s3cr3t-pa55 dbname=x":                            "host=db.example user=app password=xxxxx dbname=x",
+		"password='s3cr3t pa55' host=h":                                                     "password=xxxxx host=h",
+		"failed: postgresql://u:s3cr3t-pa55@h:5432/d: dial error":                           "failed: postgresql://u:xxxxx@h:5432/d: dial error",
 	}
 	for in, want := range cases {
 		if got := Redact(in); got != want {

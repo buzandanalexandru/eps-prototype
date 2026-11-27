@@ -47,9 +47,9 @@
 ## 7. Infrastructure
 
 - [x] 7.1 Write `deploy/cluster/up.sh` (idempotent, curl + jq, `DO_TOKEN` defaulting to `proxy-injected`; region ams3, 1.37.2-do.0, `s-2vcpu-4gb` pool autoscaling 2 to 4, matching the cluster already created); run it from the session; verify it finds the existing cluster `eps-prototype-ams3` running and creates nothing
-- [x] 7.2 Write `deploy/cluster/addons.sh` (Traefik, cert-manager with Let's Encrypt HTTP-01 ClusterIssuer, metrics-server; prints the load balancer IP) and the `cluster-bootstrap.yml` workflow; verify the workflow run prints the IP and `kubectl get clusterissuer` is Ready
+- [ ] 7.2 Write `deploy/cluster/addons.sh` (Traefik, cert-manager with Let's Encrypt HTTP-01 ClusterIssuer, metrics-server; prints the load balancer IP) and the `cluster-bootstrap.yml` workflow; verify the workflow run prints the IP and `kubectl get clusterissuer` is Ready. (Written; `addons.sh` ran from the first preview and the LB is 165.245.203.69, but `cluster-bootstrap` is dispatch-only and can run only once it is on `main`: run it after the merge to close this task.)
 - [x] 7.3 Write the umbrella chart `deploy/helm/eps` with sub-charts per binary (Deployment, Service, probes, Ingress with cert-manager annotations for `core.<slug>` and `gw.<slug>`; simulator Job disabled) and values for preview and production; verify `helm lint` and `helm template` in CI
-- [x] 7.4 Create the Vercel project `eps-web` (team devblocks, root `apps/web`, fra1) through the Vercel connector, link the repo, turn off preview deployment protection, set `CORE_BASE_DOMAIN` and `EPS_DEMO_SIGNIN`; verify `get_project` shows the settings and a branch push builds
+- [x] 7.4 Create the Vercel project `eps-prototype` (team devblocks, root `apps/web`, fra1) through the Vercel connector, link the repo, turn off preview deployment protection, set `CORE_BASE_DOMAIN` and `EPS_DEMO_SIGNIN`; verify `get_project` shows the settings and a branch push builds
 - [ ] 7.5 Add `bootstrap-secrets.yml` to generate `BETTER_AUTH_SECRET` per Vercel environment; if no `VERCEL_TOKEN` Actions secret exists, stop and ask the owner; verify the variable exists (value hidden) in `filter_project_envs`
 
 ## 8. CI and deploys
@@ -68,6 +68,16 @@
 - [ ] 9.4 Run the three adversarial reviewers in parallel (correctness; security and data; spec and scale), fix every confirmed finding or record its rejection in the PR, re-run affected tests; verify no open confirmed finding
 - [ ] 9.5 Run Playwright against the deployed preview URL (desktop and phone, RO and EN on the sign-in page, no console errors, no horizontal scroll) plus API checks on the preview core (`/healthz`, `/v1/whoami` with and without a token); verify all pass
 - [ ] 9.6 Squash-merge when CI, reviews and deployed tests are green; verify the production deploy job and the Playwright smoke test against production pass
+
+## Review fixes (9.4)
+
+- [x] R.1 Slugs always carry the branch hash, ASCII-strip before lowercasing, reserved bodies prefixed; `preview-names.sh` refuses production; shared vectors updated (`core-url.test.ts`, ci `slug` job)
+- [x] R.2 Previews use CI's own Neon branch from an empty schema-only seed, recreated per push, checked empty (`cmd/migrate -assert-empty`); the web app reads `EPS_DATABASE_URL(_UNPOOLED)` and never the integration's URL on previews (`db-tx.test.ts`)
+- [x] R.3 Production jobs in the `production` environment; preview steps guard `eps-prod`; one concurrency group per PR for preview and cleanup
+- [x] R.4 Readiness at least the expected schema version (`ready_test.go`); login roles `eps_web_login` / `eps_core_login` (`login_test.go`); fail-closed auth pool and web `withTx` tests (`db-tx.test.ts`); `WithTx` rolls back on panic (`login_test.go`)
+- [x] R.5 Verifier: issuer pinning, role enum, separate unknown-kid limiter, background refresh, singleflight, no lock-out (`verify_test.go`); bounded, Debug-level rejection logs
+- [x] R.6 Demo domain `demo.eps.invalid`, no social linking to demo identities, race-safe demo organiser (`auth-config.test.ts`); exact-origin CORS (`cors_test.go`)
+- [x] R.7 Chart: Redis pinned with maxmemory, bounded pools, gateway without Postgres, probes 3 s, preStop and drain, PDBs, HPA flag, limits and GOMAXPROCS, per-route write deadlines (`deadline_test.go`), `/metrics` (`metrics_test.go`), simulator Job per revision (ci `helm` job); token hot path caches (`core-token.test.ts`); hot Redis keys (`keys_test.go`)
 
 ## Workflow follow-up
 

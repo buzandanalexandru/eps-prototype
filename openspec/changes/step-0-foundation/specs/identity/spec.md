@@ -19,6 +19,11 @@ Test: apps/web/tests/unit/auth-magic-link.test.ts
 - **THEN** no session starts and the page offers to send a new link
 Test: apps/web/tests/unit/auth-magic-link.test.ts
 
+#### Scenario: Demo identity cannot be claimed from outside
+- **WHEN** someone signs in with Google using an address under the demo domain
+- **THEN** no user is created and no account is linked to an existing demo user
+Test: apps/web/tests/unit/auth-config.test.ts
+
 #### Scenario: Demo mailbox
 - **WHEN** no mail provider is configured and a demo-domain address requests a link
 - **THEN** the link is shown in the on-screen demo mailbox and not sent anywhere
@@ -72,7 +77,7 @@ Signing out SHALL end the session at once, and tokens already issued MUST stop b
 Test: apps/web/tests/unit/auth-session.test.ts
 
 ### Requirement: Short-lived tokens for the Go core
-The control plane SHALL issue signed tokens for the Go core that last at most 5 minutes and carry the subject, its kind (organiser, fan or guest), the active organiser and role for organisers, the session id and an audience reserved for the core.
+The control plane SHALL issue signed tokens for the Go core that last at most 5 minutes and carry an issuer naming the environment, the subject, its kind (organiser, fan or guest), the active organiser and role for organisers, the session id and an audience reserved for the core.
 
 #### Scenario: Organiser token
 - **WHEN** a signed-in organiser's request needs the core
@@ -93,21 +98,26 @@ The control plane SHALL publish its token verification keys as a JWKS, sign each
 Test: apps/web/tests/unit/core-token.test.ts
 
 ### Requirement: The Go core verifies tokens on its own
-The Go core SHALL accept a request needing identity only with a token whose signature, audience, expiry (30 s leeway) and kind are valid, MUST answer 401 otherwise, and MUST look up an unknown key id at most once a minute.
+The Go core SHALL accept a request needing identity only with a token whose signature, issuer (the one configured for its environment), audience, expiry (30 s leeway), kind and role are valid, MUST answer 401 otherwise, and MUST reload keys for unknown key ids at most once every 15 seconds, separately from its periodic key refresh. A failed key load MUST NOT stop verification once the database answers again.
 
 #### Scenario: Valid token
 - **WHEN** `/v1/whoami` is called with a fresh organiser token
 - **THEN** it returns 200 with the subject, kind and organiser
 Test: services/internal/auth/verify_test.go
 
-#### Scenario: Expired, tampered or wrong audience
-- **WHEN** the token expired more than 30 s ago, its payload was altered, or its audience is not `eps-core`
+#### Scenario: Expired, tampered, wrong audience or issuer
+- **WHEN** the token expired more than 30 s ago, its payload was altered, its audience is not `eps-core`, its issuer belongs to another environment, or its role is not an organiser role
 - **THEN** the core returns 401 with a problem+json body and no identity details
 Test: services/internal/auth/verify_test.go
 
 #### Scenario: Flood of unknown key ids
 - **WHEN** many requests arrive with tokens naming an unknown key id
-- **THEN** the core reloads keys at most once per minute and rejects them all
+- **THEN** the core reloads keys at most once per 15 seconds and rejects them all
+Test: services/internal/auth/verify_test.go
+
+#### Scenario: Key database briefly down
+- **WHEN** the first key load fails and the database then recovers
+- **THEN** the next request after a short back-off loads the keys and verifies
 Test: services/internal/auth/verify_test.go
 
 ### Requirement: Guest buyers

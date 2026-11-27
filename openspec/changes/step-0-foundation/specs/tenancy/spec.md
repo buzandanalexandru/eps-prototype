@@ -46,12 +46,22 @@ A transaction that has not set an organiser scope SHALL see no organiser rows an
 Test: services/internal/tenancy/rls_test.go
 
 ### Requirement: Application connections cannot bypass isolation
-Both the web app and the Go core SHALL run every application query under a database role that cannot bypass row-level security and does not own the tables.
+Both the web app and the Go core SHALL connect with login roles of their own that cannot bypass row-level security and own no table, and run every application query under their application role; the database owner is used only for migrations. A web connection whose role switch fails MUST NOT be used.
 
 #### Scenario: Current role in a transaction
 - **WHEN** either side opens an application transaction
 - **THEN** the effective role is the side's application role, which has no bypass privilege and owns no table
 Test: services/internal/tenancy/rls_test.go
+
+#### Scenario: Service login role
+- **WHEN** the Go core connects with its login role
+- **THEN** it cannot bypass row-level security, cannot write control tables or read private keys, and can still read the schema versions
+Test: services/internal/db/login_test.go
+
+#### Scenario: Web role switch fails
+- **WHEN** a web auth connection cannot switch to the web role
+- **THEN** the connection is destroyed and the request fails instead of running as the login user
+Test: apps/web/tests/unit/db-tx.test.ts
 
 ### Requirement: Each side writes only its own schema
 The web app's role SHALL be able to write only the control schema and the Go core's role only the sales schema; each MAY read only the other side's tables it has been granted.
@@ -72,6 +82,11 @@ Every Redis key holding organiser data SHALL start with the platform prefix, the
 #### Scenario: Key for event stock
 - **WHEN** the core builds a key for event E of organiser A
 - **THEN** the key starts with `eps:{A}:E:`
+Test: services/internal/redisx/keys_test.go
+
+#### Scenario: Hot keys of a big sale
+- **WHEN** the core builds keys for hot per-event state in different shards
+- **THEN** each key starts with the organiser and carries its own hash tag of organiser, event and shard
 Test: services/internal/redisx/keys_test.go
 
 #### Scenario: Missing organiser

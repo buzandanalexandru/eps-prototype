@@ -148,7 +148,12 @@ func TestKindRules(t *testing.T) {
 	}{
 		{"fan", func(m jwt.MapClaims) { m["kind"] = "fan"; delete(m, "org"); delete(m, "role") }, true},
 		{"fan with org", func(m jwt.MapClaims) { m["kind"] = "fan" }, false},
-		{"guest", func(m jwt.MapClaims) { m["kind"] = "guest"; m["sub"] = "guest:abc"; delete(m, "org"); delete(m, "role") }, true},
+		{"guest", func(m jwt.MapClaims) {
+			m["kind"] = "guest"
+			m["sub"] = "guest:abc"
+			delete(m, "org")
+			delete(m, "role")
+		}, true},
 		{"guest without guest sub", func(m jwt.MapClaims) { m["kind"] = "guest"; delete(m, "org"); delete(m, "role") }, false},
 		{"organiser without org", func(m jwt.MapClaims) { delete(m, "org") }, false},
 		{"organiser with guest sub", func(m jwt.MapClaims) { m["sub"] = "guest:abc" }, false},

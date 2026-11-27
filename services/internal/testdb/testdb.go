@@ -150,4 +150,3 @@ func RedisURL(t testing.TB) string {
 	}
 	return redisURL
 }
-

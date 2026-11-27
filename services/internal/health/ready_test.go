@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-
 	dbfiles "github.com/buzandanalexandru/eps-prototype/services/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/api"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/auth"
@@ -22,7 +21,6 @@ import (
 )
 
 func TestMain(m *testing.M) { testdb.Main(m) }
-
 
 func coreHandler(t *testing.T, checks []health.Checker) http.Handler {
 	t.Helper()
@@ -164,4 +162,3 @@ func simpleHandler(checks []health.Checker) http.Handler {
 	health.Handlers(mux, checks)
 	return mux
 }
-
