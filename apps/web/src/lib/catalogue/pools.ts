@@ -15,8 +15,12 @@ export function poolInstanceId(pool: { id: string; scope: PoolScope }, day?: str
   return `${pool.id}@${day}T${slot}`;
 }
 
-/** Remaining room in one pool instance. Sold and held counts come from the core at sale time (0 in Studio). */
+/**
+ * Remaining room in one pool instance. Sold and held counts come from the core at sale time (none in
+ * Studio). Without a day (or slot) a scoped pool answers for one fresh instance: its capacity.
+ */
 export function remaining(pool: PoolLite, usedByInstance: Record<string, number>, day?: string, slot?: string): number {
+  if ((pool.scope === "day" && !day) || (pool.scope === "slot" && (!day || !slot))) return pool.capacity;
   return Math.max(0, pool.capacity - (usedByInstance[poolInstanceId(pool, day, slot)] ?? 0));
 }
 

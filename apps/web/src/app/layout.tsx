@@ -26,6 +26,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </Link>
               <div className="flex flex-wrap items-center gap-4 text-sm">
                 <Link href="/studio">{t("studio")}</Link>
+                <Link href="/fees">{t("fees")}</Link>
                 <Link href="/status">{t("status")}</Link>
                 <LocaleSwitcher current={locale} label={t("language")} />
               </div>

@@ -93,7 +93,7 @@ describeDb("seeded sample organisers", () => {
     const steps = stepsOf(prom.steps, pick.id);
     expect(steps[0].priceMinor).toBe(1000);
     expect(steps.at(-1)).toMatchObject({ priceMinor: 3500 });
-    expect(steps.at(-1)!.mode === "by_date" && steps.at(-1)!.fromAt!.toISOString()).toBe("2027-07-23T21:00:00.000Z");
+    expect((steps.at(-1) as { fromAt: Date }).fromAt.toISOString()).toBe("2027-07-23T21:00:00.000Z");
     const at = new Date("2026-12-15T12:00:00+02:00");
     expect(activePriceStep({ steps, at }).priceMinor).toBe(1100);
     expect(nextPriceStep({ steps, at })?.priceMinor).toBe(1200);
