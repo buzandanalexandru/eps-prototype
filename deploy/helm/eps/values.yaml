@@ -1,0 +1,92 @@
+# Shared by every sub-chart through .Values.global.
+global:
+  # Environment slug: "prod" for main, the branch slug for a pull request (deploy/scripts/slug.sh).
+  env: dev
+  # <load balancer ip>.sslip.io, from deploy/scripts/core-base-domain.sh.
+  baseDomain: example.sslip.io
+  image:
+    registry: ghcr.io/buzandanalexandru
+    tag: dev
+    pullPolicy: IfNotPresent
+  ingress:
+    className: traefik
+    clusterIssuer: letsencrypt-prod
+  # Secret (created by CI in the release namespace) holding DATABASE_URL for this environment's
+  # Neon branch, as the service login role (eps_core_login). Never in values files.
+  databaseSecret: eps-db
+  # Exact browser origins allowed by CORS (no wildcards: any Vercel account can register a project
+  # whose URL matches a pattern). Production's web origin here; a preview's exact Vercel URLs are
+  # set by CI.
+  corsAllowedOrigins: "https://eps-prototype.vercel.app,https://eps-prototype-devblocks.vercel.app"
+  # Allowed core-token issuers; empty means "urn:eps:web:<global.env>" (design D0.4).
+  tokenIssuers: ""
+  # Set by CI to the run id: restarts pods when the database secret changes.
+  rolloutId: ""
+
+# Postgres connections: every pod holds its own pgx pool against one Neon compute, so the per-pod
+# bound (database.maxConns) times the replicas must stay well under the compute's limit
+# (design D0.2). Requests and limits are step-0 sizes; step 12 sets the final ones.
+# autoscaling.enabled hands replicas to an HPA (the Deployment then sets no replicas).
+core:
+  enabled: true
+  replicas: 1
+  autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 10, targetCPU: 70 }
+  pdb: { enabled: true }
+  database: { enabled: true, maxConns: 5 }
+  ingress:
+    enabled: true
+    host: core
+  resources:
+    requests: { cpu: 100m, memory: 64Mi }
+    limits: { cpu: "1", memory: 256Mi }
+
+gateway:
+  enabled: true
+  replicas: 1
+  autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 20, targetCPU: 70 }
+  pdb: { enabled: true }
+  # The gateway keeps no Postgres pool and its readiness depends only on Redis.
+  database: { enabled: false }
+  ingress:
+    enabled: true
+    host: gw
+  resources:
+    requests: { cpu: 100m, memory: 64Mi }
+    limits: { cpu: "1", memory: 256Mi }
+
+worker:
+  enabled: true
+  replicas: 1
+  pdb: { enabled: true }
+  database: { enabled: true, maxConns: 3 }
+  resources:
+    requests: { cpu: 50m, memory: 48Mi }
+    limits: { cpu: 500m, memory: 128Mi }
+
+fakepsp:
+  enabled: true
+  replicas: 1
+  pdb: { enabled: true }
+  database: { enabled: false }
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { cpu: 250m, memory: 128Mi }
+
+# A Kubernetes Job; off until a rehearsal is started (step 6). Its name carries the release
+# revision, so an upgrade creates a new Job instead of patching an immutable one.
+simulator:
+  enabled: false
+  database: { enabled: true, maxConns: 2 }
+  resources:
+    requests: { cpu: 100m, memory: 64Mi }
+    limits: { cpu: "1", memory: 256Mi }
+
+redis:
+  enabled: true
+  # Pinned: a floating tag could change Redis under a running sale.
+  image: redis:8.4.0
+  # About 75% of the memory limit, with noeviction: Redis refuses writes before the kernel kills it.
+  maxmemory: 192mb
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }

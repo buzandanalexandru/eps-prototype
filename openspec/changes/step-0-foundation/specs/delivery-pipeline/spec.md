@@ -42,15 +42,33 @@ Test: apps/web/tests/e2e/preview-roundtrip.spec.ts
 
 #### Scenario: Two pull requests at once
 - **WHEN** two pull requests are open at the same time
-- **THEN** each preview talks only to its own Go services and its own database branch
+- **THEN** each preview talks only to its own Go services and its own database branch, and their namespaces, releases, database branches and web database settings never coincide
 Test: apps/web/tests/unit/core-url.test.ts
 
+#### Scenario: Preview cannot reach production
+- **WHEN** a pull request's branch name would map to the production environment (for example `prod`)
+- **THEN** its slug still carries the branch hash, and the preview pipeline refuses any name that would deploy into or clean up the production namespace
+Test: apps/web/tests/unit/core-url.test.ts
+
+### Requirement: Preview databases never hold production data
+A preview's database branch SHALL be created without copying any row from production and MUST hold no user, session or account row before tests run. The preview's web app MUST NOT fall back to a database copied from production.
+
+#### Scenario: Preview database holds no production data
+- **WHEN** a preview's database branch is prepared
+- **THEN** it is made from an empty, schema-only source rather than from production, the pipeline fails if any user, session or account row exists before tests run, and the web app on a preview without its own database setting has no database rather than production's copy
+Test: apps/web/tests/unit/db-tx.test.ts
+
 ### Requirement: A preview finds its own Go core
-The web app SHALL resolve the Go core address from explicit configuration when set, and otherwise derive it from the deployment's branch with the same slug rule the pipeline uses. The slug MUST be a valid DNS label for any branch name.
+The web app SHALL resolve the Go core address from explicit configuration when set, and otherwise derive it from the deployment's branch with the same slug rule the pipeline uses. The slug MUST be a valid DNS label for any branch name, MUST be `prod` only for `main`, and MUST end in a hash of the branch name for every other branch, so distinct branches never share a slug.
 
 #### Scenario: Branch name with symbols and great length
 - **WHEN** the branch is `feature/Squad_Buy-and-a-very-long-description-of-the-change`
 - **THEN** the web app and the pipeline derive the same lowercase slug of at most 47 characters, using only letters, digits and hyphens
+Test: apps/web/tests/unit/core-url.test.ts
+
+#### Scenario: Branches that clean to the same text
+- **WHEN** the branches `feature/x`, `feature-x` and `Feature_X`, or a branch with non-ASCII letters such as `fix/İnfo`, are deployed
+- **THEN** each gets its own slug, identical in the web app and the pipeline
 Test: apps/web/tests/unit/core-url.test.ts
 
 #### Scenario: Production uses explicit configuration
@@ -80,7 +98,7 @@ Test: apps/web/tests/e2e/smoke.spec.ts
 Test: manual check on the deployed preview (helm upgrade with --atomic rolls back a release whose readiness never passes)
 
 ### Requirement: Migrations run only in the pipeline
-Database migrations SHALL be plain, forward-only SQL with a version record per schema, and MUST be applied only by the pipeline, before the services that need them are deployed.
+Database migrations SHALL be plain, forward-only, backward-compatible SQL with a version record per schema, and MUST be applied only by the pipeline, before the services that need them are deployed. A service SHALL be ready when each schema is at least at the version it expects.
 
 #### Scenario: Migration order
 - **WHEN** a pull request adds a control and a sales migration
@@ -92,12 +110,17 @@ Test: services/internal/db/migrate_test.go
 - **THEN** its readiness check fails with the expected and actual versions
 Test: services/internal/health/ready_test.go
 
+#### Scenario: Service started against a newer schema
+- **WHEN** the schema is ahead of the version a running service expects (the next release migrated first)
+- **THEN** the service stays ready
+Test: services/internal/health/ready_test.go
+
 ### Requirement: The cluster is reproducible from the repository
-A script in the repository SHALL create the Kubernetes cluster in Frankfurt and install its ingress, certificate and metrics add-ons. Running it again MUST change nothing when the cluster already exists.
+A script in the repository SHALL create the Kubernetes cluster in an EU region (Amsterdam, ams3, because Frankfurt had no capacity) and install its ingress, certificate and metrics add-ons. Running it again MUST change nothing when the cluster already exists.
 
 #### Scenario: First run
 - **WHEN** the cluster script runs and no cluster of that name exists
-- **THEN** a cluster on the newest 1.37 patch is created in fra1 with an autoscaling node pool, and the script prints its id and the load balancer address
+- **THEN** a cluster on 1.37 is created in ams3 with an autoscaling node pool, and the scripts print its id and (once the add-ons are installed) the load balancer address
 Test: manual check on the deployed preview (`deploy/cluster/up.sh` output and the cluster in the DigitalOcean API)
 
 #### Scenario: Second run
@@ -114,7 +137,7 @@ Each environment's core and gateway SHALL be reachable over HTTPS with a valid c
 Test: apps/web/tests/e2e/preview-roundtrip.spec.ts
 
 #### Scenario: Browser origin not allowed
-- **WHEN** a browser page on an origin outside the platform's web origins calls the core
+- **WHEN** a browser page on an origin outside the platform's exact web origins calls the core, including a look-alike such as `https://eps-prototype-evil-devblocks.vercel.app`
 - **THEN** the core's CORS response does not allow that origin
 Test: services/cmd/core/cors_test.go
 

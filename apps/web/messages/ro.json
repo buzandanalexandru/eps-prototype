@@ -1,0 +1,66 @@
+{
+  "common": {
+    "appName": "EPS",
+    "tagline": "Bilete pentru fiecare organizator",
+    "language": "Limbă",
+    "signIn": "Autentificare",
+    "signOut": "Deconectare",
+    "status": "Starea sistemului",
+    "studio": "Studio"
+  },
+  "home": {
+    "title": "EPS: bilete pentru fiecare organizator de evenimente",
+    "lead": "O singură platformă, cu brandul propriu al fiecărui organizator. Aceasta este fundația prototipului: autentificarea, verificarea completă a sistemului și fluxul de livrare.",
+    "openStudio": "Deschide Studio",
+    "viewStatus": "Vezi starea sistemului"
+  },
+  "signIn": {
+    "title": "Autentifică-te în EPS",
+    "lead": "Introdu adresa de e-mail și îți trimitem un link de autentificare de unică folosință. Funcționează o singură dată și expiră după 15 minute.",
+    "email": "Adresă de e-mail",
+    "sendLink": "Trimite linkul de autentificare",
+    "sending": "Se trimite…",
+    "sent": "Dacă adresa poate primi linkuri, un link de autentificare este pe drum către {email}.",
+    "google": "Continuă cu Google",
+    "or": "sau",
+    "demoTitle": "Acces demonstrativ",
+    "demoLead": "Pentru demonstrația publică: nu este nevoie de e-mail.",
+    "demoOrganiser": "Continuă ca organizator demo",
+    "demoFan": "Continuă ca fan demo",
+    "mailboxTitle": "Căsuța poștală demo",
+    "mailboxLead": "Nu este configurat niciun furnizor de e-mail, așa că linkurile pentru adresele {domain} apar aici în loc să fie trimise.",
+    "mailboxEmpty": "Încă nu există linkuri pentru această adresă.",
+    "openLink": "Deschide linkul de autentificare",
+    "linkInvalid": "Linkul de autentificare a expirat sau a fost deja folosit. Trimite-ți unul nou.",
+    "sendFailed": "Nu am putut trimite un link la această adresă. Adresele reale sunt dezactivate până la configurarea unui furnizor de e-mail; folosește o adresă demo sau accesul demonstrativ.",
+    "demoFailed": "Autentificarea demo a eșuat. Încearcă din nou peste un minut."
+  },
+  "studio": {
+    "title": "EPS Studio",
+    "welcome": "Autentificat ca {name}",
+    "empty": "Spațiul tău de lucru de organizator sosește în pasul următor."
+  },
+  "status": {
+    "title": "Starea sistemului",
+    "lead": "Verificarea completă: această aplicație web, ramura ei de bază de date și nucleul ei Go.",
+    "web": "Aplicația web",
+    "commit": "Commit",
+    "database": "Bază de date",
+    "control": "Schema de control",
+    "sales": "Schema de vânzări",
+    "ready": "Pregătit",
+    "notReady": "Nepregătit",
+    "unconfigured": "Neconfigurat",
+    "core": "Nucleul Go",
+    "address": "Adresă",
+    "unreachable": "Indisponibil",
+    "whoami": "Verificarea identității în nucleu",
+    "signedOut": "Autentifică-te ca să vezi nucleul confirmând identitatea ta.",
+    "subject": "Subiect",
+    "kind": "Tip",
+    "organiser": "Organizator",
+    "role": "Rol",
+    "session": "Sesiune",
+    "expires": "Tokenul expiră"
+  }
+}

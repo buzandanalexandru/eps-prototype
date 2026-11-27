@@ -1,0 +1,19 @@
+name: Cluster access
+description: doctl, kubectl and helm with a kubeconfig for the EPS DOKS cluster.
+inputs:
+  token:
+    description: DigitalOcean API token
+    required: true
+  cluster:
+    description: Cluster name
+    default: eps-prototype-ams3
+runs:
+  using: composite
+  steps:
+    - uses: digitalocean/action-doctl@v2
+      with:
+        token: ${{ inputs.token }}
+    - uses: azure/setup-helm@v4
+    - uses: azure/setup-kubectl@v4
+    - shell: bash
+      run: doctl kubernetes cluster kubeconfig save --expiry-seconds 3600 "${{ inputs.cluster }}"

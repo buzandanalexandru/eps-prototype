@@ -1,0 +1,49 @@
+name: cluster-bootstrap
+
+# Reproducible cluster (design D0.5): finds or creates the DOKS cluster, installs Traefik,
+# cert-manager (Let's Encrypt HTTP-01) and metrics-server, and prints the load balancer address.
+# When VERCEL_TOKEN exists, it also sets CORE_BASE_DOMAIN on the Vercel project.
+on:
+  workflow_dispatch:
+    inputs:
+      domain_suffix:
+        description: Wildcard DNS service for core hostnames
+        default: sslip.io
+        type: choice
+        options: [sslip.io, nip.io]
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: deploy/scripts/require-secrets.sh DIGITALOCEAN_ACCESS_TOKEN
+      - name: Cluster (creates nothing when it exists)
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+        run: deploy/cluster/up.sh
+      - uses: ./.github/actions/kube
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Add-ons
+        id: addons
+        env:
+          DOMAIN_SUFFIX: ${{ inputs.domain_suffix }}
+        run: deploy/cluster/addons.sh
+      - name: ClusterIssuer is Ready
+        run: kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -qx True
+      - name: Set CORE_BASE_DOMAIN on the Vercel project
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VALUE: ${{ steps.addons.outputs.core_base_domain }}
+        run: |
+          if [[ -z "$VERCEL_TOKEN" ]]; then
+            echo "::warning::VERCEL_TOKEN is not set: set CORE_BASE_DOMAIN=$VALUE on the Vercel project by hand."
+            exit 0
+          fi
+          deploy/scripts/vercel-env.sh upsert CORE_BASE_DOMAIN "$VALUE" plain production,preview

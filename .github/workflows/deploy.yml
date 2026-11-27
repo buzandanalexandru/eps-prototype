@@ -1,0 +1,214 @@
+name: deploy
+
+# main is production (design D0.6): migrate the Neon default branch, build the images, roll the Go
+# services out atomically in eps-prod, smoke-test the core, wait for Vercel's production
+# deployment and run the Playwright smoke test. Jobs that hold production credentials run in the
+# GitHub environment "production" (the owner moves the production secrets there and limits it to
+# main); the services connect as their login roles, never as the branch owner.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  deployments: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NEON_PROJECT_ID: odd-sun-50771070
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+  SHA: ${{ github.sha }}
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: deploy/scripts/require-secrets.sh DIGITALOCEAN_ACCESS_TOKEN NEON_API_KEY
+
+  migrate:
+    needs: secrets
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - id: neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: deploy/scripts/neon-branch.sh default
+      - working-directory: services
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: go run ./cmd/migrate -control ../apps/web/db/migrations
+
+  images:
+    needs: secrets
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        binary: [core, gateway, worker, fakepsp, simulator]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services
+          target: ${{ matrix.binary }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/eps-${{ matrix.binary }}:${{ env.SHA }}
+            ${{ env.REGISTRY }}/eps-${{ matrix.binary }}:main
+          build-args: |
+            COMMIT=${{ env.SHA }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=${{ matrix.binary }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.binary }}
+
+  core:
+    needs: [migrate, images]
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      core_url: ${{ steps.vars.outputs.core_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - uses: ./.github/actions/kube
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Cluster add-ons (first run only; cluster-bootstrap.yml can re-run them)
+        run: |
+          if ! kubectl get namespace traefik >/dev/null 2>&1; then deploy/cluster/addons.sh; fi
+      - id: vars
+        run: |
+          base=$(deploy/scripts/core-base-domain.sh)
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "core_url=https://core.prod.$base" >> "$GITHUB_OUTPUT"
+      - name: Database secret (eps_core_login; the password is kept across deploys)
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          f="$RUNNER_TEMP/neon.env"; l="$RUNNER_TEMP/login.env"
+          NEON_OUTPUT_FILE="$f" deploy/scripts/neon-branch.sh default > /dev/null
+          DATABASE_URL=$(sed -n 's/^database_url_unpooled=//p' "$f")
+          export DATABASE_URL
+          # Reuse the running pods' password, so a rollout never logs out the previous release.
+          EPS_LOGIN_PASSWORD=$(kubectl -n eps-prod get secret eps-db -o jsonpath='{.data.LOGIN_PASSWORD}' 2>/dev/null | base64 -d || true)
+          [[ -n "$EPS_LOGIN_PASSWORD" ]] && echo "::add-mask::$EPS_LOGIN_PASSWORD"
+          export EPS_LOGIN_PASSWORD
+          (cd services && go run ./cmd/migrate -login core -out "$l")
+          pw=$(sed -n 's/^password=//p' "$l"); echo "::add-mask::$pw"
+          url=$(sed -n 's/^url=//p' "$l"); echo "::add-mask::$url"
+          rm -f "$f" "$l"
+          kubectl create namespace eps-prod --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n eps-prod create secret generic eps-db --from-literal=DATABASE_URL="$url" \
+            --from-literal=LOGIN_PASSWORD="$pw" --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+      - name: helm upgrade --install (atomic; a release that never gets ready rolls back)
+        run: |
+          helm upgrade --install eps deploy/helm/eps --namespace eps-prod \
+            -f deploy/helm/eps/values-production.yaml \
+            --set global.rolloutId="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --set global.baseDomain="${{ steps.vars.outputs.base }}" \
+            --set global.image.registry="$REGISTRY" \
+            --set global.image.tag="$SHA" \
+            --atomic --wait --timeout 10m
+      - name: Core smoke test
+        run: |
+          for i in $(seq 1 30); do
+            v=$(curl -fsS "${{ steps.vars.outputs.core_url }}/v1/version" || true)
+            if [[ "$(jq -r .commit <<<"$v" 2>/dev/null)" == "$SHA" ]]; then echo "$v"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::Production core does not report commit $SHA"; exit 1
+
+  web-smoke:
+    needs: core
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for Vercel's production deployment of this commit
+        id: vercel
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for (let i = 0; i < 90; i++) {
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner, repo: context.repo.repo, sha: context.sha, per_page: 20,
+              });
+              for (const d of deployments.filter((d) => /production/i.test(d.environment))) {
+                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
+                  owner: context.repo.owner, repo: context.repo.repo, deployment_id: d.id, per_page: 5,
+                });
+                const ok = statuses.find((s) => s.state === "success");
+                if (ok) { core.setOutput("url", ok.environment_url || ok.target_url); return; }
+              }
+              await new Promise((r) => setTimeout(r, 10000));
+            }
+            core.setFailed("No successful Vercel production deployment for this commit after 15 minutes.");
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - name: Bind the production web app to eps_web_login (once; then the variables are kept)
+        id: bind
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          DEPLOYMENT: ${{ steps.vercel.outputs.url }}
+        run: |
+          if [[ -z "$VERCEL_TOKEN" ]]; then
+            echo "::warning::VERCEL_TOKEN is not set: production web keeps the integration's DATABASE_URL (the branch owner; every query still runs SET LOCAL ROLE eps_web)."
+            exit 0
+          fi
+          if [[ "$(deploy/scripts/vercel-env.sh exists EPS_DATABASE_URL production)" == true ]]; then
+            echo "EPS_DATABASE_URL already set for production."; exit 0
+          fi
+          f="$RUNNER_TEMP/neon.env"; l="$RUNNER_TEMP/login.env"
+          NEON_OUTPUT_FILE="$f" deploy/scripts/neon-branch.sh default > /dev/null
+          DATABASE_URL=$(sed -n 's/^database_url_unpooled=//p' "$f")
+          DATABASE_URL_POOLED=$(sed -n 's/^database_url=//p' "$f")
+          export DATABASE_URL DATABASE_URL_POOLED
+          (cd services && go run ./cmd/migrate -login web -out "$l")
+          pw=$(sed -n 's/^password=//p' "$l"); echo "::add-mask::$pw"
+          WEB_URL=$(sed -n 's/^pooled_url=//p' "$l"); WEB_URL_UNPOOLED=$(sed -n 's/^url=//p' "$l")
+          export WEB_URL WEB_URL_UNPOOLED
+          rm -f "$f" "$l"
+          deploy/scripts/vercel-env.sh upsert-secret EPS_DATABASE_URL WEB_URL production
+          deploy/scripts/vercel-env.sh upsert-secret EPS_DATABASE_URL_UNPOOLED WEB_URL_UNPOOLED production
+          deploy/scripts/vercel-env.sh redeploy "$DEPLOYMENT" production | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - working-directory: apps/web
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.bind.outputs.url || steps.vercel.outputs.url }}
+          CORE_URL: ${{ needs.core.outputs.core_url }}
+          EXPECT_WEB_COMMIT: ${{ github.sha }}
+          EXPECT_CORE_COMMIT: ${{ github.sha }}
+        run: npx playwright test tests/e2e/smoke.spec.ts

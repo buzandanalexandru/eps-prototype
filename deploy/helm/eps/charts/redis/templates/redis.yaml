@@ -1,0 +1,92 @@
+{{- if .Values.enabled }}
+{{- $ctx := dict "name" "redis" "ctx" . }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "eps.fullname" $ctx }}
+  labels:
+    {{- include "eps.labels" $ctx | nindent 4 }}
+spec:
+  serviceName: {{ include "eps.fullname" $ctx }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "eps.labels" $ctx | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: {{ .Values.image }}
+          args: ["--appendonly", "no", "--save", "", "--protected-mode", "no",
+                 "--maxmemory", {{ .Values.maxmemory | quote }}, "--maxmemory-policy", "noeviction"]
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            tcpSocket: { port: redis }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "eps.fullname" $ctx }}
+  labels:
+    {{- include "eps.labels" $ctx | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+# Only the EPS services of this release may reach Redis.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "eps.fullname" $ctx }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: eps
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: 6379
+{{- end }}

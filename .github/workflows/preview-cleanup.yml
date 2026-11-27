@@ -1,0 +1,61 @@
+name: preview-cleanup
+
+# On close or merge: remove the pull request's Go environment, its CI Neon branch, the
+# integration's leftover preview branch and its branch-scoped Vercel variables (design D0.6).
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+# Same group as preview.yml: a cleanup waits for a running deploy of the same pull request.
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  NEON_PROJECT_ID: odd-sun-50771070
+  BRANCH: ${{ github.head_ref }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required secrets are present
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: deploy/scripts/require-secrets.sh DIGITALOCEAN_ACCESS_TOKEN NEON_API_KEY
+      - name: Environment names (refuses production)
+        id: names
+        run: deploy/scripts/preview-names.sh "$BRANCH" | tee -a "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/kube
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Uninstall the release and delete the namespace
+        env:
+          NS: ${{ steps.names.outputs.namespace }}
+          RELEASE: ${{ steps.names.outputs.release }}
+        run: |
+          [[ -n "$NS" && "$NS" != "eps-prod" && "$RELEASE" != "eps" ]] || { echo "Refusing to clean up production."; exit 1; }
+          helm uninstall "$RELEASE" --namespace "$NS" --wait || echo "release already gone"
+          kubectl delete namespace "$NS" --ignore-not-found --wait=true
+          ! kubectl get namespace "$NS" 2>/dev/null
+      - name: Delete the Neon branches (CI's and the integration's)
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          deploy/scripts/neon-branch.sh delete-if-exists "${{ steps.names.outputs.neon_branch }}"
+          sleep 60 # give the Neon-Vercel integration the first chance at its own branch
+          deploy/scripts/neon-branch.sh delete-if-exists "${{ steps.names.outputs.integration_branch }}"
+      - name: Remove the branch-scoped Vercel variables
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GIT_BRANCH: ${{ steps.names.outputs.vercel_git_branch }}
+        run: |
+          if [[ -z "$VERCEL_TOKEN" ]]; then echo "VERCEL_TOKEN not set; nothing to remove."; exit 0; fi
+          for key in EPS_DATABASE_URL EPS_DATABASE_URL_UNPOOLED; do
+            deploy/scripts/vercel-env.sh delete-branch "$key" "$GIT_BRANCH"
+          done

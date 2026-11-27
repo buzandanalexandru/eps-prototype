@@ -1,0 +1,66 @@
+{
+  "common": {
+    "appName": "EPS",
+    "tagline": "Ticketing for every organiser",
+    "language": "Language",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "status": "System status",
+    "studio": "Studio"
+  },
+  "home": {
+    "title": "EPS: ticketing for every event organiser",
+    "lead": "One platform, each organiser's own brand. This is the prototype foundation: sign-in, the status round trip and the pipeline.",
+    "openStudio": "Open Studio",
+    "viewStatus": "View system status"
+  },
+  "signIn": {
+    "title": "Sign in to EPS",
+    "lead": "Enter your email and we will send you a one-time sign-in link. It works once and expires after 15 minutes.",
+    "email": "Email address",
+    "sendLink": "Send sign-in link",
+    "sending": "Sending…",
+    "sent": "If the address can receive links, a sign-in link is on its way to {email}.",
+    "google": "Continue with Google",
+    "or": "or",
+    "demoTitle": "Demo access",
+    "demoLead": "For the public demo: no email needed.",
+    "demoOrganiser": "Continue as demo organiser",
+    "demoFan": "Continue as demo fan",
+    "mailboxTitle": "Demo mailbox",
+    "mailboxLead": "No mail provider is set up, so links for {domain} addresses appear here instead of being sent.",
+    "mailboxEmpty": "No links for this address yet.",
+    "openLink": "Open sign-in link",
+    "linkInvalid": "That sign-in link has expired or was already used. Send yourself a new one.",
+    "sendFailed": "We could not send a link to that address. Real addresses are disabled until a mail provider is configured; use a demo address or demo access.",
+    "demoFailed": "Demo sign-in failed. Please try again in a minute."
+  },
+  "studio": {
+    "title": "EPS Studio",
+    "welcome": "Signed in as {name}",
+    "empty": "Your organiser workspace arrives in the next step."
+  },
+  "status": {
+    "title": "System status",
+    "lead": "The full round trip: this web app, its database branch and its Go core.",
+    "web": "Web app",
+    "commit": "Commit",
+    "database": "Database",
+    "control": "Control schema",
+    "sales": "Sales schema",
+    "ready": "Ready",
+    "notReady": "Not ready",
+    "unconfigured": "Not configured",
+    "core": "Go core",
+    "address": "Address",
+    "unreachable": "Unreachable",
+    "whoami": "Core identity check",
+    "signedOut": "Sign in to see the core echo your identity.",
+    "subject": "Subject",
+    "kind": "Kind",
+    "organiser": "Organiser",
+    "role": "Role",
+    "session": "Session",
+    "expires": "Token expires"
+  }
+}

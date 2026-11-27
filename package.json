@@ -2,8 +2,17 @@
   "name": "eps-prototype",
   "private": true,
   "version": "0.0.0",
+  "workspaces": [
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "openspec": "openspec"
+    "openspec": "openspec",
+    "gen:api": "npm run gen:api -w apps/web && make -C services gen",
+    "test": "npm test -w apps/web && make -C services test",
+    "lint": "npm run lint -w apps/web"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.16.0"

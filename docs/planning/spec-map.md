@@ -49,10 +49,15 @@ docs/                planning, research, deliverables
 ```
 
 ## Cross-step interfaces (agreed while writing the changes)
-- **Core address per environment:** env slug `prod` for `main`, else the branch name (lowercase, at most 40 characters plus a 6-character hash). Core at `https://core.<slug>.<lb-ip>.sslip.io`, gateway at `gw.<slug>...`. The web app derives it from `VERCEL_GIT_COMMIT_REF` unless `CORE_API_URL` is set.
-- **Database:** roles `eps_web` and `eps_core` (no RLS bypass). Each transaction runs `SET LOCAL ROLE` and `set_config('app.organiser_id')`. goose migrations with one version table per schema. A schema test fails on any table without `organiser_id`, except a platform allowlist.
-- **Core token claims:** `aud=eps-core`, `kind` (organiser, fan or guest), `org`, `role`, `sid`, 5-minute life. Guests use `sub=guest:<id>`. Simulator guests use a rehearsal-only issuer accepted only on rehearsal sales (step 6).
-- **Redis keys:** `eps:{<org>}:<event|_>:<kind>:...`. Live snapshot at `eps:{org}:<event>:snapshot:live`.
+- **Core address per environment:** env slug `prod` for `main`, else `<body>-<6-char hash>`: the branch with non-ASCII-alphanumerics turned into `-` before lowercasing, cut to 40 characters, `br-` in front of a reserved body (prod, main, staging, eps, kube-*). The hash is always added, so no branch maps to `prod` or to another branch's slug. Core at `https://core.<slug>.<lb-ip>.sslip.io`, gateway at `gw.<slug>...`. The web app derives it from `VERCEL_GIT_COMMIT_REF` unless `CORE_API_URL` is set; `deploy/scripts/preview-names.sh` derives every other per-PR name from the slug.
+- **Database:**
+  - Roles `eps_web` and `eps_core` (NOLOGIN, no RLS bypass). The apps connect as the login roles `eps_web_login` / `eps_core_login` (LOGIN, NOBYPASSRLS, members of their role only, own nothing); the branch owner (`neondb_owner`) runs migrations only. CI sets the login passwords (`cmd/migrate -login`).
+  - Each transaction runs `SET LOCAL ROLE` and `set_config('app.organiser_id')`. goose migrations with one version table per schema, forward-only and backward compatible (expand, then contract a release later); readiness requires each schema at **at least** the expected version.
+  - A schema test fails on any table without `organiser_id`, except a platform allowlist.
+  - **SECURITY DEFINER rule:** any SECURITY DEFINER function (step 3's `control.live_snapshot()` first) is owned by a dedicated NOLOGIN NOBYPASSRLS role created for it, never by `neondb_owner` (which bypasses RLS on Neon), and sets `search_path` explicitly.
+  - Previews use a CI-made Neon branch `eps-preview/<slug>`, a child of the empty seed branch (schema-only, never production data), recreated per push; the web app reads `EPS_DATABASE_URL(_UNPOOLED)`, never the Neon–Vercel integration's `DATABASE_URL` on previews.
+- **Core token claims:** `iss=urn:eps:web:<env slug>` (the Go core of that environment accepts only that issuer, `CORE_TOKEN_ISSUERS`), `aud=eps-core`, `kind` (organiser, fan or guest), `org`, `role` (owner, admin or staff), `sid`, 5-minute life. Guests use `sub=guest:<id>`. Simulator guests use a rehearsal-only issuer accepted only on rehearsal sales (step 6).
+- **Redis keys:** `eps:{<org>}:<event|_>:<kind>:...` for organiser data (hash tag on the organiser). **Hot on-sale keys** (holds, stock counters, queues; steps 4 and 5) use `redisx.HotKey`: `eps:{<org>:<event>:<shard>}:<kind>:...`, tagged on organiser, event and shard so one big sale spreads over slots. Live snapshot at `eps:{org}:<event>:snapshot:live`.
 - **Money:**
   - Integer minor units everywhere.
   - Platform fee 2.5%; fee policies absorb, pass on or split, with the fan's half rounded down in a split.
@@ -70,4 +75,6 @@ docs/                planning, research, deliverables
 - **Sale settings** live in the sales schema (owned by Go) and are edited from Studio through the OpenAPI contract, so the admission rate changes live.
 - **Holds:** step 4 uses one counter per pool; step 5 swaps in sharded counters behind the same interface and re-runs step 4's hold tests.
 - **Issuing:** step 4 marks orders issued with a stub driven by `order.paid`; step 7 replaces it with real ticket issuing.
-- **Live dashboard:** the browser connects to the Go gateway's server-sent events directly, not through Vercel functions.
+- **Live dashboard:** the browser connects to the Go gateway's server-sent events directly, not through Vercel functions. The servers have no global write timeout; streams are exempt from the per-request 30 s write deadline (`Accept: text/event-stream`).
+- **CORS:** exact origins only (production web origin, plus a preview's own Vercel URLs injected by CI); never a wildcard.
+- **Metrics:** every Go binary serves Prometheus text on `:9090/metrics` (outside the ingress); step 6 builds on the same names.

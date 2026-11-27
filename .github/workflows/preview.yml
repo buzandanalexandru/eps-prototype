@@ -1,0 +1,308 @@
+name: preview
+
+# Every pull request gets its own environment (design D0.6):
+# - a Neon branch eps-preview/<slug>, a copy-on-write child of the empty seed branch (never of
+#   production, so no production row ever reaches a preview), recreated on every push, migrated,
+#   and checked to hold no user, session or account row;
+# - the PR's Go images on DOKS in namespace eps-<slug>, connected as eps_core_login;
+# - the Vercel preview, pointed at that branch through branch-scoped EPS_DATABASE_URL(_UNPOOLED)
+#   as eps_web_login and redeployed (needs VERCEL_TOKEN). The Neon-Vercel integration's own
+#   preview branch (preview/<branch>, a copy of production with its data) is never used.
+# Then Playwright runs against the deployed preview. Nothing here may touch production: the
+# names come from deploy/scripts/preview-names.sh, which refuses prod, and every cluster step
+# checks the namespace again.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  deployments: read
+  statuses: read
+
+# One group per pull request, shared with preview-cleanup.yml, so a cleanup never races a deploy.
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  NEON_PROJECT_ID: odd-sun-50771070
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+  BRANCH: ${{ github.head_ref }}
+  SHA: ${{ github.event.pull_request.head.sha }}
+  PRODUCTION_WEB_ORIGINS: https://eps-prototype.vercel.app,https://eps-prototype-devblocks.vercel.app
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      slug: ${{ steps.names.outputs.slug }}
+      namespace: ${{ steps.names.outputs.namespace }}
+      release: ${{ steps.names.outputs.release }}
+      neon_branch: ${{ steps.names.outputs.neon_branch }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Required secrets are present
+        env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: deploy/scripts/require-secrets.sh DIGITALOCEAN_ACCESS_TOKEN NEON_API_KEY
+      - name: Environment names (hard-fails on anything that maps to production)
+        id: names
+        run: |
+          deploy/scripts/preview-names.sh "$BRANCH" | tee -a "$GITHUB_OUTPUT"
+          ns=$(deploy/scripts/preview-names.sh "$BRANCH" | sed -n 's/^namespace=//p')
+          [[ "$ns" != "eps-prod" ]] || { echo "::error::preview would deploy into eps-prod"; exit 1; }
+
+  images:
+    needs: guard
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        binary: [core, gateway, worker, fakepsp, simulator]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services
+          target: ${{ matrix.binary }}
+          push: true
+          tags: ${{ env.REGISTRY }}/eps-${{ matrix.binary }}:${{ env.SHA }}
+          build-args: |
+            COMMIT=${{ env.SHA }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=${{ matrix.binary }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.binary }}
+
+  database:
+    needs: guard
+    runs-on: ubuntu-latest
+    env:
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_BRANCH: ${{ needs.guard.outputs.neon_branch }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - name: psql
+        run: command -v psql || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
+      - name: Empty seed branch (schema-only from production, application schemas dropped)
+        run: deploy/scripts/neon-branch.sh ensure-seed
+      - name: Fresh preview branch from the seed (no production data)
+        id: neon
+        run: deploy/scripts/neon-branch.sh recreate "$NEON_BRANCH"
+      - name: Migrate both schemas and check the branch holds no user data
+        working-directory: services
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: go run ./cmd/migrate -control ../apps/web/db/migrations -assert-empty
+      # No seed data in step 0; step 1's sample-data capability seeds the NIBIRU catalogue here
+      # (sample data only).
+
+  web:
+    # Points the Vercel preview at the CI branch and returns its exact URLs (for CORS and tests).
+    needs: [guard, database]
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.bind.outputs.url || steps.vercel.outputs.url }}
+      origins: ${{ steps.bind.outputs.origins || steps.vercel.outputs.url }}
+      db_bound: ${{ steps.bind.outputs.url && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for the Vercel preview of this commit
+        id: vercel
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sha = process.env.SHA;
+            for (let i = 0; i < 90; i++) {
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner, repo: context.repo.repo, sha, per_page: 20,
+              });
+              for (const d of deployments.filter((d) => !/production/i.test(d.environment))) {
+                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
+                  owner: context.repo.owner, repo: context.repo.repo, deployment_id: d.id, per_page: 5,
+                });
+                const ok = statuses.find((s) => s.state === "success");
+                if (ok) { core.setOutput("url", (ok.environment_url || ok.target_url).replace(/\/$/, "")); return; }
+                if (statuses.some((s) => s.state === "failure" || s.state === "error")) {
+                  core.setFailed(`Vercel preview deployment failed: ${statuses[0].target_url}`); return;
+                }
+              }
+              await new Promise((r) => setTimeout(r, 10000));
+            }
+            core.setFailed("No successful Vercel preview deployment for this commit after 15 minutes. Is the Vercel project linked to the repository?");
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - name: Bind the preview to the CI database as eps_web_login and redeploy
+        id: bind
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_BRANCH: ${{ needs.guard.outputs.neon_branch }}
+          GIT_BRANCH: ${{ env.BRANCH }}
+          DEPLOYMENT: ${{ steps.vercel.outputs.url }}
+        run: |
+          if [[ -z "$VERCEL_TOKEN" ]]; then
+            echo "::warning::VERCEL_TOKEN is not set: the Vercel preview cannot be pointed at the CI database, so it has none (it never falls back to the integration's copy of production). The e2e job will fail until the owner adds the secret."
+            exit 0
+          fi
+          f="$RUNNER_TEMP/neon.env"; l="$RUNNER_TEMP/login.env"
+          NEON_OUTPUT_FILE="$f" deploy/scripts/neon-branch.sh uri "$NEON_BRANCH" > /dev/null
+          DATABASE_URL=$(sed -n 's/^database_url_unpooled=//p' "$f")
+          DATABASE_URL_POOLED=$(sed -n 's/^database_url=//p' "$f")
+          export DATABASE_URL DATABASE_URL_POOLED
+          (cd services && go run ./cmd/migrate -login web -out "$l")
+          pw=$(sed -n 's/^password=//p' "$l"); echo "::add-mask::$pw"
+          WEB_URL=$(sed -n 's/^pooled_url=//p' "$l"); WEB_URL_UNPOOLED=$(sed -n 's/^url=//p' "$l")
+          export WEB_URL WEB_URL_UNPOOLED
+          rm -f "$f" "$l"
+          deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL WEB_URL "$GIT_BRANCH"
+          deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL_UNPOOLED WEB_URL_UNPOOLED "$GIT_BRANCH"
+          deploy/scripts/vercel-env.sh redeploy "$DEPLOYMENT" | tee -a "$GITHUB_OUTPUT"
+
+  deploy-core:
+    needs: [guard, images, database, web]
+    runs-on: ubuntu-latest
+    outputs:
+      core_url: ${{ steps.vars.outputs.core_url }}
+      gateway_url: ${{ steps.vars.outputs.gateway_url }}
+    env:
+      SLUG: ${{ needs.guard.outputs.slug }}
+      NS: ${{ needs.guard.outputs.namespace }}
+      RELEASE: ${{ needs.guard.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Never production
+        run: |
+          [[ -n "$NS" && "$NS" != "eps-prod" && "$SLUG" != "prod" && "$RELEASE" != "eps" ]] ||
+            { echo "::error::refusing to deploy a preview into production ($NS)"; exit 1; }
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - uses: ./.github/actions/kube
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Cluster add-ons (first run only; cluster-bootstrap.yml can re-run them)
+        run: |
+          if ! kubectl get namespace traefik >/dev/null 2>&1; then deploy/cluster/addons.sh; fi
+      - name: Environment names
+        id: vars
+        run: |
+          base=$(deploy/scripts/core-base-domain.sh)
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "core_url=https://core.$SLUG.$base" >> "$GITHUB_OUTPUT"
+          echo "gateway_url=https://gw.$SLUG.$base" >> "$GITHUB_OUTPUT"
+      - name: Database secret for the namespace (eps_core_login, fresh password per push)
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_BRANCH: ${{ needs.guard.outputs.neon_branch }}
+        run: |
+          f="$RUNNER_TEMP/neon.env"; l="$RUNNER_TEMP/login.env"
+          NEON_OUTPUT_FILE="$f" deploy/scripts/neon-branch.sh uri "$NEON_BRANCH" > /dev/null
+          DATABASE_URL=$(sed -n 's/^database_url_unpooled=//p' "$f")
+          export DATABASE_URL
+          (cd services && go run ./cmd/migrate -login core -out "$l")
+          pw=$(sed -n 's/^password=//p' "$l"); echo "::add-mask::$pw"
+          url=$(sed -n 's/^url=//p' "$l"); echo "::add-mask::$url"
+          rm -f "$f" "$l"
+          kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "$NS" create secret generic eps-db --from-literal=DATABASE_URL="$url" \
+            --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+      - name: helm upgrade --install (atomic)
+        env:
+          WEB_ORIGINS: ${{ needs.web.outputs.origins }}
+        run: |
+          # Exact origins only: production's and this preview's own Vercel URLs (no wildcards).
+          origins="$PRODUCTION_WEB_ORIGINS${WEB_ORIGINS:+,$WEB_ORIGINS}"
+          jq -n --arg o "$origins" --arg env "$SLUG" --arg base "${{ steps.vars.outputs.base }}" \
+            --arg reg "$REGISTRY" --arg tag "$SHA" --arg run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            '{global: {env: $env, baseDomain: $base, corsAllowedOrigins: $o, rolloutId: $run,
+              image: {registry: $reg, tag: $tag}}}' > "$RUNNER_TEMP/ci-values.json"
+          helm upgrade --install "$RELEASE" deploy/helm/eps \
+            --namespace "$NS" \
+            -f deploy/helm/eps/values-preview.yaml -f "$RUNNER_TEMP/ci-values.json" \
+            --atomic --wait --timeout 10m
+      - name: Core answers over HTTPS
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS "${{ steps.vars.outputs.core_url }}/healthz"; then echo; exit 0; fi
+            sleep 10
+          done
+          echo "::error::The preview core did not answer over HTTPS within 10 minutes (certificate or ingress)."
+          kubectl -n "$NS" get pods,ingress,certificate || true
+          exit 1
+
+  e2e:
+    needs: [deploy-core, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The preview is bound to the CI database
+        if: needs.web.outputs.db_bound != 'true'
+        run: |
+          echo "::error title=Missing secret::VERCEL_TOKEN is not set, so the Vercel preview has no database (it never uses the Neon-Vercel integration's copy of production). Add the VERCEL_TOKEN Actions secret."
+          exit 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - name: Playwright against the deployed preview
+        working-directory: apps/web
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ needs.web.outputs.url }}
+          CORE_URL: ${{ needs.deploy-core.outputs.core_url }}
+          EXPECT_WEB_COMMIT: ${{ env.SHA }}
+          EXPECT_CORE_COMMIT: ${{ env.SHA }}
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+      - name: Comment the preview addresses on the pull request
+        if: always() && needs.web.outputs.url
+        uses: actions/github-script@v7
+        env:
+          WEB_URL: ${{ needs.web.outputs.url }}
+          CORE_URL: ${{ needs.deploy-core.outputs.core_url }}
+          GATEWAY_URL: ${{ needs.deploy-core.outputs.gateway_url }}
+        with:
+          script: |
+            const marker = "<!-- eps-preview -->";
+            const body = [
+              marker,
+              "### Preview environment",
+              "",
+              `| | |`, `|---|---|`,
+              `| Web | ${process.env.WEB_URL} |`,
+              `| Status | ${process.env.WEB_URL}/status |`,
+              `| Core | ${process.env.CORE_URL} |`,
+              `| Gateway | ${process.env.GATEWAY_URL} |`,
+              `| Commit | \`${process.env.SHA}\` |`,
+            ].join("\n");
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number,
+            });
+            const mine = comments.find((c) => c.body.includes(marker));
+            if (mine) await github.rest.issues.updateComment({ owner: context.repo.owner, repo: context.repo.repo, comment_id: mine.id, body });
+            else await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });

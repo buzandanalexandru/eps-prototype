@@ -1,0 +1,5 @@
+apiVersion: v2
+name: redis
+description: Redis for one EPS environment (official redis:8 image, no Bitnami dependency, AOF off).
+type: application
+version: 0.1.0
