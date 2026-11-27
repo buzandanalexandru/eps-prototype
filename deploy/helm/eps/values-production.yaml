@@ -1,7 +1,7 @@
 # main -> namespace eps-prod. Autoscaling and final sizing arrive in step 12.
 global:
   env: prod
-  corsAllowedOrigins: "https://eps-prototype-devblocks.vercel.app"
+  corsAllowedOrigins: "https://eps-prototype.vercel.app,https://eps-prototype-devblocks.vercel.app"
 core:
   replicas: 2
   database: { enabled: true, maxConns: 8 }

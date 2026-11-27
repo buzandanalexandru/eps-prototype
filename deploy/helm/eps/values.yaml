@@ -17,7 +17,7 @@ global:
   # Exact browser origins allowed by CORS (no wildcards: any Vercel account can register a project
   # whose URL matches a pattern). Production's web origin here; a preview's exact Vercel URLs are
   # set by CI.
-  corsAllowedOrigins: "https://eps-prototype-devblocks.vercel.app"
+  corsAllowedOrigins: "https://eps-prototype.vercel.app,https://eps-prototype-devblocks.vercel.app"
   # Allowed core-token issuers; empty means "urn:eps:web:<global.env>" (design D0.4).
   tokenIssuers: ""
   # Set by CI to the run id: restarts pods when the database secret changes.

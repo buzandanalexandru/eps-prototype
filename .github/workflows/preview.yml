@@ -33,7 +33,7 @@ env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
   BRANCH: ${{ github.head_ref }}
   SHA: ${{ github.event.pull_request.head.sha }}
-  PRODUCTION_WEB_ORIGIN: https://eps-prototype-devblocks.vercel.app
+  PRODUCTION_WEB_ORIGINS: https://eps-prototype.vercel.app,https://eps-prototype-devblocks.vercel.app
 
 jobs:
   guard:
@@ -230,7 +230,7 @@ jobs:
           WEB_ORIGINS: ${{ needs.web.outputs.origins }}
         run: |
           # Exact origins only: production's and this preview's own Vercel URLs (no wildcards).
-          origins="$PRODUCTION_WEB_ORIGIN${WEB_ORIGINS:+,$WEB_ORIGINS}"
+          origins="$PRODUCTION_WEB_ORIGINS${WEB_ORIGINS:+,$WEB_ORIGINS}"
           jq -n --arg o "$origins" --arg env "$SLUG" --arg base "${{ steps.vars.outputs.base }}" \
             --arg reg "$REGISTRY" --arg tag "$SHA" --arg run "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
             '{global: {env: $env, baseDomain: $base, corsAllowedOrigins: $o, rolloutId: $run,
