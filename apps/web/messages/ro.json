@@ -68,7 +68,10 @@
       "saved": "Salvat",
       "invited": "Invitația a fost creată",
       "copy": "Copiază linkul",
-      "copied": "Copiat"
+      "copied": "Copiat",
+      "pages": "Pagini",
+      "previous": "Înapoi",
+      "next": "Înainte"
     }
   },
   "status": {
@@ -142,7 +145,13 @@
     "email_invalid": "Introdu o adresă de e-mail validă.",
     "scope_required": "Alege un brand sau un eveniment.",
     "invitation_invalid": "Invitația a expirat, a fost deja folosită sau nu există.",
-    "invitation_other_email": "Invitația este pentru altă adresă de e-mail. Autentifică-te cu adresa invitată."
+    "invitation_other_email": "Invitația este pentru altă adresă de e-mail. Autentifică-te cu adresa invitată.",
+    "sample_locked": "Adresele datelor de exemplu sunt fixe.",
+    "currency_locked": "Moneda nu se mai poate schimba după ce brandul are evenimente.",
+    "currency_mismatch": "Un eveniment se poate muta doar la un brand cu aceeași monedă.",
+    "brand_has_published_events": "Brandul are evenimente publicate: nu poate fi șters.",
+    "deposit_one_kind": "Stabilește avansul fie ca sumă, fie ca procent.",
+    "in_use": "Este încă folosit."
   },
   "onboarding": {
     "step": "Pasul {n} din {of}",
@@ -231,7 +240,8 @@
     "linkLead": "Linkul invitației (afișat o singură dată):",
     "acceptTitle": "Alătură-te unei organizații",
     "acceptLead": "Ești autentificat ca {email}. Acceptă pentru a intra în organizația care a invitat această adresă.",
-    "accept": "Acceptă invitația"
+    "accept": "Acceptă invitația",
+    "scopeNotEnforced": "Accesul limitat se înregistrează, dar nu se aplică în prototip: fiecare membru vede toată organizația."
   },
   "fees": {
     "title": "Comisioanele platformei",
@@ -380,7 +390,8 @@
       "instalments_end_after_event": "Ratele pentru {detail} se termină cu mai puțin de 7 zile înainte de eveniment",
       "deposit_too_large": "Avansul pentru {detail} nu este sub preț",
       "addon_requires_missing": "{detail} cere un bilet pe care evenimentul nu îl vinde",
-      "consent_below_min_age": "Vârsta pentru acordul părintelui este sub vârsta minimă"
+      "consent_below_min_age": "Vârsta pentru acordul părintelui este sub vârsta minimă",
+      "slot_grid_mismatch": "Intervalele care folosesc {detail} au ore diferite"
     }
   },
   "products": {
@@ -486,7 +497,7 @@
     "youAreHere": "în vigoare",
     "ladderHint": "Lasă prețul gol pentru a elimina un rând. Datele sunt în fusul orar al evenimentului.",
     "instalments": "Rate",
-    "instalmentsHint": "Un avans acum și rate lunare egale; ultima este cu cel puțin 7 zile înainte de eveniment (cel mult {max} rate de la prima zi de vânzare).",
+    "instalmentsHint": "Un avans acum și cel mult atâtea rate lunare egale. Fiecare cumpărător primește câte rate se încheie cu cel puțin 7 zile înainte de eveniment (următorul cumpărător: cel mult {max}).",
     "scheduleTotal": "Total {amount}",
     "depositNow": "{amount} acum",
     "scheduleInvalid": "Planul salvat nu mai încape înainte de eveniment.",
@@ -494,7 +505,18 @@
     "deposit": "Avans ({currency})",
     "monthlyCount": "Rate lunare",
     "dayOfMonth": "Ziua din lună",
-    "removePlan": "Elimină planul de rate"
+    "removePlan": "Elimină planul de rate",
+    "buyersFrom": "Cumpărătorii de la {date} primesc {n, plural, one {# rată lunară} few {# rate lunare} other {# de rate lunare}}",
+    "buyersFromNone": "Cumpărătorii de la {date}: fără rate (ultima plată ar fi prea aproape de eveniment)",
+    "depositKind": "Avans",
+    "depositAmount": "O sumă fixă",
+    "depositPercentLabel": "O parte din preț",
+    "depositPercent": "Avans (%)",
+    "ticketLifecycle": "Personalizare și check-in",
+    "personaliseDeadline": "Personalizare până la",
+    "checkinDeadline": "Check-in online gratuit până la",
+    "lateCheckinFee": "Taxă pentru check-in întârziat",
+    "ticketLifecycleHint": "Folosite de bilete după cumpărare (bilete nominale, check-in online)."
   },
   "pools": {
     "lead": "O capacitate poate fi folosită de mai multe produse, iar un produs poate folosi mai multe capacități. O capacitate pe zi sau pe interval are câte un contor pentru fiecare zi sau interval.",

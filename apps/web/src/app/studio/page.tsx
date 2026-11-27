@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
 import { listBrands } from "@/lib/organisers/domain";
-import { listEvents, loadEventGraph } from "@/lib/catalogue/domain";
+import { listEvents, loadEventGraphs, PAGE_SIZE } from "@/lib/catalogue/domain";
 import { eventReadiness } from "@/lib/catalogue/readiness";
 import { requireStudio, studioTx } from "@/lib/studio/context";
 import { lt } from "@/lib/studio/text";
@@ -15,9 +15,10 @@ export default async function StudioPage() {
   const locale = await getLocale();
   const { brands, events } = await studioTx(s, async (c) => {
     const brands = await listBrands(c);
-    const evs = await listEvents(c);
-    const events = [];
-    for (const e of evs) events.push({ ...e, problems: eventReadiness((await loadEventGraph(c, e.id))!).length });
+    const evs = await listEvents(c, { limit: PAGE_SIZE });
+    // One batch of queries for every event's readiness (no query per event).
+    const graphs = new Map((await loadEventGraphs(c, evs.map((e) => e.id))).map((g) => [g.event.id, g]));
+    const events = evs.map((e) => ({ ...e, problems: eventReadiness(graphs.get(e.id)!).length }));
     return { brands, events };
   });
   return (

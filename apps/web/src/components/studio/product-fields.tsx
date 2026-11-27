@@ -172,6 +172,27 @@ export async function ProductFields({ type, product, days, others, tz }: { type:
           <Input name="sort" inputMode="numeric" defaultValue={String(product?.sort ?? 0)} />
         </Label>
       </div>
+      <details className="text-sm">
+        <summary className="cursor-pointer">{t("ticketLifecycle")}</summary>
+        <div className="grid gap-3 pt-2 sm:grid-cols-3">
+          <Label>
+            {t("personaliseDeadline")}
+            <Input name="personaliseDeadline" type="datetime-local" defaultValue={product?.personalise_deadline ? toLocalInput(product.personalise_deadline, tz) : ""} />
+            <FieldError name="personaliseDeadline" />
+          </Label>
+          <Label>
+            {t("checkinDeadline")}
+            <Input name="checkinDeadline" type="datetime-local" defaultValue={product?.checkin_deadline ? toLocalInput(product.checkin_deadline, tz) : ""} />
+            <FieldError name="checkinDeadline" />
+          </Label>
+          <Label>
+            {t("lateCheckinFee")}
+            <Input name="lateCheckinFee" inputMode="decimal" defaultValue={product?.late_checkin_fee_minor != null ? toMajorString(product.late_checkin_fee_minor) : ""} />
+            <FieldError name="lateCheckinFeeMinor" />
+          </Label>
+        </div>
+        <Hint>{t("ticketLifecycleHint")}</Hint>
+      </details>
       <div className="flex flex-wrap gap-4">
         <Check name="named" defaultChecked={product?.named ?? false} label={t("named")} />
         <Check name="visible" defaultChecked={product?.visible ?? true} label={t("visible")} />

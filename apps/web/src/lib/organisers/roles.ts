@@ -18,9 +18,12 @@ export function assertOwner(role: string, action: OwnerAction): void {
   if (role !== "owner") throw new DomainError("owner_only", undefined, { action });
 }
 
-/** The role claim in core tokens (design D0.4): owner, admin, or staff for every other role. */
-export function coreRoleClaim(role: string): "owner" | "admin" | "staff" {
-  return role === "owner" ? "owner" : role === "admin" ? "admin" : "staff";
+export const CORE_ROLES = ["owner", "admin", "box_office", "finance", "staff"] as const;
+export type CoreRole = (typeof CORE_ROLES)[number];
+
+/** The role claim in core tokens: the exact membership role (unknown values fall back to staff). */
+export function coreRoleClaim(role: string): CoreRole {
+  return (CORE_ROLES as readonly string[]).includes(role) ? (role as CoreRole) : "staff";
 }
 
 /** The last owner can be neither demoted nor removed. */

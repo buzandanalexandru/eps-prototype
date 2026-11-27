@@ -7,12 +7,17 @@ export function isMinor(n: unknown): n is number {
   return typeof n === "number" && Number.isSafeInteger(n);
 }
 
-/** "539", "539.5", "539.50" or "539,50" → 53950. Returns null for anything else (or more than 2 decimals). */
+/**
+ * "539", "539.5", "539.50" or "539,50" → 53950. Returns null for anything else: signs, spaces inside,
+ * thousands separators, more than 2 decimals, or more than 1,000,000.00.
+ */
+export const MAX_MAJOR = 1_000_000;
 export function parseMajor(input: string): number | null {
   const s = input.trim().replace(",", ".");
-  const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(s);
+  const m = /^(0|[1-9]\d{0,6})(?:\.(\d{1,2}))?$/.exec(s);
   if (!m) return null;
-  return Number(m[1]) * 100 + Number((m[2] ?? "").padEnd(2, "0"));
+  const v = Number(m[1]) * 100 + Number((m[2] ?? "").padEnd(2, "0"));
+  return v <= MAX_MAJOR * 100 ? v : null;
 }
 
 /** 55248 → "552.48" (no currency, dot separator: the stable form used in tests and inputs). */

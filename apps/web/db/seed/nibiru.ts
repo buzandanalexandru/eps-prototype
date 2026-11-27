@@ -16,8 +16,10 @@ function seasonDays(): string[] {
 
 // Galaxia presale opened before the teardown (27 Nov 2026). ASSUMPTION: 1 Oct 2026.
 const PRESALE = "2026-10-01T09:00:00Z";
-// "10 RON now locks the price, then 9 monthly instalments" (teardown §5).
-const NIBIRU_PLAN = { depositMinor: 1000, monthlyCount: 9, dayOfMonth: 1 };
+// "10 RON now locks the price, then 9 monthly instalments" (teardown §5). A plan's count is a
+// maximum, capped per buyer so the last payment falls 7 days before the event: at demo time (early
+// December 2026) a buyer gets 7, so the sample offers "10 RON now and up to 7 monthly payments".
+const NIBIRU_PLAN = { depositMinor: 1000, monthlyCount: 7, dayOfMonth: 1 };
 
 function pass(key: string, ro: string, en: string, zone: string, priceMinor: number, perks: [string, string][], pools: string[], sort: number): SampleProduct {
   return {
@@ -130,7 +132,11 @@ export const nibiru: SampleOrganiser = {
       starts: "2027-06-24T17:00",
       ends: "2027-09-06T03:00",
       days: { ...SEASON, opens: "17:00", closes: "03:00" },
-      pools: [{ key: "promenada", name: "Promenada (pe zi)", capacity: 8000, scope: "day" }],
+      pools: [
+        { key: "promenada", name: "Promenada (pe zi)", capacity: 8000, scope: "day" },
+        // Any-Day tickets draw on an event pool (the day is picked later). ASSUMPTION: size.
+        { key: "any-day", name: "Any-Day (sezon)", capacity: 20000, scope: "event" },
+      ],
       products: [
         {
           key: "pick-a-day",
@@ -165,7 +171,7 @@ export const nibiru: SampleOrganiser = {
           config: { days: seasonDays() },
           maxPerOrder: 10,
           sort: 2,
-          pools: ["promenada"],
+          pools: ["any-day"],
           // From 15 RON (teardown); ASSUMPTION: the later steps.
           ladder: {
             mode: "by_date",

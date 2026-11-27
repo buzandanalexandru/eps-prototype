@@ -33,5 +33,5 @@ None.
 
 - New control-schema tables (all with `organiser_id` and forced row-level security except the platform fee table): `brands`, `brand_hostnames`, `fee_policies`, `venues`, `events`, `event_days`, `lineup_slots`, `products`, `capacity_pools`, `product_pools`, `price_steps`, `instalment_plans`, `invitations`; `organisers` and `memberships` from step 0 gain columns.
 - EPS Studio screens under `/studio`, a public `/fees` page, a shared money and pricing module in `apps/web/src/lib/pricing/` that steps 3 and 4 reuse.
-- CI gains a seed job after migrations on previews and production.
+- Previews are seeded after migrations; production is seeded only on request (`seed.yml`).
 - `zod` for input validation (small utility).

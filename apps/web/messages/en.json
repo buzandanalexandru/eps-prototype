@@ -68,7 +68,10 @@
       "saved": "Saved",
       "invited": "Invitation created",
       "copy": "Copy link",
-      "copied": "Copied"
+      "copied": "Copied",
+      "pages": "Pages",
+      "previous": "Previous",
+      "next": "Next"
     }
   },
   "status": {
@@ -142,7 +145,13 @@
     "email_invalid": "Enter a valid email address.",
     "scope_required": "Choose a brand or an event.",
     "invitation_invalid": "This invitation has expired, was already used, or does not exist.",
-    "invitation_other_email": "This invitation is for another email address. Sign in with the invited address."
+    "invitation_other_email": "This invitation is for another email address. Sign in with the invited address.",
+    "sample_locked": "Sample data addresses are fixed.",
+    "currency_locked": "The currency cannot change once the brand has events.",
+    "currency_mismatch": "An event can move only to a brand with the same currency.",
+    "brand_has_published_events": "This brand has published events: it cannot be deleted.",
+    "deposit_one_kind": "Set the deposit as an amount or as a percentage.",
+    "in_use": "This is still in use."
   },
   "onboarding": {
     "step": "Step {n} of {of}",
@@ -231,7 +240,8 @@
     "linkLead": "Invitation link (shown once):",
     "acceptTitle": "Join an organisation",
     "acceptLead": "You are signed in as {email}. Accept to join the organisation that invited this address.",
-    "accept": "Accept invitation"
+    "accept": "Accept invitation",
+    "scopeNotEnforced": "Scopes are recorded but not enforced in the prototype: every member sees the whole organisation."
   },
   "fees": {
     "title": "Platform fees",
@@ -380,7 +390,8 @@
       "instalments_end_after_event": "The instalments of {detail} end less than 7 days before the event",
       "deposit_too_large": "The deposit of {detail} is not below its price",
       "addon_requires_missing": "{detail} requires a ticket the event does not sell",
-      "consent_below_min_age": "The consent age is below the minimum age"
+      "consent_below_min_age": "The consent age is below the minimum age",
+      "slot_grid_mismatch": "Time slots drawing on {detail} use different slot times"
     }
   },
   "products": {
@@ -486,7 +497,7 @@
     "youAreHere": "in force",
     "ladderHint": "Leave a row's price empty to remove it. Dates are in the event's time zone.",
     "instalments": "Instalments",
-    "instalmentsHint": "A deposit now and equal monthly payments; the last falls at least 7 days before the event (at most {max} payments from the first sales day).",
+    "instalmentsHint": "A deposit now and up to this many equal monthly payments. Each buyer gets as many as still end at least 7 days before the event (next buyer: at most {max}).",
     "scheduleTotal": "All-in {amount}",
     "depositNow": "{amount} now",
     "scheduleInvalid": "The saved plan no longer fits before the event.",
@@ -494,7 +505,18 @@
     "deposit": "Deposit ({currency})",
     "monthlyCount": "Monthly payments",
     "dayOfMonth": "Day of the month",
-    "removePlan": "Remove the instalment plan"
+    "removePlan": "Remove the instalment plan",
+    "buyersFrom": "Buyers from {date} get {n, plural, one {# monthly payment} other {# monthly payments}}",
+    "buyersFromNone": "Buyers from {date}: no instalments (the last payment would be too close to the event)",
+    "depositKind": "Deposit",
+    "depositAmount": "A fixed amount",
+    "depositPercentLabel": "A share of the price",
+    "depositPercent": "Deposit (%)",
+    "ticketLifecycle": "Personalisation and check-in",
+    "personaliseDeadline": "Personalise by",
+    "checkinDeadline": "Free online check-in until",
+    "lateCheckinFee": "Late check-in fee",
+    "ticketLifecycleHint": "Used by tickets after purchase (named tickets, online check-in)."
   },
   "pools": {
     "lead": "One pool can be shared by several products, and a product can draw on several pools. A per-day or per-slot pool has its own counter for each day or slot.",

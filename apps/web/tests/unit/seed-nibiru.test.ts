@@ -76,9 +76,13 @@ describeDb("seeded sample organisers", () => {
     const onArena = g.links.filter((l) => l.pool_id === arena.id).map((l) => g.products.find((p) => p.id === l.product_id)!.name.en);
     expect(onArena).toEqual(expect.arrayContaining(["General Access", "General Access Plus"]));
     const plan = g.plans.find((p) => p.product_id === ga.id)!;
-    const s = instalmentSchedule({ allInMinor: sides.allInMinor, depositMinor: plan.deposit_minor, monthlyCount: plan.monthly_count, dayOfMonth: plan.day_of_month, from: planReference(ga, NOW), eventStartsAt: g.event.starts_at });
+    expect(plan.monthly_count).toBe(7);
+    const s = instalmentSchedule({ allInMinor: sides.allInMinor, depositMinor: plan.deposit_minor!, monthlyCount: plan.monthly_count, dayOfMonth: plan.day_of_month, from: planReference(ga, NOW), eventStartsAt: g.event.starts_at, timeZone: g.event.timezone, capToFit: true });
     expect(s.ok && toMajorString(s.depositMinor)).toBe("10.00");
-    expect(s.ok && s.payments.length).toBe(9);
+    expect(s.ok && s.payments.length).toBe(7);
+    // At demo time (5 Dec 2026) a buyer gets all 7: "10 RON now and up to 7 monthly payments".
+    const demo = instalmentSchedule({ allInMinor: sides.allInMinor, depositMinor: 1000, monthlyCount: 7, dayOfMonth: 1, from: new Date("2026-12-05T10:00:00Z"), eventStartsAt: g.event.starts_at, timeZone: g.event.timezone, capToFit: true });
+    expect(demo.ok && demo.payments.length).toBe(7);
     const camping = g.products.find((p) => p.type === "add_on")!;
     expect(camping.config).toEqual({ requires: "any_ticket" });
     expect(g.links.filter((l) => l.product_id === camping.id).map((l) => g.pools.find((p) => p.id === l.pool_id)!.name)).toEqual(["Camping"]);
@@ -97,8 +101,11 @@ describeDb("seeded sample organisers", () => {
     const at = new Date("2026-12-15T12:00:00+02:00");
     expect(activePriceStep({ steps, at }).priceMinor).toBe(1100);
     expect(nextPriceStep({ steps, at })?.priceMinor).toBe(1200);
-    expect(prom.pools).toEqual([expect.objectContaining({ capacity: 8000, scope: "day" })]);
     const anyDay = prom.products.find((p) => p.type === "flex_day")!;
+    const poolOf = (pid: string) => prom.links.filter((l) => l.product_id === pid).map((l) => prom.pools.find((x) => x.id === l.pool_id)!);
+    expect(poolOf(pick.id)).toEqual([expect.objectContaining({ capacity: 8000, scope: "day" })]);
+    // A flexible day draws on an event pool (its day is picked later).
+    expect(poolOf(anyDay.id)).toEqual([expect.objectContaining({ scope: "event" })]);
     expect(stepsOf(prom.steps, anyDay.id)[0].priceMinor).toBe(1500);
     expect((anyDay.config.days as string[]).length).toBe(74);
 
@@ -138,11 +145,15 @@ describeDb("seeded sample organisers", () => {
     const ids = SAMPLE_ORGANISERS.map(organiserId);
     await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW });
     const first = await snapshot(ids);
-    // A visitor edits the sample in Studio: a price, a new event.
+    // A visitor edits the sample in Studio: a price, rules, a new event and venue used by a seeded
+    // event, and a day outside the seeded dates.
+    const standup = sid("nibiru", "event", "stand-up-the-fool");
     await tx({ organiserId: NIBIRU }, async (c) => {
       await c.query("update control.price_steps set price_minor = 1 where organiser_id = $1", [NIBIRU]);
       await c.query("update control.events set fee_policy = 'absorb', max_per_account = 99 where organiser_id = $1", [NIBIRU]);
-      await festival(c, sid("nibiru", "brand", "festivals"));
+      const f = await festival(c, sid("nibiru", "brand", "festivals"));
+      await c.query("update control.events set venue_id = $1, ends_at = '2027-07-10T20:00:00Z' where id = $2", [f.venue.id, standup]);
+      await c.query("insert into control.event_days (organiser_id, event_id, day, opens, closes) values ($1, $2, '2027-07-09', '20:00', '23:00')", [NIBIRU, standup]);
     });
     await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW });
     const second = await snapshot(ids);
@@ -162,5 +173,29 @@ describeDb("seeded sample organisers", () => {
     const users = await asOwner(async (c) => (await c.query(`select id from control."user" where email = $1`, [`demo-organiser@${DOMAIN}`])).rows);
     expect(users).toHaveLength(1);
     expect(typeof DEMO_ORGANISER_USER_ID).toBe("string");
+  });
+
+  it("never changes a published event or anything of it", async () => {
+    await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW });
+    const padel = sid("nibiru", "event", "padel-2027");
+    await asOwner((c) => c.query("update control.events set status = 'published' where id = $1", [padel]));
+    try {
+      await tx({ organiserId: NIBIRU }, (c) => c.query("update control.price_steps set price_minor = 4900 where product_id in (select id from control.products where event_id = $1)", [padel]));
+      const before = await tx({ organiserId: NIBIRU }, (c) => loadEventGraph(c, padel));
+      const r = await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW });
+      expect(r[0].events.find((e) => e.id === padel)?.skipped).toBe("published");
+      const after = await tx({ organiserId: NIBIRU }, (c) => loadEventGraph(c, padel));
+      expect(after).toEqual(before);
+      expect(stepsOf(after!.steps, after!.products[0].id)[0].priceMinor).toBe(4900);
+    } finally {
+      await asOwner((c) => c.query("update control.events set status = 'draft' where id = $1", [padel]));
+    }
+  });
+
+  it("moves the stable demo user to a new demo domain instead of failing", async () => {
+    await applySeed(testPool(), { demoDomain: "old-demo.eps.invalid", now: NOW, organisers: [nibiru] });
+    await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW, organisers: [nibiru] });
+    const members = await tx({ organiserId: NIBIRU }, (c) => listMembers(c));
+    expect(members).toEqual([expect.objectContaining({ email: `demo-organiser@${DOMAIN}`, role: "owner" })]);
   });
 });

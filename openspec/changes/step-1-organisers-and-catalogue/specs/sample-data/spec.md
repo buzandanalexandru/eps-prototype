@@ -15,7 +15,7 @@ The seed SHALL create a sample organiser "NIBIRU" with two brands, "NIBIRU Festi
 Test: apps/web/tests/e2e/sample-data.spec.ts
 
 ### Requirement: Galaxia 2027 festival passes by zone
-The seed SHALL create Galaxia 2027 (15 to 18 Jul 2027, NIBIRU Arena) with passes GA 539, GA Plus 659, Golden Circle 839, VIP 939 and Ultra VIP 1,239 RON face price, GA and GA Plus sharing one Arena pool, a camping add-on with its own pool, named tickets, and instalments of 10 RON now plus 9 monthly payments.
+The seed SHALL create Galaxia 2027 (15 to 18 Jul 2027, NIBIRU Arena) with passes GA 539, GA Plus 659, Golden Circle 839, VIP 939 and Ultra VIP 1,239 RON face price, GA and GA Plus sharing one Arena pool, a camping add-on with its own pool, named tickets, and instalments of 10 RON now plus up to 7 monthly payments (capped per buyer, so a buyer in early December 2026 gets all 7).
 
 #### Scenario: Galaxia prices all-in
 - **WHEN** the seeded GA pass is shown in Studio
@@ -28,7 +28,7 @@ Test: apps/web/tests/unit/seed-nibiru.test.ts
 Test: apps/web/tests/unit/seed-nibiru.test.ts
 
 ### Requirement: Resort products
-The seed SHALL create NIBIRU Resort's season products: Beer Garden concert tables in categories C 79, B 99 and A 149 RON with up to 4 equal monthly payments; Promenada access with a pick-a-day ticket on a date ladder from 10 to 35 RON and an Any-Day ticket from 15 RON; a Center Stage evening ticket that is a 25 RON drink voucher; padel at 50 RON per 30-minute slot; a stand-up night for ages 16 and up.
+The seed SHALL create NIBIRU Resort's season products: Beer Garden concert tables in categories C 79, B 99 and A 149 RON with up to 4 equal monthly payments; Promenada access with a pick-a-day ticket on a date ladder from 10 to 35 RON and an Any-Day ticket from 15 RON drawing on an event pool; a Center Stage evening ticket that is a 25 RON drink voucher; padel at 50 RON per 30-minute slot; a stand-up night for ages 16 and up.
 
 #### Scenario: Promenada ladder
 - **WHEN** the seeded Promenada pick-a-day ticket is read on 15 Dec 2026
@@ -57,11 +57,21 @@ Every seeded record SHALL pass the same validation as a record entered in Studio
 Test: apps/web/tests/unit/seed-nibiru.test.ts
 
 ### Requirement: Seed is repeatable and touches only sample organisers
-Running the seed again SHALL restore the sample organisers to their defined state without duplicates, and MUST NOT change any organiser that is not flagged as sample.
+Running the seed again SHALL restore the sample organisers to their defined state without duplicates, removing only unpublished rows a visitor added, and MUST NOT change any organiser that is not flagged as sample, nor any published event of a sample organiser or anything that belongs to it. Previews are seeded on every push; production is seeded only on request.
 
 #### Scenario: Run twice
 - **WHEN** the seed runs twice on the same database
 - **THEN** the second run creates no new rows and the catalogue equals the first run's
+Test: apps/web/tests/unit/seed-nibiru.test.ts
+
+#### Scenario: Published event untouched
+- **WHEN** a seeded event has been published and the seed runs again
+- **THEN** none of that event's rows change
+Test: apps/web/tests/unit/seed-nibiru.test.ts
+
+#### Scenario: Visitor changes are undone
+- **WHEN** a visitor moved a seeded event to a new venue, added a day outside its dates and changed prices, and the seed runs again
+- **THEN** the seeded catalogue is restored and the visitor's unused venue is removed
 Test: apps/web/tests/unit/seed-nibiru.test.ts
 
 #### Scenario: Real organiser untouched

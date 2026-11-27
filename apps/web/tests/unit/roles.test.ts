@@ -10,8 +10,10 @@ describe("role rules", () => {
     expect(() => assertOwner("owner", "team")).not.toThrow();
     for (const r of ["admin", "box_office", "finance", "staff"]) expect(() => assertOwner(r, "fee_policy")).toThrow("owner_only");
   });
-  it("maps roles to the core token's claim", () => {
-    expect([coreRoleClaim("owner"), coreRoleClaim("admin"), coreRoleClaim("box_office"), coreRoleClaim("finance")]).toEqual(["owner", "admin", "staff", "staff"]);
+  it("carries the exact role in the core token", () => {
+    expect([coreRoleClaim("owner"), coreRoleClaim("admin"), coreRoleClaim("box_office"), coreRoleClaim("finance")]).toEqual(["owner", "admin", "box_office", "finance"]);
+    expect(coreRoleClaim("staff")).toBe("staff");
+    expect(coreRoleClaim("root")).toBe("staff");
   });
 });
 

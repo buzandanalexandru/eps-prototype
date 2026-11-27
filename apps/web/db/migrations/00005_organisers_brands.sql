@@ -9,6 +9,27 @@ ALTER TABLE control.organisers
     ADD COLUMN is_sample        boolean NOT NULL DEFAULT false,
     ADD COLUMN onboarding_state text    NOT NULL DEFAULT 'done' CHECK (onboarding_state IN ('brand', 'done'));
 
+-- The registry gets row-level security (step 1 review): the web role sees only organisers it is
+-- scoped to or a member of, inserts only the organiser its transaction is scoped to (the creation
+-- path), may change only the name and the onboarding state, and never deletes. Slugs and the sample
+-- flag are set at creation (the sample flag only by the seed, as the migrating owner).
+ALTER TABLE control.organisers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE control.organisers FORCE ROW LEVEL SECURITY;
+REVOKE INSERT, UPDATE, DELETE ON control.organisers FROM eps_web;
+GRANT INSERT (id, slug, name, onboarding_state) ON control.organisers TO eps_web;
+GRANT UPDATE (name, onboarding_state) ON control.organisers TO eps_web;
+CREATE POLICY web_read ON control.organisers FOR SELECT TO eps_web
+    USING (id = nullif(current_setting('app.organiser_id', true), '')::uuid
+           OR id IN (SELECT m.organiser_id FROM control.memberships m
+                     WHERE m.user_id = nullif(current_setting('app.user_id', true), '')));
+CREATE POLICY web_create ON control.organisers FOR INSERT TO eps_web
+    WITH CHECK (id = nullif(current_setting('app.organiser_id', true), '')::uuid);
+CREATE POLICY web_update ON control.organisers FOR UPDATE TO eps_web
+    USING (id = nullif(current_setting('app.organiser_id', true), '')::uuid)
+    WITH CHECK (id = nullif(current_setting('app.organiser_id', true), '')::uuid);
+-- The core reads the registry (step 0 grant).
+CREATE POLICY core_read ON control.organisers FOR SELECT TO eps_core USING (true);
+
 -- The active organiser of a sign-in session (D1.1): a Better Auth session field, read when the core
 -- token is issued. A membership check always follows, so a stale value grants nothing.
 ALTER TABLE control."session" ADD COLUMN "activeOrganiserId" text;
@@ -46,6 +67,7 @@ CREATE TABLE control.brand_hostnames (
     created_at   timestamptz NOT NULL DEFAULT now(),
     FOREIGN KEY (organiser_id, brand_id) REFERENCES control.brands (organiser_id, id) ON DELETE CASCADE
 );
+CREATE INDEX brand_hostnames_brand_idx ON control.brand_hostnames (brand_id);
 
 -- Team invitations: a pending row and a copyable link; only the token's hash is stored.
 CREATE TABLE control.invitations (
@@ -116,6 +138,7 @@ GRANT USAGE ON SCHEMA control TO eps_slug_check;
 GRANT SELECT (slug) ON control.brands TO eps_slug_check;
 GRANT SELECT (slug) ON control.organisers TO eps_slug_check;
 CREATE POLICY slug_check_read ON control.brands FOR SELECT TO eps_slug_check USING (true);
+CREATE POLICY slug_check_read ON control.organisers FOR SELECT TO eps_slug_check USING (true);
 
 -- +goose StatementBegin
 CREATE FUNCTION control.slug_available(kind text, candidate text) RETURNS boolean

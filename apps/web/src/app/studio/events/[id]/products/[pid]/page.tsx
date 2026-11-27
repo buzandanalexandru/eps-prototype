@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getLocale, getTranslations } from "next-intl/server";
-import { loadEventGraph, planReference, stepsOf } from "@/lib/catalogue/domain";
+import { loadEventGraph, planBreakpoints, planDeposit, planReference, stepsOf } from "@/lib/catalogue/domain";
 import { priceSides } from "@/lib/catalogue/display";
 import { toLocalInput } from "@/lib/catalogue/time";
 import { activePriceStep, activePriceStepIndex, formatMoney, instalmentSchedule, maxMonthlyPayments, nextPriceStep, toMajorString } from "@/lib/pricing";
@@ -33,10 +33,21 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
   const plan = g.plans.find((x) => x.product_id === p.id);
   const from = planReference(p, now);
   const allIn = steps.length ? priceSides(g, activePriceStep({ steps, at: from }).priceMinor).allInMinor : null;
+  // The schedule for the next buyer (capped to what still fits), and when buyers get how many payments.
   const schedule =
     plan && allIn !== null
-      ? instalmentSchedule({ allInMinor: allIn, depositMinor: plan.deposit_minor, monthlyCount: plan.monthly_count, dayOfMonth: plan.day_of_month, from, eventStartsAt: g.event.starts_at })
+      ? instalmentSchedule({
+          allInMinor: allIn,
+          depositMinor: planDeposit(plan, allIn),
+          monthlyCount: plan.monthly_count,
+          dayOfMonth: plan.day_of_month,
+          from,
+          eventStartsAt: g.event.starts_at,
+          timeZone: tz,
+          capToFit: true,
+        })
       : null;
+  const breakpoints = plan ? planBreakpoints(plan, from, g.event.starts_at, tz) : [];
   const rows = [...steps, ...Array.from({ length: 3 }, () => null)];
   const money = (m: number) => formatMoney(m, cur, locale);
   return (
@@ -133,7 +144,7 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
 
       <Card id="instalments">
         <h3 className="font-semibold">{t("instalments")}</h3>
-        <Hint>{t("instalmentsHint", { max: maxMonthlyPayments(from, plan?.day_of_month ?? 1, g.event.starts_at) })}</Hint>
+        <Hint>{t("instalmentsHint", { max: maxMonthlyPayments(from, plan?.day_of_month ?? 1, g.event.starts_at, tz) })}</Hint>
         {schedule?.ok && (
           <div className="text-sm" data-testid="schedule">
             <p>
@@ -148,13 +159,36 @@ export default async function ProductPage({ params }: { params: Promise<{ id: st
             </ol>
           </div>
         )}
+        {breakpoints.length > 0 && (
+          <ul className="text-xs text-muted-foreground" data-testid="breakpoints">
+            {breakpoints.map((b) => (
+              <li key={b.from}>{b.count > 0 ? t("buyersFrom", { date: b.from, n: b.count }) : t("buyersFromNone", { date: b.from })}</li>
+            ))}
+          </ul>
+        )}
         {schedule && !schedule.ok && <p className="text-sm text-destructive">{t("scheduleInvalid")}</p>}
         <ActionForm action={setPlanAction.bind(null, p.id)} submit={t("savePlan")} testId="plan-form">
           <div className="grid gap-3 sm:grid-cols-3">
+            <fieldset className="space-y-1 sm:col-span-3">
+              <legend className="text-sm font-medium">{t("depositKind")}</legend>
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="depositKind" value="amount" defaultChecked={plan?.deposit_bps == null} /> {t("depositAmount")}
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="depositKind" value="percent" defaultChecked={plan?.deposit_bps != null} /> {t("depositPercentLabel")}
+                </label>
+              </div>
+            </fieldset>
             <Label>
               {t("deposit", { currency: cur })}
-              <Input name="deposit" inputMode="decimal" defaultValue={plan ? toMajorString(plan.deposit_minor) : "10.00"} />
+              <Input name="deposit" inputMode="decimal" defaultValue={plan?.deposit_minor != null ? toMajorString(plan.deposit_minor) : "10.00"} />
               <FieldError name="depositMinor" />
+            </Label>
+            <Label>
+              {t("depositPercent")}
+              <Input name="depositPercent" inputMode="decimal" defaultValue={plan?.deposit_bps != null ? toMajorString(plan.deposit_bps).replace(/\.00$/, "") : ""} />
+              <FieldError name="depositBps" />
             </Label>
             <Label>
               {t("monthlyCount")}

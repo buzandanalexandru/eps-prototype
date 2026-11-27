@@ -110,9 +110,12 @@ func TestWithTxRollsBackOnPanic(t *testing.T) {
 				t.Fatalf("panic not re-raised: %v", r)
 			}
 		}()
-		_ = db.WithTx(ctx, small, db.RoleWeb, "", func(tx pgx.Tx) error {
+		// The registry has row-level security (step 1): the web role inserts only the organiser its
+		// transaction is scoped to.
+		const panicOrg = "00000000-0000-4000-8000-0000000000ee"
+		_ = db.WithTx(ctx, small, db.RoleWeb, panicOrg, func(tx pgx.Tx) error {
 			pid = tx.Conn().PgConn().PID()
-			if _, err := tx.Exec(ctx, "insert into control.organisers (slug, name) values ('panic-org', 'P')"); err != nil {
+			if _, err := tx.Exec(ctx, "insert into control.organisers (id, slug, name) values ($1, 'panic-org', 'P')", panicOrg); err != nil {
 				return err
 			}
 			panic("boom")

@@ -54,6 +54,10 @@ test("build a small festival: venue, event, pool, every product type, ladder, in
   await rules.locator("input[name=consentUnderAge]").fill("18");
   await rules.getByRole("button", { name: "Save rules" }).click();
   await expect(page.getByTestId("rules-summary")).toContainText("Minimum age 16");
+  // Catalogue spec "Stand-up age limit": the saved values stay in the panel and its summary.
+  await page.reload();
+  await expect(page.locator("[data-testid=rules-form] input[name=minAge]")).toHaveValue("16");
+  await expect(page.getByTestId("rules-summary")).toHaveText("Minimum age 16 · parental consent under 18");
 
   await page.goto(`${eventUrl}/pools`);
   const pool = page.getByTestId("new-pool-form");
@@ -129,11 +133,12 @@ test("build a small festival: venue, event, pool, every product type, ladder, in
   // Instalments: 10 now + 3 monthly payments, schedule shown.
   await page.reload();
   const plan = page.getByTestId("plan-form");
-  await plan.getByLabel(/^Deposit/).fill("10");
+  await plan.locator("input[name=deposit]").fill("10");
   await plan.locator("input[name=monthlyCount]").fill("3");
   await plan.getByRole("button", { name: "Save plan" }).click();
   await expect(page.getByTestId("deposit")).toHaveText("10.00 RON now");
   await expect(page.getByTestId("payment")).toHaveCount(3);
+  await expect(page.getByTestId("breakpoints")).toContainText("get 3 monthly payments");
   // A plan running past the event is refused with the latest possible count.
   await plan.locator("input[name=monthlyCount]").fill("24");
   await plan.getByRole("button", { name: "Save plan" }).click();

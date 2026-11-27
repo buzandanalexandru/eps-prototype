@@ -166,8 +166,14 @@ An organiser SHALL be able to add up to 5 questions or consents (short text, sin
 When a product allows instalments, checkout SHALL offer the plan, show the full schedule (dates and amounts in the shop's currency) before payment, and charge the deposit now. The parts SHALL add up exactly to the all-in total, and the order SHALL become `paid` when the deposit succeeds.
 
 #### Scenario: Schedule adds up
-- **WHEN** a fan picks a 10 RON deposit plus 9 monthly payments for a 539 RON order
-- **THEN** the schedule shows 10 parts whose sum is exactly 539 RON, with any rounding remainder on the last part
+- **WHEN** a fan picks a 10 RON deposit plus the monthly payments for a 539 RON order
+- **THEN** the schedule shows the deposit and the monthly parts, whose sum is exactly 539 RON, with any rounding remainder on the last part
+- Test: services/internal/checkout/instalments_test.go
+
+#### Scenario: Plan capped per buyer
+- **WHEN** a product offers 10 RON now and up to 9 monthly payments for an event on 15 Jul 2027 and a fan buys on 5 Dec 2026
+- **THEN** checkout offers that fan 10 RON now and 7 monthly payments (1 Jan to 1 Jul 2027, in the event's time zone), because the last payment must fall at least 7 days before the event; a fan buying later is offered fewer
+- Test: services/internal/checkout/instalments_test.go
 - Test: services/internal/checkout/instalments_test.go
 
 #### Scenario: Deposit pays the order

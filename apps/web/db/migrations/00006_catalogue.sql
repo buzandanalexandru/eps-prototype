@@ -41,7 +41,9 @@ CREATE TABLE control.events (
     UNIQUE (brand_id, slug),
     CHECK (ends_at > starts_at),
     CHECK (consent_under_age IS NULL OR min_age IS NULL OR consent_under_age >= min_age),
-    FOREIGN KEY (organiser_id, brand_id) REFERENCES control.brands (organiser_id, id) ON DELETE CASCADE,
+    -- A brand with events cannot be deleted by accident (Studio deletes its drafts first, and
+    -- refuses while it has published or archived events).
+    FOREIGN KEY (organiser_id, brand_id) REFERENCES control.brands (organiser_id, id) ON DELETE RESTRICT,
     FOREIGN KEY (organiser_id, venue_id) REFERENCES control.venues (organiser_id, id),
     FOREIGN KEY (organiser_id, edition_of) REFERENCES control.events (organiser_id, id) ON DELETE SET NULL (edition_of)
 );
@@ -55,6 +57,7 @@ CREATE TABLE control.event_days (
     opens        time        NOT NULL,
     closes       time        NOT NULL,
     UNIQUE (organiser_id, id),
+    UNIQUE (organiser_id, event_id, id),
     UNIQUE (event_id, day),
     FOREIGN KEY (organiser_id, event_id) REFERENCES control.events (organiser_id, id) ON DELETE CASCADE
 );
@@ -70,7 +73,8 @@ CREATE TABLE control.lineup_slots (
     sort         int         NOT NULL DEFAULT 0,
     UNIQUE (organiser_id, id),
     FOREIGN KEY (organiser_id, event_id) REFERENCES control.events (organiser_id, id) ON DELETE CASCADE,
-    FOREIGN KEY (organiser_id, day_id) REFERENCES control.event_days (organiser_id, id) ON DELETE CASCADE
+    -- The day must be a day of the same event.
+    FOREIGN KEY (organiser_id, event_id, day_id) REFERENCES control.event_days (organiser_id, event_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE control.products (
@@ -86,9 +90,14 @@ CREATE TABLE control.products (
     sales_until   timestamptz,
     visible       boolean     NOT NULL DEFAULT true,
     max_per_order int         NOT NULL DEFAULT 10 CHECK (max_per_order >= 1),
-    sort          int         NOT NULL DEFAULT 0,
+    sort          int         NOT NULL DEFAULT 0 CHECK (sort BETWEEN -10000 AND 10000),
+    -- Ticket lifecycle settings used by step 7 (added now so step 7 needs no migration redo).
+    personalise_deadline   timestamptz,
+    checkin_deadline       timestamptz,
+    late_checkin_fee_minor bigint CHECK (late_checkin_fee_minor >= 0),
     created_at    timestamptz NOT NULL DEFAULT now(),
     UNIQUE (organiser_id, id),
+    UNIQUE (organiser_id, event_id, id),
     CHECK (sales_from IS NULL OR sales_until IS NULL OR sales_until > sales_from),
     FOREIGN KEY (organiser_id, event_id) REFERENCES control.events (organiser_id, id) ON DELETE CASCADE
 );
@@ -101,16 +110,19 @@ CREATE TABLE control.capacity_pools (
     capacity     int         NOT NULL CHECK (capacity >= 0),
     scope        text        NOT NULL DEFAULT 'event' CHECK (scope IN ('event', 'day', 'slot')),
     UNIQUE (organiser_id, id),
+    UNIQUE (organiser_id, event_id, id),
     FOREIGN KEY (organiser_id, event_id) REFERENCES control.events (organiser_id, id) ON DELETE CASCADE
 );
 
+-- A product and a pool it draws on must belong to the same event (and organiser).
 CREATE TABLE control.product_pools (
     organiser_id uuid NOT NULL,
+    event_id     uuid NOT NULL,
     product_id   uuid NOT NULL,
     pool_id      uuid NOT NULL,
     PRIMARY KEY (product_id, pool_id),
-    FOREIGN KEY (organiser_id, product_id) REFERENCES control.products (organiser_id, id) ON DELETE CASCADE,
-    FOREIGN KEY (organiser_id, pool_id) REFERENCES control.capacity_pools (organiser_id, id) ON DELETE CASCADE
+    FOREIGN KEY (organiser_id, event_id, product_id) REFERENCES control.products (organiser_id, event_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (organiser_id, event_id, pool_id) REFERENCES control.capacity_pools (organiser_id, event_id, id) ON DELETE CASCADE
 );
 
 -- One ladder per product: by date (from_at) or by sales (after_sold), never both; the first step
@@ -130,12 +142,17 @@ CREATE TABLE control.price_steps (
     FOREIGN KEY (organiser_id, product_id) REFERENCES control.products (organiser_id, id) ON DELETE CASCADE
 );
 
+-- The deposit is either a fixed amount (minor units) or a share of the all-in price (basis points).
+-- monthly_count is the most monthly payments; each buyer gets as many as still end 7 days before
+-- the event, counted from their purchase date.
 CREATE TABLE control.instalment_plans (
     organiser_id  uuid NOT NULL,
     product_id    uuid PRIMARY KEY,
-    deposit_minor bigint NOT NULL CHECK (deposit_minor >= 0),
+    deposit_minor bigint CHECK (deposit_minor >= 0),
+    deposit_bps   int    CHECK (deposit_bps BETWEEN 0 AND 9999),
     monthly_count int    NOT NULL CHECK (monthly_count BETWEEN 1 AND 24),
     day_of_month  int    NOT NULL DEFAULT 1 CHECK (day_of_month BETWEEN 1 AND 28),
+    CHECK (num_nonnulls(deposit_minor, deposit_bps) = 1),
     FOREIGN KEY (organiser_id, product_id) REFERENCES control.products (organiser_id, id) ON DELETE CASCADE
 );
 
@@ -144,6 +161,10 @@ CREATE INDEX products_event_idx ON control.products (event_id, sort);
 CREATE INDEX pools_event_idx ON control.capacity_pools (event_id);
 CREATE INDEX product_pools_pool_idx ON control.product_pools (pool_id);
 CREATE INDEX lineup_event_idx ON control.lineup_slots (event_id, day_id, stage, starts);
+CREATE INDEX lineup_day_idx ON control.lineup_slots (day_id);
+CREATE INDEX events_venue_idx ON control.events (venue_id);
+CREATE INDEX events_edition_idx ON control.events (edition_of);
+CREATE INDEX product_pools_event_idx ON control.product_pools (event_id);
 
 -- +goose StatementBegin
 DO $$

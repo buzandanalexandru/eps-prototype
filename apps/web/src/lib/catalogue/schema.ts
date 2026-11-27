@@ -65,7 +65,7 @@ export const lineupSchema = z.object({
   artist: z.string().trim().min(1, "required").max(120, "too_long"),
   stage: text(60),
   starts: time,
-  sort: z.coerce.number().int().default(0),
+  sort: z.coerce.number({ error: "number_invalid" }).int("number_invalid").min(-10000, "too_large").max(10000, "too_large").default(0),
 });
 export type LineupInput = z.input<typeof lineupSchema>;
 
@@ -104,11 +104,11 @@ const timeSlotConfig = z
   })
   .refine((c) => slotSpan(c.firstStart, c.lastStart) % c.slotMinutes === 0, { message: "slot_span_not_divisible", path: ["slotMinutes"] });
 
-/** Minutes from the first to the last start; a last start at or before the first is the next morning. */
+/** Minutes from the first to the last start (0 when they are equal: one slot a day). */
 export function slotSpan(firstStart: string, lastStart: string): number {
   const a = minutesOf(firstStart);
   const b = minutesOf(lastStart);
-  return b > a ? b - a : b + 1440 - a;
+  return b >= a ? b - a : b + 1440 - a;
 }
 
 export const productConfigSchemas = {
@@ -129,7 +129,11 @@ const productCommon = {
   salesUntil: optionalInstant,
   visible: z.coerce.boolean().default(true),
   maxPerOrder: positiveInt(100).default(10),
-  sort: z.coerce.number().int().default(0),
+  // Ticket lifecycle settings (step 7 uses them; stored now).
+  personaliseDeadline: optionalInstant,
+  checkinDeadline: optionalInstant,
+  lateCheckinFeeMinor: blankToNull(z.coerce.number({ error: "price_invalid" }).int("price_invalid").min(0, "price_invalid").max(100_000_000, "too_large")),
+  sort: z.coerce.number({ error: "number_invalid" }).int("number_invalid").min(-10000, "too_large").max(10000, "too_large").default(0),
 };
 
 export const productSchema = z
@@ -187,11 +191,15 @@ export function toPriceSteps(l: { mode: "by_date" | "by_sales"; steps: { fromAt?
 
 // ---------------------------------------------------------------- instalments
 
-export const instalmentSchema = z.object({
-  depositMinor: z.coerce.number({ error: "price_invalid" }).int("price_invalid").min(0, "price_invalid"),
-  monthlyCount: positiveInt(24),
-  dayOfMonth: z.coerce.number().int().min(1, "day_of_month_invalid").max(28, "day_of_month_invalid").default(1),
-});
+/** A deposit is a fixed amount (depositMinor) or a share of the all-in price (depositBps), never both. */
+export const instalmentSchema = z
+  .object({
+    depositMinor: blankToNull(z.coerce.number({ error: "price_invalid" }).int("price_invalid").min(0, "price_invalid").max(100_000_000, "too_large")),
+    depositBps: blankToNull(z.coerce.number({ error: "number_invalid" }).int("number_invalid").min(0, "number_invalid").max(9999, "too_large")),
+    monthlyCount: positiveInt(24),
+    dayOfMonth: z.coerce.number().int().min(1, "day_of_month_invalid").max(28, "day_of_month_invalid").default(1),
+  })
+  .refine((p) => (p.depositMinor === null) !== (p.depositBps === null), { message: "deposit_one_kind", path: ["depositMinor"] });
 export type InstalmentInput = z.input<typeof instalmentSchema>;
 
 // ---------------------------------------------------------------- helpers

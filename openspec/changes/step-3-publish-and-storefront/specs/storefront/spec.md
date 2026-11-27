@@ -93,8 +93,8 @@ Test: apps/web/tests/unit/storefront-prices.test.ts
 Where a product offers instalments, the shop SHALL show the deposit, the number of monthly payments and their amount, computed from the all-in price, and the summary MUST add up to the all-in price.
 
 #### Scenario: Galaxia GA instalments
-- **WHEN** GA (552.48 RON all-in) offers 10 RON now and 9 monthly payments
-- **THEN** the shop shows "10.00 RON now + 9 × 60.27 RON" with a note that the last payment is 60.32 RON, totalling 552.48 RON
+- **WHEN** GA (552.48 RON all-in) offers 10 RON now and up to 7 monthly payments, viewed on 5 Dec 2026
+- **THEN** the shop shows "10.00 RON now + 7 × 77.49 RON" with a note that the last payment is 77.54 RON, totalling 552.48 RON (the number of payments is capped per buyer by the purchase date)
 Test: apps/web/tests/unit/storefront-prices.test.ts
 
 ### Requirement: Live availability in a cached page

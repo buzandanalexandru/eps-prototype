@@ -62,11 +62,15 @@ docs/                planning, research, deliverables
   - Integer minor units everywhere.
   - Platform fee 2.5%; fee policies absorb, pass on or split, with the fan's half rounded down in a split.
   - Pricing functions live in `apps/web/src/lib/pricing/`, with shared test vectors in `vectors.json` that the Go code must also pass.
+  - Instalments: a plan's monthly count is a maximum, capped per buyer from the purchase date (due dates and the "last payment ≥ 7 days before the event" rule in the event's local dates; `maxMonthlyPayments`). Deposit is `deposit_minor` or `deposit_bps`.
+- **Buying caps:** step 1's `max_per_order` (product) and `max_per_account` (event) are the defaults of a sale; step 5's sale settings may set their own, and the stricter of the two always applies.
+- **Core token roles:** the `role` claim is the exact membership role (`owner`, `admin`, `box_office`, `finance`, or step 0's `staff`); the Go verifier accepts exactly these.
 - **Sale snapshots:**
   - Stored immutable in `control.sale_snapshots`, in the shape of `api/schemas/sale-snapshot.v1.json`.
   - Each price step carries precomputed `allInMinor`, `fanFeeMinor` and `organiserNetMinor`.
   - Go reads them only through `control.live_snapshot()`.
-  - Pool instance ids are `<poolId>[@date[Ttime]]`.
+  - Pool instance ids are `<poolId>[@date[Ttime]]`. The date is the event's local calendar date: for a day pool the event day; for a slot pool the local date the slot **starts** on, so a slot after midnight (01:00 on the night of 1 Jul) is `<poolId>@<2 Jul>T01:00`. One time grid per slot pool (step 1 readiness rule).
+  - Pool scopes: passes, flexible days and add-ons draw on event pools; day pools serve single-day products; slot pools serve time slots only.
 - **Checkout:**
   - Entry route `/s/<brand>/<locale>/checkout?event=&v=&items=productId:qty[:instance]`.
   - Every order records the snapshot `(event, version)`.

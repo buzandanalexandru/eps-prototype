@@ -46,8 +46,23 @@ import { dateRange, localDate, toLocalInput, zonedToUtc } from "@/lib/catalogue/
 import { parseMajor } from "@/lib/pricing/money";
 import { currentSession } from "@/lib/auth/session";
 import { getStudio, requireActive, studioTx, type ActiveStudio } from "@/lib/studio/context";
-import { errorState, formObject, type FormState } from "@/lib/studio/form";
+import { errorState, formObject, indexed, type FormState } from "@/lib/studio/form";
+import { ladderFromForm } from "@/lib/studio/ladder-form";
+import * as z from "zod";
 import type pg from "pg";
+
+// Shapes of the forms that go through formObject (every field is still validated by the domain
+// schemas afterwards; these only fix the structure).
+const text = z.string().max(4000).optional().default("");
+const eventTextForm = z.object({
+  name: z.object({ ro: text, en: text }).default({ ro: "", en: "" }),
+  description: z.object({ ro: text, en: text }).default({ ro: "", en: "" }),
+});
+const dayRow = z.object({ day: z.string().max(10), opens: z.string().max(5), closes: z.string().max(5), remove: z.string().max(3).optional() });
+const daysForm = z.object({
+  days: z.record(z.string().regex(/^\d+$/), dayRow).optional(),
+  add: z.object({ day: z.string().max(10).optional(), opens: z.string().max(5).optional(), closes: z.string().max(5).optional() }).optional(),
+});
 
 type Out = FormState | { redirect: string } | void;
 
@@ -72,6 +87,13 @@ function money(fd: FormData, k: string, field = k): number {
   const v = parseMajor(str(fd, k));
   if (v === null) throw new DomainError("price_invalid", field);
   return v;
+}
+
+/** "10" or "12,5" percent → basis points (1000, 1250). */
+function percentBps(v: string): number {
+  const minor = parseMajor(v);
+  if (minor === null || minor >= 10_000) throw new DomainError("number_invalid", "depositBps");
+  return minor;
 }
 
 function local(value: string, tz: string, field: string): Date | null {
@@ -247,15 +269,15 @@ export async function saveVenueAction(venueId: string | null, prev: FormState, f
 export async function saveEventAction(eventId: string | null, prev: FormState, fd: FormData): Promise<FormState> {
   return act(async (s, c) => {
     const tz = str(fd, "timezone") || "Europe/Bucharest";
-    const o = formObject(fd) as { name?: unknown; description?: unknown };
+    const o = eventTextForm.parse(formObject(fd));
     const ev = await saveEvent(
       c,
       {
         brandId: str(fd, "brandId"),
         venueId: str(fd, "venueId"),
         slug: str(fd, "slug"),
-        name: o.name as { ro: string; en: string },
-        description: o.description as { ro: string; en: string },
+        name: o.name,
+        description: o.description,
         timezone: tz,
         startsAt: local(str(fd, "startsAt"), tz, "startsAt") ?? ("" as unknown as Date),
         endsAt: local(str(fd, "endsAt"), tz, "endsAt") ?? ("" as unknown as Date),
@@ -279,8 +301,8 @@ export async function saveEventAction(eventId: string | null, prev: FormState, f
 
 export async function setDaysAction(eventId: string, prev: FormState, fd: FormData): Promise<FormState> {
   return act(async (s, c) => {
-    const o = formObject(fd) as { days?: { day: string; opens: string; closes: string; remove?: string }[]; add?: { day: string; opens: string; closes: string } };
-    const days = (o.days ?? []).filter((d) => d && d.remove !== "on").map(({ day, opens, closes }) => ({ day, opens, closes }));
+    const o = daysForm.parse(formObject(fd));
+    const days = indexed<z.infer<typeof dayRow>>(o.days).filter((d) => d.remove !== "on").map(({ day, opens, closes }) => ({ day, opens, closes }));
     if (o.add?.day) days.push({ day: o.add.day, opens: o.add.opens || "18:00", closes: o.add.closes || "23:00" });
     await setDays(c, eventId, days.sort((a, b) => a.day.localeCompare(b.day)));
   });
@@ -372,6 +394,9 @@ export async function saveProductAction(eventId: string, productId: string | nul
         salesUntil: local(str(fd, "salesUntil"), ev.timezone, "salesUntil"),
         maxPerOrder: str(fd, "maxPerOrder") || "10",
         sort: str(fd, "sort") || "0",
+        personaliseDeadline: local(str(fd, "personaliseDeadline"), ev.timezone, "personaliseDeadline"),
+        checkinDeadline: local(str(fd, "checkinDeadline"), ev.timezone, "checkinDeadline"),
+        lateCheckinFeeMinor: str(fd, "lateCheckinFee") ? money(fd, "lateCheckinFee", "lateCheckinFeeMinor") : null,
       } as never,
       productId ?? undefined,
     );
@@ -397,30 +422,19 @@ export async function setProductPoolsAction(productId: string, prev: FormState, 
 }
 
 export async function setLadderAction(productId: string, tz: string, prev: FormState, fd: FormData): Promise<FormState> {
-  return act(async (s, c) => {
-    const mode = str(fd, "mode") === "by_sales" ? "by_sales" : "by_date";
-    const o = formObject(fd) as { steps?: { threshold?: string; price?: string }[] };
-    const steps = (o.steps ?? [])
-      .map((x, i) => ({ ...x, i }))
-      .filter((x) => x && (x.price ?? "").trim() !== "")
-      .map((x) => {
-        const priceMinor = parseMajor(x.price ?? "");
-        if (priceMinor === null) throw new DomainError("price_invalid", `steps.${x.i}.price`);
-        const th = (x.threshold ?? "").trim();
-        if (x.i === 0 || !th) return { priceMinor, fromAt: null, afterSold: null, empty: x.i !== 0 && !th };
-        return mode === "by_date"
-          ? { priceMinor, fromAt: local(th, tz, `steps.${x.i}.threshold`), afterSold: null, empty: false }
-          : { priceMinor, afterSold: th, fromAt: null, empty: false };
-      });
-    if (steps.slice(1).some((x) => x.empty)) throw new DomainError("threshold_required", "steps");
-    await setLadder(c, productId, { mode, steps: steps.map(({ priceMinor, fromAt, afterSold }) => ({ priceMinor, fromAt, afterSold })) as never });
-  });
+  return act(async (s, c) => setLadder(c, productId, ladderFromForm(fd, tz)));
 }
 
 export async function setPlanAction(productId: string, prev: FormState, fd: FormData): Promise<FormState> {
   return act(async (s, c) => {
     if (checked(fd, "remove")) return setInstalmentPlan(c, productId, null);
-    await setInstalmentPlan(c, productId, { depositMinor: money(fd, "deposit", "depositMinor"), monthlyCount: str(fd, "monthlyCount"), dayOfMonth: str(fd, "dayOfMonth") || "1" });
+    const percent = str(fd, "depositKind") === "percent";
+    await setInstalmentPlan(c, productId, {
+      depositMinor: percent ? null : money(fd, "deposit", "depositMinor"),
+      depositBps: percent ? percentBps(str(fd, "depositPercent")) : null,
+      monthlyCount: str(fd, "monthlyCount"),
+      dayOfMonth: str(fd, "dayOfMonth") || "1",
+    });
   });
 }
 

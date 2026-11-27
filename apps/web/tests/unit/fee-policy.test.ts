@@ -54,4 +54,15 @@ describeDb("fee policy in the database", () => {
     await tx(a.scope, (c) => setFeePolicy(c, "owner", "split"));
     expect(await tx(b.scope, (c) => getFeePolicy(c))).toBe("pass_on");
   });
+
+  it("a policy change applies to prices not yet published: draft events show the new all-in price at once", async () => {
+    const o = await makeOrganiser();
+    const f = await tx(o.scope, (c) => festival(c, o.brandId));
+    await tx(o.scope, (c) => setFeePolicy(c, "owner", "pass_on"));
+    expect(priceSides((await tx(o.scope, (c) => loadEventGraph(c, f.ev.id)))!, 53900).allInMinor).toBe(55248);
+    await tx(o.scope, (c) => setFeePolicy(c, "owner", "absorb"));
+    // The draft follows the new policy; a published price keeps the value frozen in its snapshot
+    // (step 3 stores the computed all-in price; nothing here rewrites it).
+    expect(priceSides((await tx(o.scope, (c) => loadEventGraph(c, f.ev.id)))!, 53900).allInMinor).toBe(53900);
+  });
 });

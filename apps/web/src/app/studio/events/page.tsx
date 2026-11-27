@@ -1,18 +1,22 @@
 import Link from "next/link";
 import { getLocale, getTranslations } from "next-intl/server";
-import { listEvents } from "@/lib/catalogue/domain";
+import { listEvents , PAGE_SIZE } from "@/lib/catalogue/domain";
 import { localDate } from "@/lib/catalogue/time";
+import { Pager, pageNumber } from "@/components/studio/pager";
 import { requireStudio, studioTx } from "@/lib/studio/context";
 import { lt } from "@/lib/studio/text";
 import { Card } from "@/components/ui/field";
 
 export const metadata = { title: "Events" };
 
-export default async function EventsPage() {
+export default async function EventsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const pageNo = pageNumber((await searchParams).page);
   const s = await requireStudio();
   const t = await getTranslations("events");
   const locale = await getLocale();
-  const events = await studioTx(s, (c) => listEvents(c));
+  const events = await studioTx(s, (c) => listEvents(c, { limit: PAGE_SIZE + 1, offset: pageNo * PAGE_SIZE }));
+  const more = events.length > PAGE_SIZE;
+  if (more) events.pop();
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -37,6 +41,7 @@ export default async function EventsPage() {
           </li>
         ))}
       </ul>
+      <Pager path="/studio/events" page={pageNo} more={more} />
     </section>
   );
 }

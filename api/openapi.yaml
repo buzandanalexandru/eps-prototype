@@ -179,6 +179,8 @@ components:
           description: Active organiser id (organiser tokens only).
         role:
           type: string
+          description: The exact membership role (organiser tokens only).
+          enum: [owner, admin, box_office, finance, staff]
         sid:
           type: string
         exp:

@@ -26,6 +26,7 @@ test("owner invites a box office member for one event; opening the link with tha
   await form.getByRole("button", { name: "Create invitation" }).click();
   const url = await page.getByTestId("invite-url").innerText();
   expect(url).toMatch(/\/studio\/invite\/[0-9a-f-]{36}\/[A-Za-z0-9_-]+$/);
+  await expect(page.getByTestId("scope-note")).toContainText("not enforced in the prototype");
   await page.reload();
   await expect(page.getByTestId("invitation")).toContainText(`${door} · Box office · Event: Door Night · pending`);
   await expectNoHorizontalScroll(page);

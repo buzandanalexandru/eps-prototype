@@ -5,7 +5,7 @@ import { activePriceStep } from "../pricing/ladder";
 import { feeBreakdown, effectivePolicy } from "../pricing/fees";
 import { instalmentSchedule } from "../pricing/instalments";
 import { ladderProblems } from "../pricing/ladder";
-import { planReference, stepsOf, type EventGraph } from "./domain";
+import { planDeposit, planReference, stepsOf, type EventGraph } from "./domain";
 import { productConfigSchemas, TICKET_TYPES, type ProductType } from "./schema";
 
 export type ProblemCode =
@@ -17,6 +17,7 @@ export type ProblemCode =
   | "product_without_price"
   | "pool_capacity_zero"
   | "pool_scope_invalid"
+  | "slot_grid_mismatch"
   | "ladder_unordered"
   | "ladder_mixed"
   | "invalid_config"
@@ -81,8 +82,12 @@ export function eventReadiness(g: EventGraph, now: Date = new Date()): Problem[]
     }
     const myPools = g.links.filter((l) => l.product_id === p.id).map((l) => g.pools.find((x) => x.id === l.pool_id)).filter((x) => !!x);
     if (myPools.length === 0) out.push({ code: "product_without_pool", target, field: "pools", detail: label, href: `${href}#pools` });
-    if (myPools.some((x) => x.scope === "slot") && p.type !== "time_slot")
-      out.push({ code: "pool_scope_invalid", target, field: "pools", detail: label, href: `${href}#pools` });
+    // Pool scopes (orchestrator decision): passes, flexible days and add-ons draw on event pools;
+    // per-slot pools are for time slots only.
+    const badScope =
+      (["pass", "flex_day", "add_on"].includes(p.type) && myPools.some((x) => x.scope !== "event")) ||
+      (p.type !== "time_slot" && myPools.some((x) => x.scope === "slot"));
+    if (badScope) out.push({ code: "pool_scope_invalid", target, field: "pools", detail: label, href: `${href}#pools` });
     const steps = stepsOf(g.steps, p.id);
     if (steps.length === 0) out.push({ code: "product_without_price", target, field: "ladder", detail: label, href: `${href}#ladder` });
     else {
@@ -92,12 +97,34 @@ export function eventReadiness(g: EventGraph, now: Date = new Date()): Problem[]
     }
     const plan = g.plans.find((x) => x.product_id === p.id);
     if (plan && steps.length) {
+      // A plan is a maximum: buyers get as many payments as still fit. It blocks publishing only
+      // when not even one payment fits for the next buyer, or the deposit is not below the price.
       const from = planReference(p, now);
       const allIn = feeBreakdown(activePriceStep({ steps, at: from }).priceMinor, policy, g.fee).allInMinor;
-      const s = instalmentSchedule({ allInMinor: allIn, depositMinor: plan.deposit_minor, monthlyCount: plan.monthly_count, dayOfMonth: plan.day_of_month, from, eventStartsAt: ev.starts_at });
+      const s = instalmentSchedule({
+        allInMinor: allIn,
+        depositMinor: planDeposit(plan, allIn),
+        monthlyCount: plan.monthly_count,
+        dayOfMonth: plan.day_of_month,
+        from,
+        eventStartsAt: ev.starts_at,
+        timeZone: ev.timezone,
+        capToFit: true,
+      });
       if (!s.ok && s.code === "past_event") out.push({ code: "instalments_end_after_event", target, field: "monthlyCount", detail: label, href: `${href}#instalments` });
       if (!s.ok && s.code === "deposit_too_large") out.push({ code: "deposit_too_large", target, field: "depositMinor", detail: label, href: `${href}#instalments` });
     }
+  }
+  // One time grid per slot pool: every time slot drawing on it has the same length and starts.
+  for (const pool of g.pools.filter((x) => x.scope === "slot")) {
+    const grids = new Set(
+      g.links
+        .filter((l) => l.pool_id === pool.id)
+        .map((l) => g.products.find((x) => x.id === l.product_id))
+        .filter((x) => x?.type === "time_slot")
+        .map((x) => `${x!.config.slotMinutes}/${x!.config.firstStart}/${x!.config.lastStart}`),
+    );
+    if (grids.size > 1) out.push({ code: "slot_grid_mismatch", target: { kind: "pool", id: pool.id }, field: "pools", detail: pool.name, href: `${base}/pools#pool-${pool.id}` });
   }
   for (const pool of g.pools) {
     if (pool.capacity === 0) out.push({ code: "pool_capacity_zero", target: { kind: "pool", id: pool.id }, field: "capacity", detail: pool.name, href: `${base}/pools#pool-${pool.id}` });

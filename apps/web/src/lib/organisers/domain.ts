@@ -36,8 +36,8 @@ export const brandInput = z.object({
 });
 export type BrandInput = z.input<typeof brandInput>;
 
-async function assertSlug(c: ClientBase, kind: SlugKind, slug: string) {
-  const r = await checkSlug(c, kind, slug);
+async function assertSlug(c: ClientBase, kind: SlugKind, slug: string, opts: { sample?: boolean } = {}) {
+  const r = await checkSlug(c, kind, slug, opts);
   if (r !== "ok") throw new DomainError(r, "slug");
 }
 
@@ -48,18 +48,23 @@ export type OrganiserRow = { id: string; slug: string; name: string; is_sample: 
 /**
  * Onboarding step 1: creates the organisation with the user as owner, at onboarding state "brand".
  * The transaction must be opened with organiserId = the new id (see newOrganiserId), because the
- * owner membership row is organiser data under row-level security.
+ * registry and the owner membership are under row-level security. Idempotent per user: a per-user
+ * lock serialises double submits, and a user who already owns an organisation still at the brand
+ * step gets that one back instead of a second organisation.
  */
 export async function createOrganiser(
   c: ClientBase,
-  p: { id: string; userId: string; input: z.input<typeof organiserInput>; isSample?: boolean },
+  p: { id: string; userId: string; input: z.input<typeof organiserInput> },
 ): Promise<OrganiserRow> {
   const input = organiserInput.parse(p.input);
+  await c.query("select pg_advisory_xact_lock(hashtext('onboarding:' || $1))", [p.userId]);
+  const pending = (await userOrganisers(c, p.userId)).find((o) => o.onboarding_state === "brand" && o.role === "owner");
+  if (pending) return pending;
   await assertSlug(c, "organiser", input.slug);
   const r = await c.query<OrganiserRow>(
-    `insert into control.organisers (id, slug, name, is_sample, onboarding_state) values ($1, $2, $3, $4, 'brand')
+    `insert into control.organisers (id, slug, name, onboarding_state) values ($1, $2, $3, 'brand')
      returning id, slug, name, is_sample, onboarding_state`,
-    [p.id, input.slug, input.name, p.isSample ?? false],
+    [p.id, input.slug, input.name],
   );
   await c.query("insert into control.memberships (organiser_id, user_id, role) values ($1, $2, 'owner')", [p.id, p.userId]);
   return r.rows[0];
@@ -69,10 +74,18 @@ export function newOrganiserId(): string {
   return randomUUID();
 }
 
-/** Onboarding step 2: the first brand and the template; the organiser is then done onboarding. */
+/**
+ * Onboarding step 2: the first brand and the template; the organiser is then done onboarding.
+ * Idempotent: a second submit (double click, retry) returns the brand the first one created.
+ */
 export async function completeOnboarding(c: ClientBase, organiserId: string, input: BrandInput): Promise<{ brandId: string }> {
+  await c.query("select pg_advisory_xact_lock(hashtext('onboarding-org:' || $1))", [organiserId]);
   const org = await c.query<{ onboarding_state: string }>("select onboarding_state from control.organisers where id = $1", [organiserId]);
   if (!org.rows[0]) throw new DomainError("not_found");
+  if (org.rows[0].onboarding_state === "done") {
+    const first = (await listBrands(c))[0];
+    if (first) return { brandId: first.id };
+  }
   const brand = await createBrand(c, organiserId, input);
   await c.query("update control.organisers set onboarding_state = 'done' where id = $1", [organiserId]);
   return { brandId: brand.id };
@@ -96,9 +109,10 @@ export const CURRENT_ORG = "nullif(current_setting('app.organiser_id', true), ''
 
 const BRAND_COLS = "id, organiser_id, slug, name, languages, currency, template, logo_url";
 
-export async function createBrand(c: ClientBase, organiserId: string, raw: BrandInput, id?: string): Promise<BrandRow> {
+/** Creates a brand. `id` and `opts.sample` are for the seed only (never taken from a request). */
+export async function createBrand(c: ClientBase, organiserId: string, raw: BrandInput, id?: string, opts: { sample?: boolean } = {}): Promise<BrandRow> {
   const input = brandInput.parse(raw);
-  await assertSlug(c, "brand", input.slug);
+  await assertSlug(c, "brand", input.slug, opts);
   const r = await c.query<BrandRow>(
     `insert into control.brands (id, organiser_id, slug, name, languages, currency, template, logo_url)
      values (coalesce($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8) returning ${BRAND_COLS}`,
@@ -111,7 +125,17 @@ export async function updateBrand(c: ClientBase, organiserId: string, brandId: s
   const input = brandInput.parse(raw);
   const cur = await getBrand(c, brandId);
   if (!cur || cur.organiser_id !== organiserId) throw new DomainError("not_found");
-  if (cur.slug !== input.slug) await assertSlug(c, "brand", input.slug);
+  if (cur.slug !== input.slug) {
+    // A sample organiser's addresses are fixed (the seed restores them).
+    const sample = (await c.query<{ is_sample: boolean }>("select is_sample from control.organisers where id = $1", [organiserId])).rows[0]?.is_sample;
+    if (sample) throw new DomainError("sample_locked", "slug");
+    await assertSlug(c, "brand", input.slug);
+  }
+  if (cur.currency !== input.currency) {
+    // Prices are stored in the brand's currency: it is locked once the brand has events.
+    const n = (await c.query<{ n: number }>("select count(*)::int as n from control.events where brand_id = $1", [brandId])).rows[0].n;
+    if (n > 0) throw new DomainError("currency_locked", "currency");
+  }
   const r = await c.query<BrandRow>(
     `update control.brands set slug = $2, name = $3, languages = $4, currency = $5, template = $6, logo_url = $7
      where id = $1 returning ${BRAND_COLS}`,
@@ -131,6 +155,11 @@ export async function getBrand(c: ClientBase, brandId: string): Promise<BrandRow
 
 export async function deleteBrand(c: ClientBase, role: string, brandId: string): Promise<void> {
   assertOwner(role, "delete_brand");
+  if (!(await getBrand(c, brandId))) throw new DomainError("not_found");
+  // Published or archived events (and, later, their sales) keep their brand.
+  const live = await c.query<{ n: number }>("select count(*)::int as n from control.events where brand_id = $1 and status <> 'draft'", [brandId]);
+  if (live.rows[0].n > 0) throw new DomainError("brand_has_published_events");
+  await c.query("delete from control.events where brand_id = $1 and status = 'draft'", [brandId]);
   const r = await c.query("delete from control.brands where id = $1", [brandId]);
   if (r.rowCount === 0) throw new DomainError("not_found");
 }
@@ -201,6 +230,7 @@ export async function inviteMember(
 
 export async function revokeInvitation(c: ClientBase, role: string, invitationId: string): Promise<void> {
   assertOwner(role, "team");
+  if (!z.uuid().safeParse(invitationId).success) throw new DomainError("not_found");
   await c.query("delete from control.invitations where id = $1 and accepted_at is null", [invitationId]);
 }
 
@@ -296,6 +326,7 @@ export async function setFeePolicy(c: ClientBase, role: string, policy: string):
 /** Per-event override (null clears it, so the organiser policy applies). */
 export async function setEventFeePolicy(c: ClientBase, role: string, eventId: string, policy: string | null): Promise<void> {
   assertOwner(role, "fee_policy");
+  if (!z.uuid().safeParse(eventId).success) throw new DomainError("not_found");
   if (policy !== null && !isFeePolicy(policy)) throw new DomainError("invalid", "policy");
   const r = await c.query("update control.events set fee_policy = $2, updated_at = now() where id = $1", [eventId, policy]);
   if (r.rowCount === 0) throw new DomainError("not_found");

@@ -17,6 +17,7 @@ export function fromPgError(err: unknown): DomainError | null {
   const e = err as { code?: string; constraint?: string } | null;
   if (!e || typeof e.code !== "string") return null;
   if (e.code === "23503") return new DomainError("not_found");
+  if (e.code === "23001") return new DomainError("in_use"); // ON DELETE RESTRICT
   if (e.code === "23505") return new DomainError("taken", e.constraint?.includes("slug") ? "slug" : undefined);
   if (e.code === "42501") return new DomainError("not_found"); // row-level security refused the row
   if (e.code === "23514") return new DomainError("invalid");

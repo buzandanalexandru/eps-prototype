@@ -92,3 +92,11 @@ export function dayWindow(day: string, opens: string, closes: string, tz: string
 export function nightOrder(time: string, opens: string): number {
   return (minutesOf(time) - minutesOf(opens) + 1440) % 1440;
 }
+
+/**
+ * The local calendar date a slot starts on (spec map: slot instance ids). An event day's slots
+ * that start before the first start of the grid (after midnight) belong to the next local date.
+ */
+export function slotStartDate(day: string, firstStart: string, slot: string): string {
+  return minutesOf(slot) < minutesOf(firstStart) ? addDays(day, 1) : day;
+}

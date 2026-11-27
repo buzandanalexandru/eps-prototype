@@ -74,7 +74,7 @@ func (s *Server) GetWhoami(ctx context.Context, _ api.GetWhoamiRequestObject) (a
 		id.Org = &org
 	}
 	if c.Role != "" {
-		role := c.Role
+		role := api.IdentityRole(c.Role)
 		id.Role = &role
 	}
 	return api.GetWhoami200JSONResponse(id), nil

@@ -40,9 +40,12 @@ export async function copyAsEdition(c: ClientBase, eventId: string, opts: { offs
   const fromYear = Number(localDate(ev.starts_at, tz).slice(0, 4));
   const toYear = Number(localDate(shift(ev.starts_at)!, tz).slice(0, 4));
   const name: Localized = { ro: bumpYear(ev.name.ro ?? "", fromYear, toYear), en: bumpYear(ev.name.en ?? "", fromYear, toYear) };
-  let slug = ev.slug.includes(String(fromYear)) ? bumpYear(ev.slug, fromYear, toYear) : `${ev.slug}-${toYear}`.slice(0, 60);
+  const base = (ev.slug.includes(String(fromYear)) ? bumpYear(ev.slug, fromYear, toYear) : `${ev.slug}-${toYear}`).slice(0, 55).replace(/-+$/, "");
+  // A taken slug keeps the base (with its year) and adds -2, -3, …
+  let slug = base;
   for (let i = 2; (await c.query("select 1 from control.events where brand_id = $1 and slug = $2", [ev.brand_id, slug])).rowCount; i++) {
-    slug = `${slug.replace(/-\d+$/, "")}-${i}`.slice(0, 60);
+    if (i > 99) throw new DomainError("taken", "slug");
+    slug = `${base}-${i}`;
   }
 
   const newId = randomUUID();
@@ -78,9 +81,13 @@ export async function copyAsEdition(c: ClientBase, eventId: string, opts: { offs
     if (typeof cfg.day === "string") cfg.day = shiftDay(cfg.day);
     if (Array.isArray(cfg.requires)) cfg.requires = (cfg.requires as string[]).map((id) => productIds.get(id) ?? id);
     await c.query(
-      `insert into control.products (id, organiser_id, event_id, type, name, perks, config, named, sales_from, sales_until, visible, max_per_order, sort)
-       values ($1, ${CURRENT_ORG}, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [productIds.get(p.id), newId, p.type, p.name, JSON.stringify(p.perks), cfg, p.named, shift(p.sales_from), shift(p.sales_until), p.visible, p.max_per_order, p.sort],
+      `insert into control.products (id, organiser_id, event_id, type, name, perks, config, named, sales_from, sales_until, visible, max_per_order, sort,
+         personalise_deadline, checkin_deadline, late_checkin_fee_minor)
+       values ($1, ${CURRENT_ORG}, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      [
+        productIds.get(p.id), newId, p.type, p.name, JSON.stringify(p.perks), cfg, p.named, shift(p.sales_from), shift(p.sales_until), p.visible, p.max_per_order, p.sort,
+        shift(p.personalise_deadline), shift(p.checkin_deadline), p.late_checkin_fee_minor,
+      ],
     );
   }
   const poolIds = new Map(g.pools.map((p) => [p.id, randomUUID()]));
@@ -94,7 +101,11 @@ export async function copyAsEdition(c: ClientBase, eventId: string, opts: { offs
     ]);
   }
   for (const l of g.links) {
-    await c.query(`insert into control.product_pools (organiser_id, product_id, pool_id) values (${CURRENT_ORG}, $1, $2)`, [productIds.get(l.product_id), poolIds.get(l.pool_id)]);
+    await c.query(`insert into control.product_pools (organiser_id, event_id, product_id, pool_id) values (${CURRENT_ORG}, $1, $2, $3)`, [
+      newId,
+      productIds.get(l.product_id),
+      poolIds.get(l.pool_id),
+    ]);
   }
   for (const s of g.steps) {
     await c.query(
@@ -104,8 +115,8 @@ export async function copyAsEdition(c: ClientBase, eventId: string, opts: { offs
   }
   for (const p of g.plans) {
     await c.query(
-      `insert into control.instalment_plans (organiser_id, product_id, deposit_minor, monthly_count, day_of_month) values (${CURRENT_ORG}, $1, $2, $3, $4)`,
-      [productIds.get(p.product_id), p.deposit_minor, p.monthly_count, p.day_of_month],
+      `insert into control.instalment_plans (organiser_id, product_id, deposit_minor, deposit_bps, monthly_count, day_of_month) values (${CURRENT_ORG}, $1, $2, $3, $4, $5)`,
+      [productIds.get(p.product_id), p.deposit_minor, p.deposit_bps, p.monthly_count, p.day_of_month],
     );
   }
   return { id: newId, slug };

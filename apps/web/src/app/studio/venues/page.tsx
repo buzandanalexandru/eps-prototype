@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
-import { listVenues, type VenueRow } from "@/lib/catalogue/domain";
+import { listVenues, type VenueRow , PAGE_SIZE } from "@/lib/catalogue/domain";
+import { Pager, pageNumber } from "@/components/studio/pager";
 import { requireStudio, studioTx } from "@/lib/studio/context";
 import { ActionForm, FieldError } from "@/components/studio/action-form";
 import { Card, Hint, Input, Label } from "@/components/ui/field";
@@ -39,10 +40,13 @@ async function VenueFields({ v }: { v?: VenueRow }) {
   );
 }
 
-export default async function VenuesPage() {
+export default async function VenuesPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const pageNo = pageNumber((await searchParams).page);
   const s = await requireStudio();
   const t = await getTranslations("venues");
-  const venues = await studioTx(s, (c) => listVenues(c));
+  const venues = await studioTx(s, (c) => listVenues(c, { limit: PAGE_SIZE + 1, offset: pageNo * PAGE_SIZE }));
+  const more = venues.length > PAGE_SIZE;
+  if (more) venues.pop();
   return (
     <section className="space-y-6">
       <div>
@@ -66,6 +70,7 @@ export default async function VenuesPage() {
           </li>
         ))}
       </ul>
+      <Pager path="/studio/venues" page={pageNo} more={more} />
       <Card>
         <h2 className="font-semibold">{t("add")}</h2>
         <ActionForm action={saveVenueAction.bind(null, null)} submit={t("create")} testId="new-venue-form">

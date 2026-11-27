@@ -4,6 +4,11 @@
 import type { ClientBase } from "pg";
 
 export const RESERVED_SLUGS = new Set(["studio", "api", "s", "status", "fees", "sign-in", "admin", "eps", "www"]);
+/**
+ * Slugs of the sample organisers and their brands (sample-data capability): reserved for everyone
+ * else, so a real organiser can never take them and the seed can always restore them.
+ */
+export const SAMPLE_SLUGS = new Set(["nibiru", "nibiru-resort", "nibiru-festivals", "sunwave", "sunwave-festival", "beach-please"]);
 export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 
 export type SlugKind = "organiser" | "brand";
@@ -11,11 +16,12 @@ export type SlugProblem = "slug_length" | "slug_characters" | "slug_hyphen" | "s
 export type SlugCheck = SlugProblem | "slug_taken" | "ok";
 
 /** The first rule a slug breaks, or null. Pure, so forms can say which rule before asking the database. */
-export function slugProblem(slug: string): SlugProblem | null {
+export function slugProblem(slug: string, opts: { sample?: boolean } = {}): SlugProblem | null {
   if (slug.length < 3 || slug.length > 40) return "slug_length";
   if (!/^[a-z0-9-]+$/.test(slug)) return "slug_characters";
   if (slug.startsWith("-") || slug.endsWith("-")) return "slug_hyphen";
   if (RESERVED_SLUGS.has(slug)) return "slug_reserved";
+  if (SAMPLE_SLUGS.has(slug) && !opts.sample) return "slug_reserved";
   return null;
 }
 
@@ -31,8 +37,9 @@ export function suggestSlug(name: string): string {
     .replace(/-+$/g, "");
 }
 
-export async function checkSlug(c: ClientBase, kind: SlugKind, slug: string): Promise<SlugCheck> {
-  const p = slugProblem(slug);
+/** opts.sample: only the seed, creating a sample organiser's brand, may use the sample slugs. */
+export async function checkSlug(c: ClientBase, kind: SlugKind, slug: string, opts: { sample?: boolean } = {}): Promise<SlugCheck> {
+  const p = slugProblem(slug, opts);
   if (p) return p;
   const r = await c.query<{ free: boolean }>("select control.slug_available($1, $2) as free", [kind, slug]);
   return r.rows[0]?.free ? "ok" : "slug_taken";

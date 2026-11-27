@@ -33,6 +33,9 @@ export default async function TeamPage() {
       <div>
         <h1 className="text-2xl font-bold">{t("title")}</h1>
         <p className="text-sm text-muted-foreground">{t("lead")}</p>
+        <p className="text-sm text-muted-foreground" data-testid="scope-note">
+          {t("scopeNotEnforced")}
+        </p>
         {!owner && <p className="mt-2 text-sm" data-testid="owner-only-note">{t("ownerOnly")}</p>}
       </div>
       <Card>
