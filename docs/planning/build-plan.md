@@ -5,7 +5,7 @@ Feature IDs refer to `feature-scope.md`; decision IDs (S, P, O, U, R) refer to `
 
 | # | Change | Builds | Unlocks |
 |---|---|---|---|
-| 0 | `step-0-foundation` | Monorepo, Next.js app, Go module, OpenAPI contract, Postgres schemas + row-level security, sign-in, Helm skeleton, CI, hello-world on Vercel and DOKS (S1–S3, P2, U1, U2, U5, I1, I5) | Everything |
+| 0 ✅ | `step-0-foundation` (archived) | Monorepo, Next.js app, Go module, OpenAPI contract, Postgres schemas + row-level security, sign-in, Helm skeleton, CI, hello-world on Vercel and DOKS (S1–S3, P2, U1, U2, U5, I1, I5) | Everything |
 | 1 | `step-1-organisers-and-catalogue` | Sign-up, brands, roles, fees, events, product types, pools, price ladder, rules, instalment setting, NIBIRU seed (A1–A3, A6, C1–C5, C8–C10) | Builder, sales |
 | 2 | `step-2-builder` | Brand kit, templates, sections, live preview, draft/publish/rollback, locked checkout, languages, email/ticket design (B1–B7, B10, B12, U3) | Act 1 |
 | 3 | `step-3-publish-and-storefront` | Sale snapshot, `/s/<brand>` storefronts, all-in price (P1, D1) | Selling |

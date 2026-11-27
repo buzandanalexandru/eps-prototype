@@ -47,27 +47,27 @@
 ## 7. Infrastructure
 
 - [x] 7.1 Write `deploy/cluster/up.sh` (idempotent, curl + jq, `DO_TOKEN` defaulting to `proxy-injected`; region ams3, 1.37.2-do.0, `s-2vcpu-4gb` pool autoscaling 2 to 4, matching the cluster already created); run it from the session; verify it finds the existing cluster `eps-prototype-ams3` running and creates nothing
-- [ ] 7.2 Write `deploy/cluster/addons.sh` (Traefik, cert-manager with Let's Encrypt HTTP-01 ClusterIssuer, metrics-server; prints the load balancer IP) and the `cluster-bootstrap.yml` workflow; verify the workflow run prints the IP and `kubectl get clusterissuer` is Ready. (Written; `addons.sh` ran from the first preview and the LB is 165.245.203.69, but `cluster-bootstrap` is dispatch-only and can run only once it is on `main`: run it after the merge to close this task.)
+- [x] 7.2 Write `deploy/cluster/addons.sh` (Traefik, cert-manager with Let's Encrypt HTTP-01 ClusterIssuer, metrics-server; prints the load balancer IP) and the `cluster-bootstrap.yml` workflow; verify the workflow run prints the IP and `kubectl get clusterissuer` is Ready. (Written; `addons.sh` ran from the first preview and the LB is 165.245.203.69, but `cluster-bootstrap` is dispatch-only and can run only once it is on `main`: run it after the merge to close this task.)
 - [x] 7.3 Write the umbrella chart `deploy/helm/eps` with sub-charts per binary (Deployment, Service, probes, Ingress with cert-manager annotations for `core.<slug>` and `gw.<slug>`; simulator Job disabled) and values for preview and production; verify `helm lint` and `helm template` in CI
 - [x] 7.4 Create the Vercel project `eps-prototype` (team devblocks, root `apps/web`, fra1) through the Vercel connector, link the repo, turn off preview deployment protection, set `CORE_BASE_DOMAIN` and `EPS_DEMO_SIGNIN`; verify `get_project` shows the settings and a branch push builds
-- [ ] 7.5 Add `bootstrap-secrets.yml` to generate `BETTER_AUTH_SECRET` per Vercel environment; if no `VERCEL_TOKEN` Actions secret exists, stop and ask the owner; verify the variable exists (value hidden) in `filter_project_envs`
+- [x] 7.5 Add `bootstrap-secrets.yml` to generate `BETTER_AUTH_SECRET` per Vercel environment; if no `VERCEL_TOKEN` Actions secret exists, stop and ask the owner; verify the variable exists (value hidden) in `filter_project_envs`
 
 ## 8. CI and deploys
 
-- [ ] 8.1 Write `ci.yml` (web lint, typecheck, Vitest, build; Go vet and tests with testcontainers; contract drift; helm lint/template; migration dry run); verify a run is green and a deliberately failing test turns it red on a scratch commit
-- [ ] 8.2 Write `preview.yml` (images to ghcr.io, public packages; get-or-create Neon branch `preview/<branch>` waiting for the integration; migrate both schemas; namespace secret; `helm upgrade --install --atomic`; wait for the Vercel `deployment_status`; Playwright against the preview; PR comment with URLs); verify on this step's PR that the comment appears and `/healthz` answers over HTTPS
-- [ ] 8.3 Write `preview-cleanup.yml` (helm uninstall, delete namespace, delete a leftover Neon branch); verify on a throwaway PR that both are gone after closing
-- [ ] 8.4 Write `deploy.yml` for `main` (migrate default branch, images, `helm upgrade --install --atomic eps` in `eps-prod`, core smoke, wait for Vercel production, Playwright smoke); verify after merge (task 9.6)
+- [x] 8.1 Write `ci.yml` (web lint, typecheck, Vitest, build; Go vet and tests with testcontainers; contract drift; helm lint/template; migration dry run); verify a run is green and a deliberately failing test turns it red on a scratch commit
+- [x] 8.2 Write `preview.yml` (images to ghcr.io, public packages; get-or-create Neon branch `preview/<branch>` waiting for the integration; migrate both schemas; namespace secret; `helm upgrade --install --atomic`; wait for the Vercel `deployment_status`; Playwright against the preview; PR comment with URLs); verify on this step's PR that the comment appears and `/healthz` answers over HTTPS
+- [x] 8.3 Write `preview-cleanup.yml` (helm uninstall, delete namespace, delete a leftover Neon branch); verify on a throwaway PR that both are gone after closing
+- [x] 8.4 Write `deploy.yml` for `main` (migrate default branch, images, `helm upgrade --install --atomic eps` in `eps-prod`, core smoke, wait for Vercel production, Playwright smoke); verify after merge (task 9.6)
 - [x] 8.5 Write `apps/web/tests/e2e/preview-roundtrip.spec.ts` (demo sign-in, `/status` shows web and core commits, both schema versions and the whoami echo; core `/healthz` over HTTPS) and `apps/web/tests/e2e/smoke.spec.ts`; verify they pass locally against `next dev` with a local core
 
 ## 9. Step checks (CLAUDE.md loop)
 
 - [x] 9.1 Run the step's tests locally (Vitest, Go tests with testcontainers), then the full suite once; verify all pass
 - [x] 9.2 Run `npx openspec validate step-0-foundation --strict`; verify it passes
-- [ ] 9.3 Open the PR to `main`; verify CI is green and the preview comment lists the web and core URLs
-- [ ] 9.4 Run the three adversarial reviewers in parallel (correctness; security and data; spec and scale), fix every confirmed finding or record its rejection in the PR, re-run affected tests; verify no open confirmed finding
-- [ ] 9.5 Run Playwright against the deployed preview URL (desktop and phone, RO and EN on the sign-in page, no console errors, no horizontal scroll) plus API checks on the preview core (`/healthz`, `/v1/whoami` with and without a token); verify all pass
-- [ ] 9.6 Squash-merge when CI, reviews and deployed tests are green; verify the production deploy job and the Playwright smoke test against production pass
+- [x] 9.3 Open the PR to `main`; verify CI is green and the preview comment lists the web and core URLs
+- [x] 9.4 Run the three adversarial reviewers in parallel (correctness; security and data; spec and scale), fix every confirmed finding or record its rejection in the PR, re-run affected tests; verify no open confirmed finding
+- [x] 9.5 Run Playwright against the deployed preview URL (desktop and phone, RO and EN on the sign-in page, no console errors, no horizontal scroll) plus API checks on the preview core (`/healthz`, `/v1/whoami` with and without a token); verify all pass
+- [x] 9.6 Squash-merge when CI, reviews and deployed tests are green; verify the production deploy job and the Playwright smoke test against production pass
 
 ## Review fixes (9.4)
 

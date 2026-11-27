@@ -35,3 +35,46 @@ None (first step).
 - External systems: Vercel project (new), Neon project `eps-prototype` (`odd-sun-50771070`, aws-eu-central-1) gains the schemas and preview branches, DigitalOcean gains a DOKS cluster and a load balancer in ams3, ghcr.io gains one image per Go binary.
 - New dependencies inside the decided stack: Better Auth (with its JWT plugin), next-intl, shadcn/ui, Vitest, Playwright, pgx, go-redis, testcontainers-go. Small utilities: `openapi-typescript`, `oapi-codegen`, `jose`, `pressly/goose` (migrations). Cluster add-ons: Traefik, cert-manager, metrics-server.
 - Account actions the owner may need to take (see design.md, Open Questions): Google OAuth client, a mail sender for magic links, and a Vercel token for CI.
+
+## Status
+
+Built and merged as PR #1 (squash 94bbbdd); the production smoke test was fixed in PR #3 (squash 35c4ce8). Both merged 27 Nov 2026.
+
+**What was built:**
+- Monorepo: a Next.js control plane in `apps/web` (Vercel project `eps-prototype`) and a Go module in `services/` (gateway, core, worker, fakepsp, simulator).
+- An OpenAPI contract, with generated types and a drift check.
+- Neon Postgres 18 with `control` and `sales` schemas, row-level security per organiser, and the NOBYPASSRLS login roles `eps_web_login` and `eps_core_login`.
+- Better Auth EdDSA JWTs, verified by Go through JWKS, with issuer and role checks.
+- A Helm umbrella chart on DOKS `eps-prototype-ams3`, with Traefik, cert-manager and sslip.io hostnames.
+- GitHub Actions workflows:
+  - ci
+  - per-PR preview: schema-only Neon branch, hashed namespace, Vercel preview, deployed Playwright
+  - preview cleanup
+  - deploy to production, with a core smoke test and a web smoke test against Vercel's deployment of the commit and against the production domain
+  - cluster-bootstrap and bootstrap-secrets
+
+**Deviations from the design:**
+- Go 1.26.
+- The cluster is in ams3, because fra1 had no capacity.
+- The Vercel project is named `eps-prototype`.
+- Preview databases are made by CI and schema-only; the Neon–Vercel integration's data-copy branches are ignored.
+- Readiness accepts a schema version at least the expected one, with expand/contract migrations.
+- CORS allows exact origins only.
+- The cluster add-ons are installed on the first deploy as well as by cluster-bootstrap.
+- Task 8.1's deliberately failing scratch commit was not run as its own step. Earlier red runs on PR #1 showed that the gate fails closed.
+
+**Checks run:**
+- Go vet and tests pass, including -race (testcontainers with postgres:18 and redis:8).
+- Vitest 55/55, tsc, eslint and next build pass.
+- helm lint and template, actionlint, contract drift and `openspec validate --all --strict` pass.
+- All 17 PR checks are green, including e2e against the deployed preview.
+- An independent Playwright check of the preview passed on desktop and phone: RO UI, no console errors, no horizontal scroll.
+- Three adversarial reviews of PR #1 found 34 items, 19 distinct after removing duplicates; all were fixed. Three reviews of PR #3 found 1 blocker and 9 other items; all were fixed.
+- Production deploy run 2 is green end to end: migrate, images, Helm, core smoke test and web smoke test on the commit's deployment and on https://eps-prototype.vercel.app.
+- cluster-bootstrap and bootstrap-secrets ran successfully after the merge.
+
+**Owner follow-ups (not blocking):**
+- Branch protection on `main`.
+- Move the production secrets into the `production` environment.
+- Optional: turn off the Neon–Vercel integration's preview branches.
+- Optional: a Google OAuth client and a mail provider.
