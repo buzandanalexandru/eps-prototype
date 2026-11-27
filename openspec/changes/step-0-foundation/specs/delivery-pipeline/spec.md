@@ -89,8 +89,13 @@ A push to `main` SHALL migrate the production database, deploy the Go services f
 
 #### Scenario: Successful production deploy
 - **WHEN** a pull request is squash-merged into `main`
-- **THEN** the production Go core reports the merged commit at `/v1/version`, the production web app serves it, and the smoke test passes
+- **THEN** the production Go core reports the merged commit at `/v1/version`; the smoke test runs against Vercel's own deployment of the merged commit (the URL from Vercel's deployment status, an `eps-prototype` `*.vercel.app` origin) and finds `/`, `/sign-in` and `/status` rendered, with `/status` showing the merged commit for both the web app and the core; and the production domain's `/status` shows the merged web commit within 3 minutes
 Test: apps/web/tests/e2e/smoke.spec.ts
+
+#### Scenario: Vercel never reports or reports failure
+- **WHEN** Vercel posts no successful production deployment for the merged commit, or posts a failure or error
+- **THEN** the web-smoke job fails within 15 minutes and its error names the cause (no deployment after 15 minutes, or Vercel's failed deployment URL)
+Test: manual check in the deploy workflow (.github/scripts/vercel-deployment.cjs fails the job on a vercel[bot] failure or error status, or after 90 polls of 10 s)
 
 #### Scenario: Go rollout fails readiness
 - **WHEN** the new Go pods never become ready

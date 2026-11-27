@@ -20,8 +20,9 @@ test("home, sign-in and status render", async ({ page }) => {
       )
         .replace(/\s+/g, " ")
         .slice(0, 300);
+      const u = new URL(page.url()); // no query string or fragment in the log
       throw new Error(
-        `${page.url()}: no visible h1; title "${await page.title()}"; text "${text}"`,
+        `${u.origin}${u.pathname}: no visible h1; title "${await page.title()}"; text "${text}"`,
       );
     }
     await expectNoHorizontalScroll(page);
@@ -35,4 +36,21 @@ test("home, sign-in and status render", async ({ page }) => {
     await expect(page.getByTestId("core-commit")).toHaveText(
       process.env.EXPECT_CORE_COMMIT,
     );
+});
+
+// The production domain serves the same commit (a missing or rolled-back alias fails the deploy).
+test("production domain serves this commit", async ({ page }, info) => {
+  const domain = process.env.PRODUCTION_DOMAIN_URL;
+  const sha = process.env.EXPECT_WEB_COMMIT;
+  test.skip(
+    !domain || !sha || info.project.name !== "desktop",
+    "only after a production deploy, once",
+  );
+  test.setTimeout(240_000);
+  await expect(async () => {
+    await page.goto(new URL("/status", domain).toString());
+    await expect(page.getByTestId("web-commit")).toHaveText(sha!, {
+      timeout: 5000,
+    });
+  }).toPass({ timeout: 180_000, intervals: [10_000] });
 });
