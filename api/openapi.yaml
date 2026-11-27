@@ -1,0 +1,206 @@
+openapi: 3.1.0
+info:
+  title: EPS core API
+  version: 0.1.0
+  description: |
+    The contract between the EPS control plane (Next.js) and the data plane (Go core and gateway).
+    This file is the single source: TypeScript types (apps/web/src/lib/core/schema.d.ts) and the Go
+    server stubs (services/internal/api/api.gen.go) are generated from it and CI fails on drift.
+    Every error is an RFC 9457 problem document with a machine `code` and the `requestId`.
+servers:
+  - url: https://core.prod.example.sslip.io
+    description: Production core (the real host is derived per environment)
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+  - name: identity
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      summary: Liveness
+      description: 200 while the process runs; never checks dependencies.
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /readyz:
+    get:
+      operationId: getReadyz
+      summary: Readiness
+      description: 200 when Postgres and Redis answer and the schemas are at the expected versions; 503 naming the failing checks otherwise.
+      tags: [health]
+      security: []
+      parameters:
+        - name: verbose
+          in: query
+          required: false
+          description: Include every check, not only the failing ones.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Ready to serve.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        "503":
+          description: Not ready; `checks` names what failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Readiness"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/version:
+    get:
+      operationId: getVersion
+      summary: Build and schema version of this service
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: Version information.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Version"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/whoami:
+    get:
+      operationId: getWhoami
+      summary: Echo the verified identity of the caller
+      description: Verifies the bearer core token and echoes its claims. 401 without a valid token.
+      tags: [identity]
+      responses:
+        "200":
+          description: The verified identity.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Identity"
+        "401":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: A core token issued by the control plane (EdDSA, audience `eps-core`, at most 5 minutes).
+  responses:
+    Problem:
+      description: An error, as an RFC 9457 problem document.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Check:
+      type: object
+      required: [name, ok]
+      properties:
+        name:
+          type: string
+          description: postgres, redis, schema:sales, schema:control
+        ok:
+          type: boolean
+        detail:
+          type: string
+          description: Why the check failed (never a secret or connection string).
+        expected:
+          type: integer
+          format: int64
+        actual:
+          type: integer
+          format: int64
+    Readiness:
+      type: object
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Check"
+    Version:
+      type: object
+      required: [service, commit, schemas]
+      properties:
+        service:
+          type: string
+          description: Binary name (core, gateway, ...).
+        commit:
+          type: string
+          description: Git commit the image was built from.
+        builtAt:
+          type: string
+        schemas:
+          type: object
+          description: Applied migration version per schema; absent when the database is unreachable.
+          properties:
+            control:
+              type: integer
+              format: int64
+            sales:
+              type: integer
+              format: int64
+    Identity:
+      type: object
+      required: [sub, kind, sid, exp]
+      properties:
+        sub:
+          type: string
+          description: User id, or `guest:<id>` for a guest.
+        kind:
+          type: string
+          enum: [organiser, fan, guest]
+        org:
+          type: string
+          description: Active organiser id (organiser tokens only).
+        role:
+          type: string
+        sid:
+          type: string
+        exp:
+          type: integer
+          format: int64
+    Problem:
+      type: object
+      required: [type, title, status, code, requestId]
+      properties:
+        type:
+          type: string
+          description: A URI reference identifying the problem type.
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          description: Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`.
+        requestId:
+          type: string

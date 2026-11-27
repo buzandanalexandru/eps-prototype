@@ -1,0 +1,8 @@
+# Only sources go into the build stage; nothing secret ever enters the context.
+.env*
+**/.env*
+*.pem
+*.key
+bin/
+**/*_test.go
+**/testdata/
