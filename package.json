@@ -1,0 +1,11 @@
+{
+  "name": "eps-prototype",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "openspec": "openspec"
+  },
+  "devDependencies": {
+    "@fission-ai/openspec": "1.16.0"
+  }
+}
