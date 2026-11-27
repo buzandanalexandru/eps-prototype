@@ -14,17 +14,17 @@ Step 0 delivered the control and sales schemas, row-level security keyed on `org
 **Non-Goals:**
 - Storefront design and the draft shop itself (step 2), publishing and snapshots (step 3), enforcing per-account caps (step 5), selling anything (step 4).
 - Payment accounts (A5, step 10), promo codes (C6, step 10), upgrades (C7, step 9), seat maps (J2, out of scope).
-- Real email for invitations: an invitation is a pending row and a copyable link.
+- Real email for invitations: an invitation is a pending row (token stored hashed) and a copyable link `/studio/invite/<organiser>/<token>`, shown once.
 
 ## Decisions
 
 ### D1.1 Studio structure
-- Studio is under `/studio`; the active organiser is held in the session (switcher in the header), not in the URL, so Playwright paths are stable. Changing it re-issues the core token with the new `org`.
+- Studio is under `/studio`; the active organiser is held in the session (a Better Auth session field `activeOrganiserId`, always re-checked against memberships; switcher in the header), not in the URL, so Playwright paths are stable. Changing it re-issues the core token with the new `org` (the membership cache is keyed by user and active organiser). Roles map to the core token's `role` claim as owner, admin, or staff for box office and finance; step 0's `staff` value stays valid.
 - Writes go through Next.js server actions that validate with zod schemas in `apps/web/src/lib/catalogue/schema.ts`, the same schemas the seed and (step 11) the AI copilot use. Each action runs inside the step 0 transaction helper.
 - Text that fans see (event and product names, descriptions, perks) is stored as `{ ro, en }` objects (jsonb); the brand's languages (step 2, B10) decide which are required.
 
 ### D1.2 Slugs and addresses
-Organiser and brand slugs: 3 to 40 characters, lowercase letters, digits and hyphens, globally unique across organisers (a platform-level unique index outside RLS, checked through a `SECURITY DEFINER` function that answers only "taken or free"), with a reserved list (`studio`, `api`, `s`, `status`, `fees`, `sign-in`, `admin`, `eps`, `www`). `brand_hostnames` holds hostnames entered only by configuration or seed (no screen; B8 is cut) and is read by step 3's host routing.
+Organiser and brand slugs: 3 to 40 characters, lowercase letters, digits and hyphens, globally unique across organisers (organiser slugs among organisers, brand slugs among brands; a platform-level unique index outside RLS, checked through a `SECURITY DEFINER` function that answers only "taken or free"), with a reserved list (`studio`, `api`, `s`, `status`, `fees`, `sign-in`, `admin`, `eps`, `www`). `brand_hostnames` holds hostnames entered only by configuration or seed (no screen; B8 is cut) and is read by step 3's host routing.
 
 ### D1.3 Money and fees
 - Money is integer minor units (bani, cents) plus a currency per brand (`RON` or `EUR`); no floats anywhere.
@@ -34,11 +34,11 @@ Organiser and brand slugs: 3 to 40 characters, lowercase letters, digits and hyp
 
 ### D1.4 Catalogue model
 - `venues` (per organiser, reusable), `events` (brand, venue, `{ro,en}` name/description, slug unique per brand, timezone default `Europe/Bucharest`, start and end, status `draft|published|archived` where only step 3 sets `published`, `edition_of` for copies), `event_days` (date, open and close local times; a night past midnight belongs to its start date), `lineup_slots` (artist name, day, stage, start time, order).
-- `products`: `type` in `pass | day_ticket | flex_day | add_on | voucher | table | time_slot`, plus type-specific settings in a validated jsonb `config`: pass → `zone`, `days[]`; day ticket → `day`; flex day → `days[]` it may be used on, day picked later; add-on → `requires` (product ids or "any ticket"); voucher → `spend_value`; table → `category`, `seats`; time slot → `slot_minutes`, `first_start`, `last_start`, `max_consecutive_slots`. Common: `{ro,en}` name, perks, `named` (needs personalisation), `sales_from/until`, `visible`, `max_per_order`, sort order.
+- `products`: `type` in `pass | day_ticket | flex_day | add_on | voucher | table | time_slot`, plus type-specific settings in a validated jsonb `config`: pass → `zone`, `days[]`; day ticket → `day` (or null: the buyer picks any event day when buying, used by Promenada's pick-a-day); flex day → `days[]` it may be used on, day picked later; add-on → `requires` (product ids or "any ticket"); voucher → `spend_value`; table → `category`, `seats`; time slot → `slot_minutes`, `first_start`, `last_start`, `max_consecutive_slots`. Common: `{ro,en}` name, perks, `named` (needs personalisation), `sales_from/until`, `visible`, `max_per_order`, sort order.
 - `capacity_pools` (name, capacity, `scope` in `event | day | slot`) and `product_pools` (many-to-many). A day- or slot-scoped pool means one counter per day or slot instance with that capacity; step 3 expands the instances. A product is sellable only while every pool it draws on has room (pretix quota semantics).
 - `price_steps` (product, mode `by_date` or `by_sales`, ordered; `from_at` or `after_sold`, unit face price). Exactly one mode per product; the first step has no threshold. "Sold" counts that product's paid units, supplied at sale time by the core (step 4); in Studio it is shown as 0 until sales exist. The public note text is fixed platform copy, not organiser-editable.
 - Buying rules as columns on events (`min_age`, `consent_under_age`) and products (`max_per_order`) and an event-level `max_per_account` (stored here, enforced in step 5).
-- `instalment_plans` per product: `deposit` (minor units), `monthly_count`, `day_of_month`, and the rule that the last payment falls at least 7 days before the event starts.
+- `instalment_plans` per product: `deposit` (minor units), `monthly_count`, `day_of_month`, and the rule that the last payment falls at least 7 days before the event starts. A plan is checked from the product's first sales day (else today): a buyer on that day gets the full plan, and checkout (step 4) offers later buyers at most `maxMonthlyPayments` that still end 7 days before the event.
 - Copy as new edition: one transaction copying the event, days, line-up, products, pools, ladder and plans with every date shifted by a chosen number of days (default: to the same weekday next year), status `draft`, `edition_of` set.
 
 ### D1.5 Readiness check

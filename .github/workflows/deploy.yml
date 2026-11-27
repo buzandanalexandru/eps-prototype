@@ -51,6 +51,16 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
         run: go run ./cmd/migrate -control ../apps/web/db/migrations
+      # Step 1 (sample-data): idempotent; touches only organisers flagged is_sample.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Seed the sample organisers (sample data only)
+        env:
+          SEED_DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: npm run seed -w apps/web
 
   images:
     needs: secrets

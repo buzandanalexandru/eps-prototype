@@ -109,8 +109,16 @@ jobs:
         env:
           DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
         run: go run ./cmd/migrate -control ../apps/web/db/migrations -assert-empty
-      # No seed data in step 0; step 1's sample-data capability seeds the NIBIRU catalogue here
-      # (sample data only).
+      # Step 1 (sample-data): the NIBIRU and Sunwave sample organisers, after the empty-branch check.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Seed the sample organisers (sample data only)
+        env:
+          SEED_DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: npm run seed -w apps/web
 
   web:
     # Points the Vercel preview at the CI branch and returns its exact URLs (for CORS and tests).

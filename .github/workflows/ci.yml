@@ -16,16 +16,41 @@ jobs:
   web:
     name: web (lint, typecheck, unit tests, build)
     runs-on: ubuntu-latest
+    # Database-backed unit tests (isolation, slugs, catalogue, seed) run against a migrated
+    # postgres:18, through the same transaction helper (SET LOCAL ROLE eps_web) as the app.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      EPS_TEST_DATABASE_URL: postgres://postgres:ci-only-password@localhost:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
       - run: npm ci
       - run: npm run lint -w apps/web
       - run: npm run typecheck -w apps/web
+      - name: Migrate the test database
+        working-directory: services
+        env:
+          DATABASE_URL: ${{ env.EPS_TEST_DATABASE_URL }}
+        run: go run ./cmd/migrate -control ../apps/web/db/migrations
       - run: npm test -w apps/web
+      - name: The seed runs twice from the command line
+        env:
+          SEED_DATABASE_URL: ${{ env.EPS_TEST_DATABASE_URL }}
+        run: npm run seed -w apps/web && npm run seed -w apps/web
       - run: npm run build -w apps/web
 
   go:
