@@ -10,6 +10,20 @@ context: |
   CLI: OpenSpec is a pinned dev dependency (1.16.0). Run it as `npx openspec ...`. Never run
   `openspec feedback`, `openspec install` or `openspec update`.
   OpenSpec workflows never commit or push; the session does that after a change is archived.
+  Working rules: CLAUDE.md (autonomous loop, three reviewers, deployed tests). Capability names and
+  conventions: docs/planning/spec-map.md. Scope and depth: docs/planning/feature-scope.md.
+  Architecture decisions by ID: docs/planning/architecture.md.
+
+rules:
+  proposal:
+    - 'Start with "Step <n>: <title>", the demo act it serves, and the feature and decision IDs it covers'
+    - 'Before archiving, add a "## Status" section: what was built, deviations, checks run with their results'
+  specs:
+    - 'Use only the capability names in docs/planning/spec-map.md; a change writes only its own capabilities'
+    - 'Every scenario ends with a "Test: <path>" line naming the test that covers it (see spec-map.md)'
+    - 'Match the feature depth: Real gets full edge cases, Thin gets a short requirement for the screen and its simulated logic'
+  tasks:
+    - 'End with the CLAUDE.md loop: local tests, PR, three adversarial reviewers, Playwright on the deployed preview, merge, production smoke test, archive'
 
 # Project context (optional)
 # Add only constraints that should guide OpenSpec artifacts and workflows.
