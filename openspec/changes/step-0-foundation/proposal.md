@@ -16,7 +16,7 @@ Every later step needs the same base: one repository holding the Next.js control
 - Sign-in with Better Auth in Next.js: email magic link, Google, and a "continue as demo organiser / demo fan" path for the demo and for Playwright on deployed previews; guest identities for buyers without an account; short-lived tokens signed by Next.js and verified by Go against a published key set (U1).
 - Redis in the cluster with organiser- and event-prefixed keys (U2).
 - CI on GitHub Actions: tests, contract drift check, images to ghcr.io, per-PR preview (Vercel preview + Neon branch + the PR's Go images in their own namespace on DOKS), production deploy on merge, migrations in CI.
-- A DOKS cluster in fra1 created from a script, a public HTTPS address for the Go core through an ingress on the cluster load balancer (`<ip>.sslip.io` hostnames, TLS via cert-manager), and a `/status` page that shows the full round trip.
+- A DOKS cluster in ams3 (EU) captured in a reproducible script, a public HTTPS address for the Go core through an ingress on the cluster load balancer (`<ip>.sslip.io` hostnames, TLS via cert-manager), and a `/status` page that shows the full round trip.
 - The Vercel project (team "devblocks", root `apps/web`) is created and linked to the repo.
 
 ## Capabilities
@@ -32,6 +32,6 @@ None (first step).
 ## Impact
 
 - New code everywhere: `apps/web`, `services/`, `api/`, `deploy/`, `.github/workflows/`.
-- External systems: Vercel project (new), Neon project `eps-prototype` (`odd-sun-50771070`, aws-eu-central-1) gains the schemas and preview branches, DigitalOcean gains a DOKS cluster and a load balancer in fra1, ghcr.io gains one image per Go binary.
+- External systems: Vercel project (new), Neon project `eps-prototype` (`odd-sun-50771070`, aws-eu-central-1) gains the schemas and preview branches, DigitalOcean gains a DOKS cluster and a load balancer in ams3, ghcr.io gains one image per Go binary.
 - New dependencies inside the decided stack: Better Auth (with its JWT plugin), next-intl, shadcn/ui, Vitest, Playwright, pgx, go-redis, testcontainers-go. Small utilities: `openapi-typescript`, `oapi-codegen`, `jose`, `pressly/goose` (migrations). Cluster add-ons: Traefik, cert-manager, metrics-server.
 - Account actions the owner may need to take (see design.md, Open Questions): Google OAuth client, a mail sender for magic links, and a Vercel token for CI.

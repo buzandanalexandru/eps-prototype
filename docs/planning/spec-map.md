@@ -28,7 +28,7 @@ Capability names are kebab-case and flat (`openspec/specs/<name>/spec.md`).
 - **Specs describe behaviour**, not libraries or class names. The architecture lives in `design.md` and refers to `architecture.md` by decision ID.
 - Every proposal starts with the step number and title, lists its feature and decision IDs, and says which demo act it serves.
 - **Every scenario ends with a test line**, `Test: <path>` naming the test that will cover it:
-  - Go tests: `services/<service>/..._test.go`
+  - Go tests: `services/internal/<area>/..._test.go` or `services/cmd/<service>/..._test.go`
   - Web unit tests: `apps/web/tests/unit/<name>.test.ts`
   - Playwright: `apps/web/tests/e2e/<name>.spec.ts`
   - k6: `load/<name>.js`
@@ -47,3 +47,27 @@ load/                k6 scripts
 openspec/            specs and changes
 docs/                planning, research, deliverables
 ```
+
+## Cross-step interfaces (agreed while writing the changes)
+- **Core address per environment:** env slug `prod` for `main`, else the branch name (lowercase, at most 40 characters plus a 6-character hash). Core at `https://core.<slug>.<lb-ip>.sslip.io`, gateway at `gw.<slug>...`. The web app derives it from `VERCEL_GIT_COMMIT_REF` unless `CORE_API_URL` is set.
+- **Database:** roles `eps_web` and `eps_core` (no RLS bypass). Each transaction runs `SET LOCAL ROLE` and `set_config('app.organiser_id')`. goose migrations with one version table per schema. A schema test fails on any table without `organiser_id`, except a platform allowlist.
+- **Core token claims:** `aud=eps-core`, `kind` (organiser, fan or guest), `org`, `role`, `sid`, 5-minute life. Guests use `sub=guest:<id>`. Simulator guests use a rehearsal-only issuer accepted only on rehearsal sales (step 6).
+- **Redis keys:** `eps:{<org>}:<event|_>:<kind>:...`. Live snapshot at `eps:{org}:<event>:snapshot:live`.
+- **Money:**
+  - Integer minor units everywhere.
+  - Platform fee 2.5%; fee policies absorb, pass on or split, with the fan's half rounded down in a split.
+  - Pricing functions live in `apps/web/src/lib/pricing/`, with shared test vectors in `vectors.json` that the Go code must also pass.
+- **Sale snapshots:**
+  - Stored immutable in `control.sale_snapshots`, in the shape of `api/schemas/sale-snapshot.v1.json`.
+  - Each price step carries precomputed `allInMinor`, `fanFeeMinor` and `organiserNetMinor`.
+  - Go reads them only through `control.live_snapshot()`.
+  - Pool instance ids are `<poolId>[@date[Ttime]]`.
+- **Checkout:**
+  - Entry route `/s/<brand>/<locale>/checkout?event=&v=&items=productId:qty[:instance]`.
+  - Every order records the snapshot `(event, version)`.
+  - Default hold is 8 minutes, configurable from 5 to 15.
+  - Checkout slots are `checkout.slots.afterContact` and `checkout.slots.consents`.
+- **Sale settings** live in the sales schema (owned by Go) and are edited from Studio through the OpenAPI contract, so the admission rate changes live.
+- **Holds:** step 4 uses one counter per pool; step 5 swaps in sharded counters behind the same interface and re-runs step 4's hold tests.
+- **Issuing:** step 4 marks orders issued with a stub driven by `order.paid`; step 7 replaces it with real ticket issuing.
+- **Live dashboard:** the browser connects to the Go gateway's server-sent events directly, not through Vercel functions.
