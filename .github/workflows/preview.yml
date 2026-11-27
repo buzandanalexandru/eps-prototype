@@ -136,8 +136,9 @@ jobs:
                 const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
                   owner: context.repo.owner, repo: context.repo.repo, deployment_id: d.id, per_page: 5,
                 });
-                const ok = statuses.find((s) => s.state === "success");
-                if (ok) { core.setOutput("url", (ok.environment_url || ok.target_url).replace(/\/$/, "")); return; }
+                // Only Vercel's own status (vercel[bot], with an environment_url) names the preview.
+                const ok = statuses.find((s) => s.state === "success" && s.creator?.login === "vercel[bot]" && s.environment_url);
+                if (ok) { core.setOutput("url", ok.environment_url.replace(/\/$/, "")); return; }
                 if (statuses.some((s) => s.state === "failure" || s.state === "error")) {
                   core.setFailed(`Vercel preview deployment failed: ${statuses[0].target_url}`); return;
                 }
