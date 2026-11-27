@@ -17,7 +17,7 @@ function randomSuffix() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export function demoSignIn(opts: { domain: string }): BetterAuthPlugin {
+export function demoSignIn(opts: { domain: string; perMinute: number }): BetterAuthPlugin {
   return {
     id: "eps-demo-sign-in",
     endpoints: {
@@ -56,7 +56,7 @@ export function demoSignIn(opts: { domain: string }): BetterAuthPlugin {
       {
         pathMatcher: (path: string) => path === DEMO_SIGN_IN_PATH,
         window: 60,
-        max: 10,
+        max: opts.perMinute,
       },
     ],
   };

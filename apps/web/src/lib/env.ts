@@ -9,6 +9,12 @@ export function demoSignInEnabled(env: Env = process.env): boolean {
   return env.EPS_DEMO_SIGNIN === "on";
 }
 
+/** Demo sign-ins allowed per client address per minute (default 30). */
+export function demoSignInPerMinute(env: Env = process.env): number {
+  const n = Number(env.EPS_DEMO_SIGNIN_PER_MINUTE);
+  return Number.isInteger(n) && n > 0 ? n : 30;
+}
+
 export function demoEmailDomain(env: Env = process.env): string {
   return (env.EPS_DEMO_EMAIL_DOMAIN || DEFAULT_DEMO_EMAIL_DOMAIN).toLowerCase();
 }

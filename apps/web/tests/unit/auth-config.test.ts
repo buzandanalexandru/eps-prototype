@@ -101,7 +101,7 @@ describe("demo sign-in switch", () => {
   });
 
   it("is rate-limited per address", async () => {
-    const a = makeAuth({ EPS_DEMO_SIGNIN: "on" });
+    const a = makeAuth({ EPS_DEMO_SIGNIN: "on", EPS_DEMO_SIGNIN_PER_MINUTE: "10" });
     const statuses: number[] = [];
     for (let i = 0; i < 12; i++) {
       statuses.push((await a.auth.handler(post("/demo/sign-in", { as: "fan" }, { ip: "203.0.113.7" }))).status);

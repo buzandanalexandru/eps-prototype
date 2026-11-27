@@ -7,6 +7,7 @@ import {
   authSecret,
   demoEmailDomain,
   demoSignInEnabled,
+  demoSignInPerMinute,
   googleConfigured,
   webOrigin,
   type Env,
@@ -62,7 +63,7 @@ export function buildAuthOptions(deps: AuthDeps) {
       // Core tokens are issued only by /api/core-token with the claims of design D0.4.
       disableSettingJwtHeader: true,
     }),
-    ...(demoSignInEnabled(env) ? [demoSignIn({ domain: demoEmailDomain(env) })] : []),
+    ...(demoSignInEnabled(env) ? [demoSignIn({ domain: demoEmailDomain(env), perMinute: demoSignInPerMinute(env) })] : []),
     nextCookies(),
   ];
 
