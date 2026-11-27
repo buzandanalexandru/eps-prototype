@@ -8,4 +8,4 @@ A prototype of a next-generation, white-label ticketing platform that any event 
 3. **Vision**: at most one page, covering what "next-gen" means, the first 6 months, a 100k-people-in-10-minutes on-sale, and the team.
 
 ## Contents
-- `docs/research/`: teardowns of the existing EPS / nibiru.net platform and of competitors.
+- `docs/research/`: the NIBIRU/EPS teardown, six competitor reports (`competitors/`) and `feature-matrix.md` (combined matrix and standout shortlist).
