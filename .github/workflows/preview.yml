@@ -127,24 +127,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const sha = process.env.SHA;
-            for (let i = 0; i < 90; i++) {
-              const { data: deployments } = await github.rest.repos.listDeployments({
-                owner: context.repo.owner, repo: context.repo.repo, sha, per_page: 20,
-              });
-              for (const d of deployments.filter((d) => !/production/i.test(d.environment))) {
-                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
-                  owner: context.repo.owner, repo: context.repo.repo, deployment_id: d.id, per_page: 5,
-                });
-                const ok = statuses.find((s) => s.state === "success");
-                if (ok) { core.setOutput("url", (ok.environment_url || ok.target_url).replace(/\/$/, "")); return; }
-                if (statuses.some((s) => s.state === "failure" || s.state === "error")) {
-                  core.setFailed(`Vercel preview deployment failed: ${statuses[0].target_url}`); return;
-                }
-              }
-              await new Promise((r) => setTimeout(r, 10000));
-            }
-            core.setFailed("No successful Vercel preview deployment for this commit after 15 minutes. Is the Vercel project linked to the repository?");
+            const wait = require("./.github/scripts/vercel-deployment.cjs");
+            await wait({ github, context, core }, { sha: process.env.SHA, production: false });
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/go.mod
@@ -175,6 +159,14 @@ jobs:
           deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL WEB_URL "$GIT_BRANCH"
           deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL_UNPOOLED WEB_URL_UNPOOLED "$GIT_BRANCH"
           deploy/scripts/vercel-env.sh redeploy "$DEPLOYMENT" | tee -a "$GITHUB_OUTPUT"
+      - name: The URL handed to the tests is this project's Vercel deployment
+        env:
+          URL: ${{ steps.bind.outputs.url || steps.vercel.outputs.url }}
+        run: |
+          if [[ ! "$URL" =~ ^https://eps-prototype(-[a-z0-9-]+)?\.vercel\.app$ ]]; then
+            echo "::error::Not an eps-prototype Vercel deployment: '$URL'"; exit 1
+          fi
+          echo "Preview web app: $URL"
 
   deploy-core:
     needs: [guard, images, database, web]
