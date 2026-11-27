@@ -15,6 +15,12 @@ export function demoSignInPerMinute(env: Env = process.env): number {
   return Number.isInteger(n) && n > 0 ? n : 30;
 }
 
+/** Magic-link requests and verifications allowed per client address per minute (default 5). */
+export function magicLinkPerMinute(env: Env = process.env): number {
+  const n = Number(env.EPS_MAGIC_LINK_PER_MINUTE);
+  return Number.isInteger(n) && n > 0 ? n : 5;
+}
+
 export function demoEmailDomain(env: Env = process.env): string {
   return (env.EPS_DEMO_EMAIL_DOMAIN || DEFAULT_DEMO_EMAIL_DOMAIN).toLowerCase();
 }

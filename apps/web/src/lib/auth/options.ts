@@ -8,6 +8,7 @@ import {
   demoEmailDomain,
   demoSignInEnabled,
   demoSignInPerMinute,
+  magicLinkPerMinute,
   googleConfigured,
   webOrigin,
   type Env,
@@ -45,6 +46,7 @@ export function buildAuthOptions(deps: AuthDeps) {
     magicLink({
       expiresIn: MAGIC_LINK_TTL_SECONDS,
       storeToken: "hashed",
+      rateLimit: { window: 60, max: magicLinkPerMinute(env) },
       sendMagicLink: async ({ email, url }) => {
         await deps.mailer.sendMagicLink({ email, url });
       },

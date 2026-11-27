@@ -22,7 +22,7 @@ export default defineConfig({
         url: "http://localhost:3000/status",
         reuseExistingServer: true,
         timeout: 120_000,
-        env: { EPS_DEMO_SIGNIN: "on", EPS_DEMO_SIGNIN_PER_MINUTE: "200", ...(process.env as Record<string, string>) },
+        env: { EPS_DEMO_SIGNIN: "on", EPS_DEMO_SIGNIN_PER_MINUTE: "200", EPS_MAGIC_LINK_PER_MINUTE: "200", ...(process.env as Record<string, string>) },
       }
     : undefined,
 });
