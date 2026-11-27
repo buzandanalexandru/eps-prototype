@@ -89,6 +89,9 @@ jobs:
       - uses: ./.github/actions/kube
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - name: Cluster add-ons (first run only; cluster-bootstrap.yml can re-run them)
+        run: |
+          if ! kubectl get namespace traefik >/dev/null 2>&1; then deploy/cluster/addons.sh; fi
       - id: vars
         run: |
           base=$(deploy/scripts/core-base-domain.sh)
