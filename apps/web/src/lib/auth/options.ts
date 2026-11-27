@@ -137,6 +137,9 @@ export function buildAuthOptions(deps: AuthDeps) {
       accountLinking: { enabled: true, trustedProviders: ["google"] },
     },
     session: {
+      // The active organiser (design D1.1), set only by Studio's switcher (never from client input
+      // to the auth API); a membership check always follows when it is read.
+      additionalFields: { activeOrganiserId: { type: "string", required: false, input: false } },
       expiresIn: 7 * 24 * 3600,
       updateAge: 24 * 3600,
       // Plain getSession calls may read a signed cookie for up to a minute instead of the database.

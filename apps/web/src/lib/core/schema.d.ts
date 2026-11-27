@@ -126,7 +126,11 @@ export interface components {
             kind: "organiser" | "fan" | "guest";
             /** @description Active organiser id (organiser tokens only). */
             org?: string;
-            role?: string;
+            /**
+             * @description The exact membership role (organiser tokens only).
+             * @enum {string}
+             */
+            role?: "owner" | "admin" | "box_office" | "finance" | "staff";
             sid: string;
             /** Format: int64 */
             exp: number;

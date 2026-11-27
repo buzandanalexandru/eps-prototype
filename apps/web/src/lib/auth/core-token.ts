@@ -11,7 +11,7 @@ export type CoreKind = "organiser" | "fan" | "guest";
 export type AuthLike = {
   api: {
     getSession(opts: { headers: Headers; query?: { disableCookieCache?: boolean } }): Promise<{
-      session: { id: string };
+      session: { id: string; activeOrganiserId?: string | null };
       user: { id: string };
     } | null>;
     signJWT(opts: { body: { payload: Record<string, unknown> } }): Promise<{ token: string }>;
@@ -58,7 +58,7 @@ export async function issueCoreToken(
   // token's only database round trip.
   const session = await deps.auth.api.getSession({ headers: req.headers, query: { disableCookieCache: true } });
   if (session) {
-    const m = await deps.memberships(session.user.id);
+    const m = await deps.memberships(session.user.id, session.session.activeOrganiserId);
     const payload = m
       ? { ...base, sub: session.user.id, sid: session.session.id, kind: "organiser", org: m.organiserId, role: m.role }
       : { ...base, sub: session.user.id, sid: session.session.id, kind: "fan" };

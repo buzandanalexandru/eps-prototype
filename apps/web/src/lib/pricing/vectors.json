@@ -1,0 +1,312 @@
+{
+  "description": "Shared pricing vectors (design D1.3). Amounts are integer minor units. Every pricing implementation (this module, and any Go code that ever prices) must reproduce them exactly.",
+  "platformFee": {
+    "percentBps": 250,
+    "fixedMinor": 0
+  },
+  "fees": [
+    {
+      "name": "pass on 539.00 RON",
+      "faceMinor": 53900,
+      "policy": "pass_on",
+      "feeMinor": 1348,
+      "fanFeeMinor": 1348,
+      "allInMinor": 55248,
+      "organiserNetMinor": 53900
+    },
+    {
+      "name": "absorb 539.00 RON",
+      "faceMinor": 53900,
+      "policy": "absorb",
+      "feeMinor": 1348,
+      "fanFeeMinor": 0,
+      "allInMinor": 53900,
+      "organiserNetMinor": 52552
+    },
+    {
+      "name": "split 539.00 RON (even fee)",
+      "faceMinor": 53900,
+      "policy": "split",
+      "feeMinor": 1348,
+      "fanFeeMinor": 674,
+      "allInMinor": 54574,
+      "organiserNetMinor": 53226
+    },
+    {
+      "name": "absorb 25.00 RON",
+      "faceMinor": 2500,
+      "policy": "absorb",
+      "feeMinor": 63,
+      "fanFeeMinor": 0,
+      "allInMinor": 2500,
+      "organiserNetMinor": 2437
+    },
+    {
+      "name": "pass on 25.00 RON",
+      "faceMinor": 2500,
+      "policy": "pass_on",
+      "feeMinor": 63,
+      "fanFeeMinor": 63,
+      "allInMinor": 2563,
+      "organiserNetMinor": 2500
+    },
+    {
+      "name": "split 10.00 RON: odd fee 0.25, fan's half rounded down",
+      "faceMinor": 1000,
+      "policy": "split",
+      "feeMinor": 25,
+      "fanFeeMinor": 12,
+      "allInMinor": 1012,
+      "organiserNetMinor": 987
+    },
+    {
+      "name": "half-up rounding: 0.20 × 2.5% = 0.005 → 0.01",
+      "faceMinor": 20,
+      "policy": "pass_on",
+      "feeMinor": 1,
+      "fanFeeMinor": 1,
+      "allInMinor": 21,
+      "organiserNetMinor": 20
+    },
+    {
+      "name": "below half: 0.19 × 2.5% = 0.00475 → 0.00",
+      "faceMinor": 19,
+      "policy": "pass_on",
+      "feeMinor": 0,
+      "fanFeeMinor": 0,
+      "allInMinor": 19,
+      "organiserNetMinor": 19
+    },
+    {
+      "name": "free product under pass on",
+      "faceMinor": 0,
+      "policy": "pass_on",
+      "feeMinor": 0,
+      "fanFeeMinor": 0,
+      "allInMinor": 0,
+      "organiserNetMinor": 0
+    },
+    {
+      "name": "free product under absorb",
+      "faceMinor": 0,
+      "policy": "absorb",
+      "feeMinor": 0,
+      "fanFeeMinor": 0,
+      "allInMinor": 0,
+      "organiserNetMinor": 0
+    },
+    {
+      "name": "free product under split",
+      "faceMinor": 0,
+      "policy": "split",
+      "feeMinor": 0,
+      "fanFeeMinor": 0,
+      "allInMinor": 0,
+      "organiserNetMinor": 0
+    },
+    {
+      "name": "Ultra VIP 1,239.00 RON pass on",
+      "faceMinor": 123900,
+      "policy": "pass_on",
+      "feeMinor": 3098,
+      "fanFeeMinor": 3098,
+      "allInMinor": 126998,
+      "organiserNetMinor": 123900
+    }
+  ],
+  "ladders": [
+    {
+      "name": "date ladder on 15 Dec 2026",
+      "steps": [
+        {
+          "mode": "by_date",
+          "fromAt": null,
+          "priceMinor": 1000
+        },
+        {
+          "mode": "by_date",
+          "fromAt": "2026-12-01T00:00:00+02:00",
+          "priceMinor": 1100
+        },
+        {
+          "mode": "by_date",
+          "fromAt": "2027-01-01T00:00:00+02:00",
+          "priceMinor": 1300
+        },
+        {
+          "mode": "by_date",
+          "fromAt": "2027-07-24T00:00:00+03:00",
+          "priceMinor": 3500
+        }
+      ],
+      "at": "2026-12-15T12:00:00+02:00",
+      "sold": 0,
+      "activeIndex": 1,
+      "nextIndex": 2
+    },
+    {
+      "name": "date ladder before the first threshold",
+      "steps": [
+        {
+          "mode": "by_date",
+          "fromAt": null,
+          "priceMinor": 1000
+        },
+        {
+          "mode": "by_date",
+          "fromAt": "2026-12-01T00:00:00+02:00",
+          "priceMinor": 1100
+        }
+      ],
+      "at": "2026-11-01T00:00:00+02:00",
+      "sold": 0,
+      "activeIndex": 0,
+      "nextIndex": 1
+    },
+    {
+      "name": "date ladder exactly at a threshold",
+      "steps": [
+        {
+          "mode": "by_date",
+          "fromAt": null,
+          "priceMinor": 1000
+        },
+        {
+          "mode": "by_date",
+          "fromAt": "2026-12-01T00:00:00+02:00",
+          "priceMinor": 1100
+        }
+      ],
+      "at": "2026-12-01T00:00:00+02:00",
+      "sold": 0,
+      "activeIndex": 1,
+      "nextIndex": null
+    },
+    {
+      "name": "sales ladder with 9,999 sold",
+      "steps": [
+        {
+          "mode": "by_sales",
+          "afterSold": null,
+          "priceMinor": 53900
+        },
+        {
+          "mode": "by_sales",
+          "afterSold": 10000,
+          "priceMinor": 59900
+        }
+      ],
+      "at": "2026-12-01T00:00:00Z",
+      "sold": 9999,
+      "activeIndex": 0,
+      "nextIndex": 1
+    },
+    {
+      "name": "sales ladder with 10,000 sold",
+      "steps": [
+        {
+          "mode": "by_sales",
+          "afterSold": null,
+          "priceMinor": 53900
+        },
+        {
+          "mode": "by_sales",
+          "afterSold": 10000,
+          "priceMinor": 59900
+        }
+      ],
+      "at": "2026-12-01T00:00:00Z",
+      "sold": 10000,
+      "activeIndex": 1,
+      "nextIndex": null
+    }
+  ],
+  "instalments": [
+    {
+      "name": "NIBIRU-style at demo time: 552.48 all-in, 10.00 now and up to 7 monthly payments (5 Dec 2026)",
+      "allInMinor": 55248,
+      "depositMinor": 1000,
+      "monthlyCount": 7,
+      "dayOfMonth": 1,
+      "timeZone": "Europe/Bucharest",
+      "from": "2026-12-05T10:00:00Z",
+      "eventStartsAt": "2027-07-15T14:00:00Z",
+      "ok": true,
+      "amounts": [
+        7749,
+        7749,
+        7749,
+        7749,
+        7749,
+        7749,
+        7754
+      ],
+      "firstDue": "2027-01-01",
+      "lastDue": "2027-07-01"
+    },
+    {
+      "name": "local month: 30 Nov 23:30 in Bucharest is already December, so the first payment is in January",
+      "allInMinor": 10000,
+      "depositMinor": 0,
+      "monthlyCount": 1,
+      "dayOfMonth": 1,
+      "timeZone": "Europe/Bucharest",
+      "from": "2026-11-30T22:30:00Z",
+      "eventStartsAt": "2027-07-15T14:00:00Z",
+      "ok": true,
+      "amounts": [
+        10000
+      ],
+      "firstDue": "2027-01-01",
+      "lastDue": "2027-01-01"
+    },
+    {
+      "name": "runs past the event: latest possible count",
+      "allInMinor": 55248,
+      "depositMinor": 1000,
+      "monthlyCount": 9,
+      "dayOfMonth": 1,
+      "timeZone": "Europe/Bucharest",
+      "from": "2026-12-05T10:00:00Z",
+      "eventStartsAt": "2027-07-15T14:00:00Z",
+      "ok": false,
+      "code": "past_event",
+      "maxCount": 7
+    },
+    {
+      "name": "capped per buyer: up to 9 gives a 5 Dec buyer 7",
+      "allInMinor": 55248,
+      "depositMinor": 1000,
+      "monthlyCount": 9,
+      "dayOfMonth": 1,
+      "timeZone": "Europe/Bucharest",
+      "capToFit": true,
+      "from": "2026-12-05T10:00:00Z",
+      "eventStartsAt": "2027-07-15T14:00:00Z",
+      "ok": true,
+      "amounts": [
+        7749,
+        7749,
+        7749,
+        7749,
+        7749,
+        7749,
+        7754
+      ],
+      "firstDue": "2027-01-01",
+      "lastDue": "2027-07-01"
+    },
+    {
+      "name": "deposit not below the all-in price",
+      "allInMinor": 55248,
+      "depositMinor": 55248,
+      "monthlyCount": 3,
+      "dayOfMonth": 1,
+      "timeZone": "Europe/Bucharest",
+      "from": "2026-12-05T10:00:00Z",
+      "eventStartsAt": "2027-07-15T14:00:00Z",
+      "ok": false,
+      "code": "deposit_too_large"
+    }
+  ]
+}

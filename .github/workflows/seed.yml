@@ -1,0 +1,76 @@
+name: seed
+
+# Seeds the sample organisers (NIBIRU, Sunwave) on request (sample-data capability). Previews are
+# also seeded by preview.yml on every push; production only ever through this workflow. The seed
+# upserts the sample catalogue, removes only unpublished extras a visitor added, and never touches
+# a published event or a real organiser.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to seed
+        type: choice
+        options: [preview, production]
+        required: true
+      branch:
+        description: For target preview, the git branch whose preview database to seed
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seed-${{ inputs.target }}-${{ inputs.branch }}
+  cancel-in-progress: false
+
+env:
+  NEON_PROJECT_ID: odd-sun-50771070
+
+jobs:
+  preview:
+    if: inputs.target == 'preview'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preview database name (never production)
+        id: names
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          [[ -n "$BRANCH" ]] || { echo "::error::target preview needs the branch input"; exit 1; }
+          deploy/scripts/preview-names.sh "$BRANCH" | tee -a "$GITHUB_OUTPUT"
+      - id: neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_BRANCH: ${{ steps.names.outputs.neon_branch }}
+        run: deploy/scripts/neon-branch.sh uri "$NEON_BRANCH"
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Seed the sample organisers (sample data only)
+        env:
+          SEED_DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: npm run seed -w apps/web
+
+  production:
+    if: inputs.target == 'production' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - id: neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: deploy/scripts/neon-branch.sh default
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Seed the sample organisers (sample data only)
+        env:
+          SEED_DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: npm run seed -w apps/web

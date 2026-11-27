@@ -46,7 +46,8 @@ test.describe("sign-in", () => {
     const href = await mailbox.getByRole("link", { name: "Open sign-in link" }).first().getAttribute("href");
     expect(href).toBeTruthy();
     await page.goto(href!);
-    await expect(page).toHaveURL(/\/studio$/);
+    // A new user has no organisation yet: Studio starts onboarding (organisers spec).
+    await expect(page).toHaveURL(/\/studio(\/onboarding)?$/);
     await expect(page.getByTestId("studio-user")).toContainText(email.split("@")[0].slice(0, 5));
 
     // The same link a second time: no session, offer a new link.

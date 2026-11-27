@@ -40,8 +40,13 @@ An organiser SHALL be able to copy an event as a new edition, with its days, lin
 - **THEN** a draft "Galaxia 2028" exists with all products and pools, dates on the same weekdays in 2028, ladder dates shifted by the same offset, and no sales
 Test: apps/web/tests/unit/catalogue-editions.test.ts
 
+#### Scenario: Edition address already taken
+- **WHEN** the organiser copies "Galaxia 2027" a second time
+- **THEN** the second copy's address keeps the year and adds a number (`galaxia-2028-2`)
+Test: apps/web/tests/unit/review-fixes.test.ts
+
 ### Requirement: Core product types
-An event SHALL support multi-day passes by zone, day tickets for one day, and add-ons such as camping or parking that MAY require a ticket in the same order. Each product has a name per language, perks, a named-ticket flag, a sales window, visibility and a maximum per order.
+An event SHALL support multi-day passes by zone, day tickets for one day (a set day, or, when the day is left empty, the day the buyer picks when buying), and add-ons such as camping or parking that MAY require a ticket in the same order. Each product has a name per language, perks, a named-ticket flag, a sales window, visibility, a maximum per order, and optional personalisation and check-in deadlines and a late check-in fee used after purchase.
 
 #### Scenario: Pass by zone
 - **WHEN** the organiser creates "Golden Circle" as a pass for all four days in zone "Golden Circle" with perks "fast lane" and "VIP toilets"
@@ -94,6 +99,14 @@ Test: apps/web/tests/unit/catalogue-pools.test.ts
 - **THEN** the readiness check lists it
 Test: apps/web/tests/unit/catalogue-readiness.test.ts
 
+### Requirement: Pool scopes match products
+Passes, flexible days and add-ons MUST draw on event pools only, a per-slot pool SHALL serve only time slots, and every time slot on one slot pool MUST use the same time grid; the readiness check lists any other combination. A product and a pool it draws on MUST belong to the same event.
+
+#### Scenario: Pool scope and slot grid
+- **WHEN** a pass draws on a per-day pool, or two time slots with different start times share one slot pool
+- **THEN** the readiness check lists each
+Test: apps/web/tests/unit/review-fixes.test.ts
+
 ### Requirement: Price ladder by date or by sales
 A product's price SHALL be a ladder of steps, either by date (each step from a time) or by sales (each step after a number sold), never both. The price in force MUST depend only on the time and the quantity sold, and storefronts show a fixed public note saying so.
 
@@ -112,18 +125,23 @@ Test: apps/web/tests/unit/pricing.test.ts
 - **THEN** the save is refused
 Test: apps/web/tests/unit/catalogue-products.test.ts
 
+#### Scenario: Empty first price
+- **WHEN** the organiser clears the first step's price but keeps later steps
+- **THEN** the save is refused instead of promoting a later step
+Test: apps/web/tests/unit/review-fixes.test.ts
+
 #### Scenario: Before the first threshold
 - **WHEN** a date ladder is read before any step date
 - **THEN** the first step, which has no threshold, is in force
 Test: apps/web/tests/unit/pricing.test.ts
 
 ### Requirement: Buying rules
-An event SHALL record a minimum age, an age under which parental consent is required, and a maximum per account; each product SHALL record a maximum per order. These are settings here; enforcement belongs to checkout and the on-sale engine.
+An event SHALL record a minimum age, an age under which parental consent is required, and a maximum per account; each product SHALL record a maximum per order. These are settings here; enforcement belongs to checkout and the on-sale engine, where the maxima are the defaults of a sale and the stricter of these and the sale settings applies.
 
 #### Scenario: Stand-up age limit
 - **WHEN** the organiser sets minimum age 16 on a stand-up night
-- **THEN** the setting is saved and shown in Studio and in the event's readiness summary
-Test: manual check on the deployed preview (buying rules panel shows the saved values)
+- **THEN** the setting is saved and shown in Studio's buying rules panel and its summary
+Test: apps/web/tests/e2e/catalogue.spec.ts
 
 #### Scenario: Inconsistent rule
 - **WHEN** the consent age is below the minimum age, or a maximum is 0 or negative
@@ -131,15 +149,20 @@ Test: manual check on the deployed preview (buying rules panel shows the saved v
 Test: apps/web/tests/unit/catalogue-rules.test.ts
 
 ### Requirement: Instalment settings per product
-An organiser SHALL be able to offer instalments on a product as a deposit plus a number of equal monthly payments, and Studio SHALL show the generated schedule. The last payment MUST fall at least 7 days before the event starts.
+An organiser SHALL be able to offer instalments on a product as a deposit (a fixed amount or a share of the all-in price) plus up to a number of equal monthly payments. The number each buyer gets SHALL be computed from their purchase date: payments fall on a day of the month in the event's time zone, and the last MUST fall at least 7 local days before the event starts. Studio SHALL show the next buyer's schedule and from which date buyers get how many payments.
 
 #### Scenario: NIBIRU-style plan
-- **WHEN** a 539.00 RON pass (all-in 552.48 RON) offers 10 RON now and 9 monthly payments
-- **THEN** the schedule shows 10.00 RON now and 9 payments that add up to 542.48 RON, any rounding remainder on the last one
+- **WHEN** a 539.00 RON pass (all-in 552.48 RON) offers 10 RON now and up to 7 monthly payments, and a buyer purchases on 5 Dec 2026 for an event on 15 Jul 2027
+- **THEN** the schedule shows 10.00 RON now and 7 payments from 1 Jan to 1 Jul 2027 that add up to 542.48 RON, any rounding remainder on the last one
+Test: apps/web/tests/unit/instalments.test.ts
+
+#### Scenario: Plan capped per buyer
+- **WHEN** the same plan is bought on 10 Mar 2027, or on 1 Jul 2027
+- **THEN** the first buyer gets 4 monthly payments and the second no instalments, and Studio lists the dates from which buyers get each number
 Test: apps/web/tests/unit/instalments.test.ts
 
 #### Scenario: Plan runs past the event
-- **WHEN** the monthly payments would end less than 7 days before the event
+- **WHEN** the organiser saves more monthly payments than fit for the next buyer before the 7-day limit
 - **THEN** the save is refused with the latest possible number of payments
 Test: apps/web/tests/unit/instalments.test.ts
 
@@ -167,4 +190,14 @@ Every catalogue record SHALL belong to exactly one organiser, and a product, poo
 #### Scenario: Linking across organisers
 - **WHEN** a request tries to link organiser A's product to organiser B's pool
 - **THEN** the database refuses it and Studio reports not found
+Test: apps/web/tests/unit/catalogue-isolation.test.ts
+
+#### Scenario: Linking across events
+- **WHEN** a product is linked to a pool of another event of the same organiser, or a line-up slot to another event's day
+- **THEN** the database refuses it
+Test: apps/web/tests/unit/catalogue-isolation.test.ts
+
+#### Scenario: Saving with another organiser's id
+- **WHEN** a request saves a product or pool using the id of another organiser's row
+- **THEN** nothing changes and Studio reports not found; new rows always get server-generated ids
 Test: apps/web/tests/unit/catalogue-isolation.test.ts

@@ -333,6 +333,13 @@ func TestIssuerRoleAndBoundedKid(t *testing.T) {
 	if _, err := v.Verify(ctx, sign(t, priv, "k1", m)); err == nil {
 		t.Fatal("token without issuer accepted")
 	}
+	for _, role := range []string{"owner", "admin", "box_office", "finance", "staff"} {
+		m = organiserClaims(c.t)
+		m["role"] = role
+		if _, err := v.Verify(ctx, sign(t, priv, "k1", m)); err != nil {
+			t.Fatalf("membership role %q refused: %v", role, err)
+		}
+	}
 	m = organiserClaims(c.t)
 	m["role"] = "superadmin"
 	if _, err := v.Verify(ctx, sign(t, priv, "k1", m)); err == nil {

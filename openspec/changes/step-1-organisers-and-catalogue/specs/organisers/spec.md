@@ -19,8 +19,13 @@ Test: apps/web/tests/e2e/organiser-onboarding.spec.ts
 - **THEN** onboarding resumes at the brand step instead of creating a second organisation
 Test: apps/web/tests/e2e/organiser-onboarding.spec.ts
 
+#### Scenario: Double submit
+- **WHEN** the organisation step or the brand step is submitted twice at once
+- **THEN** one organisation and one brand exist, and both submissions land on them
+Test: apps/web/tests/unit/review-fixes.test.ts
+
 ### Requirement: Organiser and brand slugs are unique and safe
-Organiser and brand slugs SHALL be 3 to 40 lowercase letters, digits or hyphens, unique across the whole platform and not on the reserved list. The availability check MUST reveal nothing about the organiser that holds a slug.
+Organiser and brand slugs SHALL be 3 to 40 lowercase letters, digits or hyphens and not on the reserved list. Organiser slugs MUST be unique among organisers and brand slugs unique among brands (a brand slug is its shop address `/s/<slug>`), across every organiser. The reserved list includes the sample organisers' and brands' slugs for everyone but the seed. The availability check MUST reveal nothing about the organiser that holds a slug.
 
 #### Scenario: Slug taken by another organiser
 - **WHEN** an organiser tries brand slug `nibiru`, already used by another organiser
@@ -32,8 +37,13 @@ Test: apps/web/tests/unit/slugs.test.ts
 - **THEN** the form refuses it with the rule it breaks
 Test: apps/web/tests/unit/slugs.test.ts
 
+#### Scenario: Sample slug
+- **WHEN** a real organiser tries `nibiru-resort` or `sunwave`
+- **THEN** the form says the address is reserved
+Test: apps/web/tests/unit/review-fixes.test.ts
+
 ### Requirement: Several brands per organiser
-An organiser SHALL be able to hold several brands, each with its own name, slug, languages, currency and logo slot, and MAY have hostnames added by platform configuration for host-based addresses.
+An organiser SHALL be able to hold several brands, each with its own name, slug, languages, currency and logo slot, and MAY have hostnames added by platform configuration for host-based addresses. A brand's currency MUST NOT change once it has events, an event MUST NOT move to a brand with another currency, and a brand with published events MUST NOT be deleted. A sample organiser's brand addresses cannot be changed in Studio.
 
 #### Scenario: Second brand
 - **WHEN** the owner of an organisation with brand "NIBIRU Festivals" adds brand "NIBIRU Resort"
@@ -45,8 +55,21 @@ Test: apps/web/tests/e2e/brands.spec.ts
 - **THEN** Studio shows not found
 Test: apps/web/tests/e2e/brands.spec.ts
 
+#### Scenario: Currency and deletion guards
+- **WHEN** the owner changes the currency of a brand that has events, moves an event to a brand in another currency, or deletes a brand with a published event
+- **THEN** each change is refused with its reason
+Test: apps/web/tests/unit/review-fixes.test.ts
+
+### Requirement: The organiser registry is protected
+A Studio session SHALL see only the organisers it belongs to or works in, MAY create only the organiser it is onboarding and rename it, and MUST NOT change an organiser's slug or sample flag or delete an organiser.
+
+#### Scenario: Registry writes
+- **WHEN** a request changes an organiser's slug or sample flag, deletes it, inserts another organiser, or renames another organiser
+- **THEN** the database refuses it or changes nothing
+Test: apps/web/tests/unit/catalogue-isolation.test.ts
+
 ### Requirement: Active organiser
-A user who belongs to several organisations SHALL choose one active organiser at a time; every Studio screen and core token MUST be scoped to it.
+A user who belongs to several organisations SHALL choose one active organiser at a time; every Studio screen and core token MUST be scoped to it. The core token carries the member's exact role (owner, admin, box office, finance).
 
 #### Scenario: Switching organiser
 - **WHEN** a user who belongs to A and B switches from A to B
@@ -54,7 +77,7 @@ A user who belongs to several organisations SHALL choose one active organiser at
 Test: apps/web/tests/unit/active-organiser.test.ts
 
 ### Requirement: Team roles screen
-Studio SHALL show the organisation's members with role (owner, admin, box office, finance) and scope (organisation, a brand or an event), and let the owner invite by email (a pending invitation with a copyable link), change roles and remove members. Only owner versus non-owner MUST be enforced.
+Studio SHALL show the organisation's members with role (owner, admin, box office, finance) and scope (organisation, a brand or an event), and let the owner invite by email (a pending invitation with a copyable link), change roles and remove members. Only owner versus non-owner MUST be enforced; the screen SHALL say that scopes are recorded but not enforced in the prototype.
 
 #### Scenario: Owner invites a box office member
 - **WHEN** the owner invites `door@example.com` as box office for one event
@@ -90,6 +113,11 @@ Test: apps/web/tests/unit/fee-policy.test.ts
 #### Scenario: Studio shows both sides
 - **WHEN** the organiser views a product priced at 539.00 RON under "pass on"
 - **THEN** Studio shows "Fan pays 552.48 RON" and "You receive 539.00 RON"
+Test: apps/web/tests/unit/fee-policy.test.ts
+
+#### Scenario: Policy change before publishing
+- **WHEN** the owner switches from "pass on" to "absorb"
+- **THEN** draft events show the new all-in prices at once, while a price already published keeps the value stored in its sale snapshot
 Test: apps/web/tests/unit/fee-policy.test.ts
 
 ### Requirement: One all-in price calculation

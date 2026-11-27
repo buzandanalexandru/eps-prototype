@@ -45,7 +45,9 @@ type KeySource interface {
 }
 
 // Roles an organiser token may carry (control.memberships.role).
-var organiserRoles = map[string]bool{"owner": true, "admin": true, "staff": true}
+// organiserRoles are the exact membership roles a core token may carry (step 1, design D1.6);
+// "staff" is step 0's value, still valid.
+var organiserRoles = map[string]bool{"owner": true, "admin": true, "box_office": true, "finance": true, "staff": true}
 
 // maxKidLen bounds the key id taken from an attacker-supplied header before it reaches an error
 // message or a log line.
