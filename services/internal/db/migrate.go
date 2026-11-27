@@ -29,7 +29,7 @@ func (s Schema) VersionTable() string { return string(s) + ".goose_db_version" }
 // MinControlVersion is the oldest control schema version the Go services work with (they read the
 // organiser registry and the auth key table). Raise it when the core starts depending on newer
 // control migrations.
-const MinControlVersion = 3
+const MinControlVersion = 4
 
 // Migrate applies the pending migrations of a schema from fsys (a directory of NNNNN_name.sql files).
 // It creates the schema first so the version table can live in it. Down migrations are never run.

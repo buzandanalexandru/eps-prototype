@@ -6,7 +6,18 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 )
+
+var rejected = metrics.NewCounter("eps_auth_tokens_rejected_total", "Core tokens rejected by the verifier.")
+
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "..."
+	}
+	return s
+}
 
 type ctxKey int
 
@@ -48,7 +59,10 @@ func Middleware(v *Verifier, log *slog.Logger) func(http.Handler) http.Handler {
 			} else if tok, ok := strings.CutPrefix(h, "Bearer "); !ok || tok == "" {
 				ctx = context.WithValue(ctx, authErrKey, ErrInvalidToken)
 			} else if c, err := v.Verify(ctx, strings.TrimSpace(tok)); err != nil {
-				log.Info("token rejected", "reason", err.Error(), "path", r.URL.Path)
+				// Rejections are counted always and logged only at Debug: a flood of bad tokens must
+				// not flood the log. The reason is bounded (key ids are cut in the verifier).
+				rejected.Inc()
+				log.Debug("token rejected", "reason", truncate(err.Error(), 200), "path", truncate(r.URL.Path, 200))
 				ctx = context.WithValue(ctx, authErrKey, err)
 			} else {
 				ctx = WithClaims(ctx, c)

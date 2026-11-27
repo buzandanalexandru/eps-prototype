@@ -29,7 +29,7 @@ func SimpleHandler(name string, log *slog.Logger, checks []health.Checker, cors 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteProblem(w, r, http.StatusNotFound, "not_found", "")
 	})
-	mws := []func(http.Handler) http.Handler{httpx.WithRequestID, httpx.WithRecover(log), httpx.WithAccessLog(log)}
+	mws := []func(http.Handler) http.Handler{httpx.WithRequestID, httpx.WithRecover(log), httpx.WithAccessLog(log, name)}
 	if cors != nil {
 		mws = append(mws, cors.Middleware)
 	}

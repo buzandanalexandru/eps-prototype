@@ -1,6 +1,13 @@
-// Package redisx builds every Redis key (U2). Organiser data lives under
-// eps:{<organiser>}:<event|_>:<kind>:<rest...>; platform data under eps:platform:<kind>:<rest...>.
-// The braces are a Redis Cluster hash tag, so one organiser's keys stay on one slot group.
+// Package redisx builds every Redis key (U2):
+//
+//	eps:{<organiser>}:<event|_>:<kind>:<rest...>          organiser data (Key)
+//	eps:{<organiser>:<event>:<shard>}:<kind>:<rest...>     hot on-sale keys (HotKey)
+//	eps:platform:<kind>:<rest...>                          platform data (PlatformKey)
+//
+// The braces are the Redis Cluster hash tag. Ordinary organiser keys tag on the organiser, so one
+// organiser's keys share a slot; hot keys (holds, counters, queues of one event, step 5) tag on
+// organiser, event and shard, so a big on-sale spreads over many slots instead of one. Every key
+// still starts with the organiser id, so isolation by prefix holds for both.
 package redisx
 
 import (
@@ -41,6 +48,26 @@ func Key(organiserID, eventID, kind string, rest ...string) (string, error) {
 		}
 	}
 	return "eps:{" + organiserID + "}:" + eventID + ":" + kind + joinRest(rest), nil
+}
+
+// HotKey builds a key for hot per-event state, tagged on organiser, event and shard. All three are
+// required: a hot key without an event or shard would put a whole on-sale on one slot.
+func HotKey(organiserID, eventID, shard, kind string, rest ...string) (string, error) {
+	if organiserID == "" {
+		return "", ErrNoOrganiser
+	}
+	if kind == "" {
+		return "", ErrNoKind
+	}
+	if eventID == NoEvent {
+		return "", ErrBadPart
+	}
+	for _, p := range append([]string{organiserID, eventID, shard, kind}, rest...) {
+		if !validPart(p) {
+			return "", ErrBadPart
+		}
+	}
+	return "eps:{" + organiserID + ":" + eventID + ":" + shard + "}:" + kind + joinRest(rest), nil
 }
 
 // PlatformKey builds a key for platform data that belongs to no organiser.

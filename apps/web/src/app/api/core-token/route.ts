@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import { authSecret, webOrigin } from "@/lib/env";
 import { issueCoreToken } from "@/lib/auth/core-token";
-import { dbMembershipLookup } from "@/lib/auth/membership";
+import { sharedMembershipLookup } from "@/lib/auth/membership";
 import { getAuth } from "@/lib/auth/server";
 import { getAppPool } from "@/lib/db/pool";
 
@@ -14,7 +14,7 @@ export async function GET(req: Request) {
   const res = await issueCoreToken(
     {
       auth: getAuth(),
-      memberships: dbMembershipLookup(getAppPool()),
+      memberships: sharedMembershipLookup(getAppPool()),
       secret: authSecret(),
       secureCookies: webOrigin().startsWith("https://"),
     },

@@ -12,6 +12,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
 )
 
@@ -32,17 +33,22 @@ func main() {
 		Checks: []health.Checker{
 			health.Postgres(pool),
 			health.Redis(rdb),
-			health.SchemaAtLeast(pool, db.Sales, salesVersion, true),
-			health.SchemaAtLeast(pool, db.Control, db.MinControlVersion, false),
+			health.SchemaAtLeast(pool, db.Sales, salesVersion),
+			health.SchemaAtLeast(pool, db.Control, db.MinControlVersion),
 		},
 	}
 	var keys auth.KeySource = auth.DBKeySource{Pool: pool}
 	if pool == nil {
 		keys = noKeys{}
 	}
+	issuers := auth.IssuersFromEnv(os.Getenv)
+	verifier := auth.NewVerifier(keys, issuers...)
+	verifier.Start(ctx)
+	metrics.NewGauge("eps_auth_key_loads", func() float64 { return float64(verifier.Loads()) })
+	log.Info("token issuers", "issuers", issuers)
 	h, err := coreapi.NewHandler(srv, coreapi.Options{
 		Log:      log,
-		Verifier: auth.NewVerifier(keys),
+		Verifier: verifier,
 		CORS:     httpx.NewCORS(service.Env("CORS_ALLOWED_ORIGINS", "")),
 	})
 	if err != nil {

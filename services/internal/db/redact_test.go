@@ -30,7 +30,7 @@ func TestConnectionErrorLogHasHostButNoSecret(t *testing.T) {
 	dsn := "postgres://app:" + password + "@127.0.0.1:1/neondb?sslmode=disable&connect_timeout=2"
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, err := Open(ctx, dsn)
+	_, err := Open(ctx, dsn, 2)
 	if err == nil {
 		t.Fatal("expected a connection error")
 	}
@@ -52,7 +52,7 @@ func TestConnectionErrorLogHasHostButNoSecret(t *testing.T) {
 	}
 
 	// An unparsable string never echoes its contents.
-	_, err = Open(ctx, "postgres://app:"+password+"@[bad")
+	_, err = Open(ctx, "postgres://app:"+password+"@[bad", 2)
 	if err == nil || strings.Contains(err.Error(), password) {
 		t.Fatalf("parse error leaks or is missing: %v", err)
 	}

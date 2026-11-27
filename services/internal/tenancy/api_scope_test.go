@@ -77,7 +77,7 @@ func TestOrganiserAPIScope(t *testing.T) {
 	}
 
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	v := auth.NewVerifier(staticKeys{"k": pub})
+	v := auth.NewVerifier(staticKeys{"k": pub}, auth.IssuerForEnv("test"))
 	reached := 0
 	h := httpx.Chain(probeAPI(pool, &reached),
 		httpx.WithRequestID,
@@ -86,7 +86,7 @@ func TestOrganiserAPIScope(t *testing.T) {
 	)
 	token := func(kind, sub, org string) string {
 		now := time.Now()
-		m := jwt.MapClaims{"aud": "eps-core", "sub": sub, "kind": kind, "sid": "s", "iat": now.Unix(), "exp": now.Add(4 * time.Minute).Unix()}
+		m := jwt.MapClaims{"iss": auth.IssuerForEnv("test"), "aud": "eps-core", "sub": sub, "kind": kind, "sid": "s", "iat": now.Unix(), "exp": now.Add(4 * time.Minute).Unix()}
 		if org != "" {
 			m["org"], m["role"] = org, "owner"
 		}

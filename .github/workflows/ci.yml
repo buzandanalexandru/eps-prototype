@@ -74,7 +74,19 @@ jobs:
             helm template eps-ci deploy/helm/eps -f deploy/helm/eps/$values \
               --set global.env=ci --set global.baseDomain=203.0.113.10.sslip.io --set global.image.tag=${{ github.sha }} > /dev/null
           done
-          helm template eps-ci deploy/helm/eps --set simulator.enabled=true | grep -q "kind: Job"
+          helm template eps-ci deploy/helm/eps --set simulator.enabled=true | grep -q "name: eps-ci-simulator-r1"
+      - name: Chart rules (no wildcard CORS, gateway without Postgres, HPA owns replicas, probe timeouts)
+        run: |
+          out=$(helm template eps-ci deploy/helm/eps -f deploy/helm/eps/values-production.yaml --set core.autoscaling.enabled=true)
+          ! grep -q 'vercel.app.*\*\|\*.*vercel.app' <<<"$out"
+          gw=$(helm template eps-ci deploy/helm/eps --show-only charts/gateway/templates/gateway.yaml)
+          ! grep -q DATABASE_URL <<<"$gw"
+          core=$(helm template eps-ci deploy/helm/eps --set core.autoscaling.enabled=true --show-only charts/core/templates/core.yaml)
+          grep -q 'kind: HorizontalPodAutoscaler' <<<"$core"
+          ! awk '/kind: Deployment/{d=1} /kind: Service/{d=0} d' <<<"$core" | grep -q '^  replicas:'
+          grep -q 'kind: PodDisruptionBudget' <<<"$core"
+          [[ $(grep -c 'timeoutSeconds: 3' <<<"$core") -ge 3 ]]
+          grep -q 'redis:8\.[0-9]*\.[0-9]*' <<<"$out"
 
   migrations:
     name: migration dry run (ephemeral postgres:18)
@@ -100,8 +112,14 @@ jobs:
           cache-dependency-path: services/go.sum
       - name: Apply both schemas
         run: go run ./cmd/migrate -control ../apps/web/db/migrations
-      - name: Re-run is a no-op
-        run: go run ./cmd/migrate -control ../apps/web/db/migrations
+      - name: Re-run is a no-op, and a fresh branch holds no user data
+        run: go run ./cmd/migrate -control ../apps/web/db/migrations -assert-empty
+      - name: The core's login role connects, cannot bypass RLS and reads the schema versions
+        run: |
+          go run ./cmd/migrate -login core -out "$RUNNER_TEMP/login.env"
+          url=$(sed -n 's/^url=//p' "$RUNNER_TEMP/login.env")
+          DATABASE_URL="$url" go run ./cmd/migrate -status
+          [[ "$(psql "$url" -tAc "select rolbypassrls from pg_roles where rolname = current_user")" == f ]]
 
   slug:
     name: preview slug vectors (CI script)

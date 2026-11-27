@@ -25,11 +25,16 @@ const (
 
 func (r Role) valid() bool { return r == RoleCore || r == RoleWeb }
 
-// Open connects a pool; errors never contain the password or the full connection string.
-func Open(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
+// Open connects a pool of at most maxConns connections (0 keeps pgx's default); errors never
+// contain the password or the full connection string. The bound matters: every pod of every
+// service holds its own pool against one Neon compute (design D0.2).
+func Open(ctx context.Context, dsn string, maxConns int32) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, &SafeError{Host: HostOf(dsn), Err: errors.New("invalid connection string")}
+	}
+	if maxConns > 0 {
+		cfg.MaxConns = maxConns
 	}
 	cfg.MaxConnIdleTime = 2 * time.Minute
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
@@ -61,6 +66,12 @@ func WithTx(ctx context.Context, b Beginner, role Role, organiserID string, fn f
 		return err
 	}
 	defer func() {
+		// A panic in fn rolls back before it continues up the stack, so the connection goes back
+		// to the pool clean instead of carrying an open transaction under the application role.
+		if p := recover(); p != nil {
+			_ = tx.Rollback(context.WithoutCancel(ctx))
+			panic(p)
+		}
 		if err != nil {
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 		}

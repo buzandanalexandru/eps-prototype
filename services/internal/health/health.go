@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,8 +57,11 @@ func Redis(client *redis.Client) Checker {
 	})
 }
 
-// SchemaAtLeast checks that a schema's applied version is at least min (exact when exact is true).
-func SchemaAtLeast(pool *pgxpool.Pool, schema db.Schema, want int64, exact bool) Checker {
+// SchemaAtLeast checks that a schema's applied version is at least want. A newer schema is ready:
+// migrations are forward-only and backward compatible (expand, then contract in a later release),
+// so the previous release keeps working while a new one rolls out, and a rollback never needs a
+// down migration.
+func SchemaAtLeast(pool *pgxpool.Pool, schema db.Schema, want int64) Checker {
 	name := "schema:" + string(schema)
 	return CheckFunc(func(ctx context.Context) api.Check {
 		if pool == nil {
@@ -67,17 +71,22 @@ func SchemaAtLeast(pool *pgxpool.Pool, schema db.Schema, want int64, exact bool)
 		if err != nil {
 			return fail(name, db.Redact(err.Error()))
 		}
-		c := api.Check{Name: name, Expected: &want, Actual: &got, Ok: got == want || (!exact && got > want)}
+		c := api.Check{Name: name, Expected: &want, Actual: &got, Ok: got >= want}
 		if !c.Ok {
-			d := fmt.Sprintf("schema %s is at version %d, expected %d", schema, got, want)
-			if !exact {
-				d = fmt.Sprintf("schema %s is at version %d, expected at least %d", schema, got, want)
-			}
+			d := fmt.Sprintf("schema %s is at version %d, expected at least %d", schema, got, want)
 			c.Detail = &d
 		}
 		return c
 	})
 }
+
+var draining atomic.Bool
+
+// SetDraining makes every readiness check fail from now on (the process is shutting down).
+func SetDraining() { draining.Store(true) }
+
+// ResetDrainingForTest clears the draining state (tests only).
+func ResetDrainingForTest() { draining.Store(false) }
 
 // Ready runs all checks with a deadline and reports whether all passed.
 func Ready(ctx context.Context, checks []Checker, verbose bool) (api.Readiness, bool) {
@@ -108,6 +117,10 @@ func Ready(ctx context.Context, checks []Checker, verbose bool) (api.Readiness, 
 		if !r.Ok || verbose {
 			out.Checks = append(out.Checks, r)
 		}
+	}
+	if draining.Load() {
+		ok = false
+		out.Checks = append(out.Checks, fail("draining", "shutting down"))
 	}
 	if !ok {
 		out.Status = "not_ready"

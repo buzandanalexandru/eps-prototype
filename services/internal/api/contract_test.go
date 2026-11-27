@@ -35,7 +35,7 @@ func newCore(t *testing.T) (http.Handler, string) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 	h, err := coreapi.NewHandler(&coreapi.Server{Service: "core"}, coreapi.Options{
 		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Verifier: auth.NewVerifier(keys{"k1": pub}),
+		Verifier: auth.NewVerifier(keys{"k1": pub}, auth.IssuerForEnv("test")),
 		CORS:     httpx.NewCORS(""),
 	})
 	if err != nil {
@@ -43,7 +43,7 @@ func newCore(t *testing.T) (http.Handler, string) {
 	}
 	now := time.Now()
 	tok := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{
-		"aud": "eps-core", "sub": "user-1", "kind": "fan", "sid": "s1", "jti": "j",
+		"iss": auth.IssuerForEnv("test"), "aud": "eps-core", "sub": "user-1", "kind": "fan", "sid": "s1", "jti": "j",
 		"iat": now.Unix(), "exp": now.Add(5 * time.Minute).Unix(),
 	})
 	tok.Header["kid"] = "k1"

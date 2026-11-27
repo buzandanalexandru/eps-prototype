@@ -38,7 +38,7 @@ describe("core tokens", () => {
     expect(payload).toMatchObject({ sub: userId, kind: "organiser", org: ORG, role: "owner", aud: "eps-core" });
     expect(payload.sid).toBeTruthy();
     expect(payload.jti).toBeTruthy();
-    expect(payload.iss).toBe("http://localhost:3000");
+    expect(payload.iss).toBe("urn:eps:web:dev"); // pinned per environment (Go checks it)
     expect(payload.exp! - payload.iat!).toBeLessThanOrEqual(300);
     expect(payload.exp! - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(300);
   });
@@ -119,5 +119,36 @@ describe("core tokens", () => {
     const later = (await jwks(a)).keys.map((k) => k.kid);
     expect(later).not.toContain(kid1);
     expect(later).toContain(kid2);
+  });
+});
+
+describe("core-token hot path", () => {
+  it("the signing key is read once per instance, not once per token", async () => {
+    const { cachedJwksAdapter } = await import("@/lib/auth/options");
+    const rows = [{ id: "k1", publicKey: "{}", privateKey: "{}", createdAt: new Date() }];
+    const findMany = vi.fn(async () => rows);
+    const create = vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: "k2", ...data }));
+    const ctx = { context: { adapter: { findMany, create } } };
+    const cache = cachedJwksAdapter(60_000);
+    for (let i = 0; i < 5; i++) expect(await cache.getJwks(ctx)).toBe(rows);
+    expect(findMany).toHaveBeenCalledTimes(1);
+    // A key created by this instance (rotation) clears the cache.
+    await cache.createJwk({ publicKey: "{}", privateKey: "{}", createdAt: new Date() }, ctx);
+    await cache.getJwks(ctx);
+    expect(findMany).toHaveBeenCalledTimes(2);
+  });
+
+  it("a token costs one database read: the session; memberships and keys come from the instance cache", async () => {
+    const { cachedMemberships } = await import("@/lib/auth/membership");
+    const a = makeAuth({ EPS_DEMO_SIGNIN: "on" });
+    const { cookie, userId } = await signIn(a, "organiser");
+    const lookup = vi.fn<MembershipLookup>(async () => ({ organiserId: ORG, role: "owner" }));
+    const d = deps(a, cachedMemberships(lookup));
+    for (let i = 0; i < 3; i++) {
+      const res = await issueCoreToken(d, { headers: new Headers({ cookie }), guest: false });
+      expect(res.status).toBe(200);
+    }
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(lookup).toHaveBeenCalledWith(userId);
   });
 });

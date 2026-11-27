@@ -5,17 +5,42 @@ import type { Env } from "../env";
 
 export const MAX_SLUG_BODY = 40;
 
-/** Environment slug for a branch: "prod" for main, else a DNS label of at most 47 characters. */
+/** Bodies that would read as a shared environment; they get a "br-" prefix (the hash is added anyway). */
+export const RESERVED_SLUG_BODIES = ["prod", "main", "staging", "eps"];
+
+/**
+ * Environment slug for a branch: "prod" for main, else `<body>-<hash>`, a DNS label of at most 47
+ * characters. Characters outside ASCII letters and digits become "-" *before* lowercasing, so a
+ * non-ASCII letter (for example "İ") never folds into an ASCII one; the 6-character hash of the raw
+ * branch name is always added, so no other branch maps to "prod" or to another branch's slug.
+ */
 export function envSlug(branch: string): string {
   if (branch === "main") return "prod";
   const hash = createHash("sha256").update(branch, "utf8").digest("hex").slice(0, 6);
-  const clean = branch
+  let body = branch
+    .replace(/[^A-Za-z0-9]+/g, "-")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  if (clean === "") return `env-${hash}`;
-  if (clean.length <= MAX_SLUG_BODY) return clean;
-  return `${clean.slice(0, MAX_SLUG_BODY).replace(/-+$/, "")}-${hash}`;
+    .replace(/^-+|-+$/g, "")
+    .slice(0, MAX_SLUG_BODY)
+    .replace(/-+$/, "");
+  if (body === "") body = "env";
+  if (RESERVED_SLUG_BODIES.includes(body) || body.startsWith("kube-")) body = `br-${body}`;
+  return `${body}-${hash}`;
+}
+
+/** This deployment's environment slug: from its branch, else EPS_ENV, else "dev". */
+export function webEnvSlug(env: Env = process.env): string {
+  const branch = env.VERCEL_GIT_COMMIT_REF || env.EPS_BRANCH;
+  return branch ? envSlug(branch) : env.EPS_ENV || "dev";
+}
+
+/**
+ * Issuer of this deployment's core tokens: `urn:eps:web:<slug>`. The Go core of the same
+ * environment accepts only this issuer (its CORE_TOKEN_ISSUERS, derived from the same slug), so a
+ * token minted by one environment never verifies in another.
+ */
+export function coreTokenIssuer(env: Env = process.env): string {
+  return `urn:eps:web:${webEnvSlug(env)}`;
 }
 
 /** The core's base URL: CORE_API_URL when set, else derived from the deployment's branch. */

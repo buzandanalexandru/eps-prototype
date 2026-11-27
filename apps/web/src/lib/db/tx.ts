@@ -1,6 +1,6 @@
 // The web app's single transaction helper (design D0.2, U2): every application query runs inside
 // it, under the eps_web role, with the organiser scope (and optionally the user) set for this
-// transaction only. Nothing else in the web app may run SET ROLE.
+// transaction only. Nothing else in the web app may run SET LOCAL ROLE.
 import type pg from "pg";
 
 export type Scope = {
@@ -12,26 +12,44 @@ export type Scope = {
 
 export const WEB_ROLE = "eps_web";
 
+// Scope values are uuids and Better Auth ids: letters, digits, "-" and "_". Anything else is refused
+// before it reaches SQL, which lets the setup go out as one simple-protocol statement.
+const SCOPE_VALUE = /^[A-Za-z0-9_-]{0,128}$/;
+
+function literal(v: string | undefined): string {
+  const s = v ?? "";
+  if (!SCOPE_VALUE.test(s)) throw new Error("withTx: scope ids may only hold letters, digits, '-' and '_'");
+  return `'${s}'`;
+}
+
+/** The statement that opens every application transaction: one round trip. */
+export function txSetup(scope: Scope): string {
+  return (
+    `BEGIN; SET LOCAL ROLE ${WEB_ROLE}; ` +
+    `SELECT set_config('app.organiser_id', ${literal(scope.organiserId)}, true), ` +
+    `set_config('app.user_id', ${literal(scope.userId)}, true)`
+  );
+}
+
 export async function withTx<T>(
   pool: Pick<pg.Pool, "connect">,
   scope: Scope,
   fn: (client: pg.PoolClient) => Promise<T>,
 ): Promise<T> {
+  const setup = txSetup(scope); // validates before a connection is taken
   const client = await pool.connect();
+  let broken = false;
   try {
-    await client.query("BEGIN");
-    await client.query(`SET LOCAL ROLE ${WEB_ROLE}`);
-    await client.query(
-      "select set_config('app.organiser_id', $1, true), set_config('app.user_id', $2, true)",
-      [scope.organiserId ?? "", scope.userId ?? ""],
-    );
+    await client.query(setup);
     const result = await fn(client);
     await client.query("COMMIT");
     return result;
   } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
+    await client.query("ROLLBACK").catch(() => {
+      broken = true; // the connection state is unknown: do not hand it to the next caller
+    });
     throw err;
   } finally {
-    client.release();
+    client.release(broken || undefined);
   }
 }

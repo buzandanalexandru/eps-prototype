@@ -1,7 +1,9 @@
-# main → namespace eps-prod. Autoscaling and final sizing arrive in step 12.
+# main -> namespace eps-prod. Autoscaling and final sizing arrive in step 12.
 global:
   env: prod
+  corsAllowedOrigins: "https://eps-prototype-devblocks.vercel.app"
 core:
   replicas: 2
+  database: { enabled: true, maxConns: 8 }
 gateway:
   replicas: 2

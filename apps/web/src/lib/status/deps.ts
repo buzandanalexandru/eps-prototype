@@ -2,7 +2,7 @@ import "server-only";
 import { headers } from "next/headers";
 import { authSecret, webCommit, webOrigin } from "../env";
 import { issueCoreToken } from "../auth/core-token";
-import { dbMembershipLookup } from "../auth/membership";
+import { sharedMembershipLookup } from "../auth/membership";
 import { getAuth } from "../auth/server";
 import { coreClient } from "../core/client";
 import { coreBaseUrl } from "../core/url";
@@ -32,7 +32,7 @@ export async function statusDeps(): Promise<StatusDeps> {
       const res = await issueCoreToken(
         {
           auth: getAuth(),
-          memberships: dbMembershipLookup(getAppPool()),
+          memberships: sharedMembershipLookup(getAppPool()),
           secret: authSecret(),
           secureCookies: webOrigin().startsWith("https://"),
         },

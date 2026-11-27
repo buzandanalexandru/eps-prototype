@@ -42,7 +42,7 @@ describe("sign-out", () => {
     expect(out.status).toBe(200);
     expect(a.db.session).toHaveLength(0);
     // The old cookie no longer opens Studio (getSession is what the Studio layout checks)...
-    expect(await a.auth.api.getSession({ headers })).toBeNull();
+    expect(await a.auth.api.getSession({ headers, query: { disableCookieCache: true } })).toBeNull();
     // ...and it cannot renew a core token.
     expect((await issueCoreToken(deps, { headers, guest: false })).status).toBe(401);
   });

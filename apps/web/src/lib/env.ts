@@ -3,7 +3,8 @@
 
 export type Env = Record<string, string | undefined>;
 
-export const DEFAULT_DEMO_EMAIL_DOMAIN = "demo.eps-prototype.dev";
+/** Demo identities live under a reserved, never-resolvable domain (RFC 2606 ".invalid"). */
+export const DEFAULT_DEMO_EMAIL_DOMAIN = "demo.eps.invalid";
 
 export function demoSignInEnabled(env: Env = process.env): boolean {
   return env.EPS_DEMO_SIGNIN === "on";
@@ -52,4 +53,39 @@ export function authSecret(env: Env = process.env): string {
   }
   // Local development and tests only.
   return "eps-local-development-secret-not-for-deploys-0000";
+}
+
+/** A Vercel preview deployment (pull request), as opposed to production or local development. */
+export function isVercelPreview(env: Env = process.env): boolean {
+  return env.VERCEL_ENV === "preview";
+}
+
+/**
+ * Pooled URL for application transactions. EPS_DATABASE_URL (set by CI, branch-scoped, as the
+ * eps_web_login role on the CI-made schema-only branch) wins. On a preview there is no fallback:
+ * the Neon–Vercel integration's DATABASE_URL points at a branch copied from production with its
+ * data, so a preview without EPS_DATABASE_URL has no database rather than production's data.
+ */
+export function appDatabaseUrl(env: Env = process.env): string | undefined {
+  if (env.EPS_DATABASE_URL) return env.EPS_DATABASE_URL;
+  if (isVercelPreview(env)) return undefined;
+  return env.DATABASE_URL || undefined;
+}
+
+/**
+ * Unpooled URL for Better Auth, whose connections keep a session-level SET ROLE and search_path
+ * (a transaction-mode pooler would hand those settings to other clients). Never the pooled URL on
+ * Vercel; locally DATABASE_URL is a direct connection.
+ */
+export function authDatabaseUrl(env: Env = process.env): string | undefined {
+  if (env.EPS_DATABASE_URL_UNPOOLED) return env.EPS_DATABASE_URL_UNPOOLED;
+  if (isVercelPreview(env)) return undefined;
+  if (env.DATABASE_URL_UNPOOLED) return env.DATABASE_URL_UNPOOLED;
+  return env.VERCEL ? undefined : env.DATABASE_URL || undefined;
+}
+
+/** Connections per pool per function instance (default 3, at most 10). */
+export function dbPoolMax(env: Env = process.env): number {
+  const n = Number(env.EPS_DB_POOL_MAX);
+  return Number.isInteger(n) && n > 0 && n <= 10 ? n : 3;
 }

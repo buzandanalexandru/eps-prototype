@@ -35,7 +35,13 @@ export function demoSignIn(opts: { domain: string; perMinute: number }): BetterA
             const email = demoOrganiserEmail(opts.domain);
             user = (await adapter.findUserByEmail(email))?.user;
             if (!user) {
-              user = await adapter.createUser({ email, name: "Demo organiser", emailVerified: true }, { method: "demo" });
+              try {
+                user = await adapter.createUser({ email, name: "Demo organiser", emailVerified: true }, { method: "demo" });
+              } catch (err) {
+                // Two first clicks at once: the other request created it (unique email). Re-read.
+                user = (await adapter.findUserByEmail(email))?.user;
+                if (!user) throw err;
+              }
             }
           } else {
             // A fresh fan per click, so two visitors never share a cart.

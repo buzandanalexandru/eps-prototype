@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
-# Vercel project environment variables for CI, through the Vercel REST API. Never prints a value.
+# Vercel project environment variables and deployments for CI, through the Vercel REST API. Never
+# prints a value; secret values are read from the environment variable named, never from argv.
 #   vercel-env.sh upsert <KEY> <value> <plain|encrypted> <targets,comma,separated>
 #   vercel-env.sh create-secret-if-missing <KEY> <target>     (48 random bytes, type sensitive)
+#   vercel-env.sh upsert-branch <KEY> <VALUE_VAR> <git-branch> (preview only, scoped to one branch)
+#   vercel-env.sh delete-branch <KEY> <git-branch>
+#   vercel-env.sh exists <KEY> <target>                       prints true or false
+#   vercel-env.sh upsert-secret <KEY> <VALUE_VAR> <target>    (production: type sensitive)
+#   vercel-env.sh redeploy <deployment-host> [production]     rebuilds it with the current env;
+#                                                             prints url= and origins= lines
 set -euo pipefail
 : "${VERCEL_TOKEN:?VERCEL_TOKEN is not set (GitHub Actions secret VERCEL_TOKEN)}"
 PROJECT="${VERCEL_PROJECT_ID:-prj_Wxv6KSuf1LnYTusYGNwtuHdkMXvD}"
@@ -35,6 +42,57 @@ case "${1-}" in
     body=$(jq -n --arg k "$key" --arg v "$value" --arg t "$target" --arg ty "$type" '{key: $k, value: $v, type: $ty, target: [$t]}')
     v POST "/v10/projects/$PROJECT/env?teamId=$TEAM" "$body" > /dev/null
     echo "Created $key for $target."
+    ;;
+  upsert-branch)
+    key="$2" var="$3" branch="$4"
+    value="${!var:?$var is empty}"
+    body=$(jq -n --arg k "$key" --arg v "$value" --arg b "$branch" \
+      '{key: $k, value: $v, type: "encrypted", target: ["preview"], gitBranch: $b}')
+    v POST "/v10/projects/$PROJECT/env?teamId=$TEAM&upsert=true" "$body" > /dev/null
+    echo "Set $key for preview branch $branch."
+    ;;
+  delete-branch)
+    key="$2" branch="$3"
+    ids=$(v GET "/v10/projects/$PROJECT/env?teamId=$TEAM&gitBranch=$(jq -rn --arg b "$branch" '$b|@uri')" |
+      jq -r --arg k "$key" --arg b "$branch" '.envs[] | select(.key == $k and .gitBranch == $b) | .id')
+    for id in $ids; do v DELETE "/v9/projects/$PROJECT/env/$id?teamId=$TEAM" > /dev/null; done
+    echo "Removed $key for preview branch $branch."
+    ;;
+  exists)
+    key="$2" target="$3"
+    n=$(v GET "/v10/projects/$PROJECT/env?teamId=$TEAM" |
+      jq --arg k "$key" --arg t "$target" '[.envs[] | select(.key == $k and (.target | index($t)) and (.gitBranch == null))] | length')
+    [[ "$n" != "0" ]] && echo true || echo false
+    ;;
+  upsert-secret)
+    key="$2" var="$3" target="$4"
+    value="${!var:?$var is empty}"
+    body=$(jq -n --arg k "$key" --arg v "$value" --arg t "$target" '{key: $k, value: $v, type: "sensitive", target: [$t]}')
+    v POST "/v10/projects/$PROJECT/env?teamId=$TEAM&upsert=true" "$body" > /dev/null
+    echo "Set $key for $target."
+    ;;
+  redeploy)
+    host="${2:?deployment host}" target="${3-}"
+    host="${host#https://}"; host="${host%%/*}"
+    src=$(v GET "/v13/deployments/$host?teamId=$TEAM")
+    id=$(jq -r .id <<<"$src"); name=$(jq -r .name <<<"$src")
+    body=$(jq -n --arg id "$id" --arg n "$name" --arg t "$target" \
+      '{deploymentId: $id, name: $n} + (if $t == "" then {} else {target: $t} end)')
+    new=$(v POST "/v13/deployments?teamId=$TEAM&forceNew=1" "$body" | jq -r .id)
+    echo "Redeploying $host as $new so it picks up the new variables..." >&2
+    for _ in $(seq 1 120); do
+      d=$(v GET "/v13/deployments/$new?teamId=$TEAM")
+      state=$(jq -r .readyState <<<"$d")
+      case "$state" in
+        READY)
+          echo "url=https://$(jq -r .url <<<"$d")"
+          echo "origins=$(jq -r '[("https://" + .url)] + [(.alias // [])[] | "https://" + .] | unique | join(",")' <<<"$d")"
+          exit 0 ;;
+        ERROR | CANCELED) echo "Vercel redeploy $new ended $state" >&2; exit 1 ;;
+      esac
+      sleep 10
+    done
+    echo "Vercel redeploy $new not ready after 20 minutes" >&2; exit 1
     ;;
   *) echo "usage: see header" >&2; exit 2 ;;
 esac

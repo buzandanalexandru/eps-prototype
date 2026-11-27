@@ -162,7 +162,7 @@ func NewHandler(s *Server, o Options) (http.Handler, error) {
 	h := httpx.Chain(mux,
 		httpx.WithRequestID,
 		httpx.WithRecover(o.Log),
-		httpx.WithAccessLog(o.Log),
+		httpx.WithAccessLog(o.Log, s.Service),
 		o.CORS.Middleware,
 		auth.Middleware(o.Verifier, o.Log),
 		validator,

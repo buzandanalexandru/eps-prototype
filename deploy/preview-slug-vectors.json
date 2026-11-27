@@ -1,18 +1,29 @@
 {
-  "$comment": "Branch name -> environment slug (design D0.5). Checked by apps/web/tests/unit/core-url.test.ts against both envSlug (TypeScript) and deploy/scripts/slug.sh (CI).",
+  "$comment": "Branch name -> environment slug (design D0.5). Checked by apps/web/tests/unit/core-url.test.ts against both envSlug (TypeScript) and deploy/scripts/slug.sh (CI), and by the ci workflow's slug job. Every non-main branch gets the 6-character hash, so no branch maps to prod (reserved bodies also get a br- prefix) and feature/x, feature-x and Feature_X differ.",
   "vectors": [
     { "branch": "main", "slug": "prod" },
-    { "branch": "step-0-foundation", "slug": "step-0-foundation" },
+    { "branch": "step-0-foundation", "slug": "step-0-foundation-7fad4f" },
     { "branch": "feature/Squad_Buy-and-a-very-long-description-of-the-change", "slug": "feature-squad-buy-and-a-very-long-descri-018276" },
-    { "branch": "UPPER/Case", "slug": "upper-case" },
+    { "branch": "UPPER/Case", "slug": "upper-case-459d9e" },
     { "branch": "___", "slug": "env-bda251" },
-    { "branch": "a--b", "slug": "a-b" },
+    { "branch": "a--b", "slug": "a-b-90827a" },
     { "branch": "dependabot/npm_and_yarn/apps/web/next-16.4.7", "slug": "dependabot-npm-and-yarn-apps-web-next-16-e2a7dc" },
-    { "branch": "x", "slug": "x" },
-    { "branch": "fix/ăîșț-diacritics", "slug": "fix-diacritics" },
-    { "branch": "release/2026.11.27", "slug": "release-2026-11-27" },
-    { "branch": "-leading-and-trailing-", "slug": "leading-and-trailing" },
+    { "branch": "x", "slug": "x-2d7116" },
+    { "branch": "fix/ăîșț-diacritics", "slug": "fix-diacritics-0c2188" },
+    { "branch": "fix/İnfo", "slug": "fix-nfo-9a612f" },
+    { "branch": "release/2026.11.27", "slug": "release-2026-11-27-27faf4" },
+    { "branch": "-leading-and-trailing-", "slug": "leading-and-trailing-5f50c0" },
     { "branch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbb", "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-b855e2" },
-    { "branch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+    { "branch": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-e33cdf" },
+    { "branch": "prod", "slug": "br-prod-6754af" },
+    { "branch": "Prod", "slug": "br-prod-5f5635" },
+    { "branch": "PROD/", "slug": "br-prod-5bc4b5" },
+    { "branch": "staging", "slug": "br-staging-e919a7" },
+    { "branch": "kube-system", "slug": "br-kube-system-88007f" },
+    { "branch": "eps", "slug": "br-eps-c769ea" },
+    { "branch": "main/x", "slug": "main-x-3d959f" },
+    { "branch": "feature/x", "slug": "feature-x-217d2b" },
+    { "branch": "feature-x", "slug": "feature-x-c791eb" },
+    { "branch": "Feature_X", "slug": "feature-x-c6683d" }
   ]
 }

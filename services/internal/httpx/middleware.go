@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 )
 
 type ctxKey int
@@ -54,17 +56,24 @@ func (s *statusRecorder) WriteHeader(code int) {
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
-// WithAccessLog logs one JSON line per request (never headers or bodies, so no tokens).
-func WithAccessLog(log *slog.Logger) func(http.Handler) http.Handler {
+// WithAccessLog counts every request by status class and logs one JSON line per request at Debug
+// (never headers or bodies, so no tokens). At 100k fans an Info line per request would cost more
+// than the request; errors (5xx) are still logged at Warn.
+func WithAccessLog(log *slog.Logger, service string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
+			metrics.RequestCounter(service, rec.status).Inc()
 			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 				return // probes every few seconds would drown the log
 			}
-			log.Info("request",
+			level := slog.LevelDebug
+			if rec.status >= 500 {
+				level = slog.LevelWarn
+			}
+			log.Log(r.Context(), level, "request",
 				"method", r.Method, "path", r.URL.Path, "status", rec.status,
 				"durationMs", time.Since(start).Milliseconds(), "requestId", RequestID(r.Context()))
 		})
@@ -92,4 +101,23 @@ func Chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 		h = mws[i](h)
 	}
 	return h
+}
+
+// WithWriteDeadline gives each request a write deadline of d, except requests for which stream
+// reports true (server-sent events), which keep an open-ended response. The server itself has no
+// global WriteTimeout, so a long-lived stream is never cut by it.
+func WithWriteDeadline(d time.Duration, stream func(*http.Request) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if stream == nil || !stream(r) {
+				_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// IsEventStream reports whether the client asked for server-sent events.
+func IsEventStream(r *http.Request) bool {
+	return r.Header.Get("Accept") == "text/event-stream"
 }

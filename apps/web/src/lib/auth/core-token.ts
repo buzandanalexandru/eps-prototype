@@ -10,7 +10,7 @@ export type CoreKind = "organiser" | "fan" | "guest";
 /** The slice of a Better Auth instance this module needs. */
 export type AuthLike = {
   api: {
-    getSession(opts: { headers: Headers }): Promise<{
+    getSession(opts: { headers: Headers; query?: { disableCookieCache?: boolean } }): Promise<{
       session: { id: string };
       user: { id: string };
     } | null>;
@@ -20,6 +20,7 @@ export type AuthLike = {
 
 export type CoreTokenDeps = {
   auth: AuthLike;
+  /** Wrap with cachedMemberships in deployments, so a token costs at most one database round trip. */
   memberships: MembershipLookup;
   secret: string;
   secureCookies: boolean;
@@ -52,7 +53,10 @@ export async function issueCoreToken(
   const exp = now + CORE_TOKEN_TTL_SECONDS;
   const base = { aud: CORE_AUDIENCE, iat: now, exp, jti: randomUUID() };
 
-  const session = await deps.auth.api.getSession({ headers: req.headers });
+  // Always from the database, never the session cookie cache: a signed-out or revoked session must
+  // not renew a token. With the signing key and memberships cached in process, this read is the
+  // token's only database round trip.
+  const session = await deps.auth.api.getSession({ headers: req.headers, query: { disableCookieCache: true } });
   if (session) {
     const m = await deps.memberships(session.user.id);
     const payload = m

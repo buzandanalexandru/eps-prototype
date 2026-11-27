@@ -8,7 +8,12 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
 )
 
-const allowList = "https://eps-prototype-devblocks.vercel.app,https://eps-prototype-*-devblocks.vercel.app"
+// Production plus the exact preview origins CI injects for one pull request. The wildcard entry is
+// what the chart used to ship; it is now ignored.
+const allowList = "https://eps-prototype-devblocks.vercel.app," +
+	"https://eps-prototype-a1b2c3d4e-devblocks.vercel.app," +
+	"https://eps-prototype-git-step-0-foundation-devblocks.vercel.app," +
+	"https://eps-prototype-*-devblocks.vercel.app"
 
 func preflight(h http.Handler, origin string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodOptions, "/v1/whoami", nil)
@@ -36,6 +41,11 @@ func TestCORSAllowsOnlyPlatformOrigins(t *testing.T) {
 		}
 	}
 	for _, origin := range []string{
+		// Any Vercel user can get this host by naming a personal project "eps-prototype-evil-devblocks".
+		"https://eps-prototype-evil-devblocks.vercel.app",
+		// Another pull request's preview (not injected for this environment).
+		"https://eps-prototype-git-other-branch-devblocks.vercel.app",
+		"https://eps-prototype-z9y8x7w6v-devblocks.vercel.app",
 		"https://evil.example",
 		"https://eps-prototype.vercel.app.evil.example",
 		"https://eps-prototype-x.evil.example-devblocks.vercel.app", // a dot inside the wildcard

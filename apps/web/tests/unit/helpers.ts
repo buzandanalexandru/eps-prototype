@@ -5,7 +5,7 @@ import { DemoMailbox, MemoryMailboxStore } from "@/lib/auth/mailer";
 import type { Env } from "@/lib/env";
 
 export const ORIGIN = "http://localhost:3000";
-export const DOMAIN = "demo.eps-prototype.dev";
+export const DOMAIN = "demo.eps.invalid";
 
 export function makeAuth(env: Env = {}, extraPlugins: BetterAuthPlugin[] = []) {
   const db: Record<string, unknown[]> = { user: [], session: [], account: [], verification: [], jwks: [], rateLimit: [] };

@@ -1,6 +1,10 @@
-# Pull request environments: one replica of everything, small requests. CI sets global.env,
-# global.baseDomain and global.image.tag with --set.
+# Pull request environments: one replica of everything, small pools. CI sets global.env,
+# global.baseDomain, global.image.tag, global.rolloutId and the preview's exact web origins
+# (global.corsAllowedOrigins) through a values file.
 core:
   replicas: 1
+  database: { enabled: true, maxConns: 3 }
 gateway:
   replicas: 1
+worker:
+  database: { enabled: true, maxConns: 2 }

@@ -8,7 +8,7 @@ import en from "../../messages/en.json";
 import { googleConfigured, demoSignInEnabled } from "@/lib/env";
 import { SignInForm } from "@/app/sign-in/sign-in-form";
 import { renderWithIntl } from "./render";
-import { cookieFrom, DOMAIN, get, makeAuth, post } from "./helpers";
+import { cookieFrom, DOMAIN, makeAuth, post } from "./helpers";
 
 function renderForm(env: Record<string, string | undefined>) {
   return renderWithIntl("en", en, createElement(SignInForm, {
@@ -57,20 +57,33 @@ describe("Google sign-in configuration", () => {
 
   it("a verified Google address that already has a user attaches to that user", async () => {
     const a = makeAuth({ GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "secret" }, [fakeGoogleCallback]);
-    const email = `linked@${DOMAIN}`;
-    await a.auth.handler(post("/sign-in/magic-link", { email, callbackURL: "/studio" }));
-    const [entry] = await a.store.latest(email);
-    const signedIn = await a.auth.handler(get(entry.url));
-    const session = await a.auth.api.getSession({ headers: new Headers({ cookie: cookieFrom(signedIn) }) });
-    const magicUserId = session!.user.id;
+    const email = "linked@example.com"; // a real-world address (magic link with a mail provider)
+    const ctx = await a.auth.$context;
+    const existing = await ctx.internalAdapter.createUser({ email, name: "Linked", emailVerified: true }, { method: "magic-link" } as never);
 
     const res = await a.auth.handler(post("/test/fake-google", { email, sub: "google-sub-1" }));
     const body = await res.json();
     expect(body.error).toBeNull();
-    expect(body.userId).toBe(magicUserId);
+    expect(body.userId).toBe(existing.id);
     expect(a.db.user).toHaveLength(1);
     const accounts = a.db.account as { providerId: string; userId: string }[];
-    expect(accounts.filter((x) => x.providerId === "google").map((x) => x.userId)).toEqual([magicUserId]);
+    expect(accounts.filter((x) => x.providerId === "google").map((x) => x.userId)).toEqual([existing.id]);
+  });
+
+  it("never links a Google account to a demo-domain identity, nor creates one from Google", async () => {
+    const a = makeAuth({ GOOGLE_CLIENT_ID: "id", GOOGLE_CLIENT_SECRET: "secret", EPS_DEMO_SIGNIN: "on" }, [fakeGoogleCallback]);
+    expect(DOMAIN).toBe("demo.eps.invalid");
+    // The shared demo organiser exists...
+    const org = await (await a.auth.handler(post("/demo/sign-in", { as: "organiser" }))).json();
+    // ...and a Google account claiming its address does not get it.
+    const res = await a.auth.handler(post("/test/fake-google", { email: org.email, sub: "attacker" }));
+    expect((await res.json()).userId).toBeNull();
+    const accounts = a.db.account as { providerId: string }[];
+    expect(accounts.filter((x) => x.providerId === "google")).toHaveLength(0);
+    // A new demo-domain address through Google is refused too.
+    const fresh = await a.auth.handler(post("/test/fake-google", { email: `someone@${DOMAIN}`, sub: "g2" }));
+    expect((await fresh.json()).userId).toBeNull();
+    expect((a.db.user as { email: string }[]).map((u) => u.email)).toEqual([org.email]);
   });
 });
 
@@ -98,6 +111,32 @@ describe("demo sign-in switch", () => {
     expect(ids[0]).toBe(ids[1]); // one shared demo organiser
     expect(ids[2]).not.toBe(ids[3]); // a fresh fan per click
     expect(cookieFrom(fan1)).toContain("session_token");
+  });
+
+  it("two first clicks at once share one demo organiser", async () => {
+    const a = makeAuth({ EPS_DEMO_SIGNIN: "on" });
+    // The memory adapter has no unique index; stand in for control."user"."email" being unique.
+    const ctx = await a.auth.$context;
+    const create = ctx.internalAdapter.createUser.bind(ctx.internalAdapter);
+    // Like Postgres, a second insert of the same email waits for the first and then fails.
+    const inFlight = new Map<string, Promise<unknown>>();
+    ctx.internalAdapter.createUser = (async (user: { email: string }, ...rest: unknown[]) => {
+      const first = inFlight.get(user.email);
+      if (first) {
+        await first.catch(() => {});
+        throw new Error('duplicate key value violates unique constraint "user_email_key"');
+      }
+      const p = (async () => {
+        await new Promise((r) => setTimeout(r, 5)); // let the other clicks reach createUser meanwhile
+        return (create as (...a: unknown[]) => Promise<unknown>)(user, ...rest);
+      })();
+      inFlight.set(user.email, p);
+      return p;
+    }) as typeof ctx.internalAdapter.createUser;
+    const res = await Promise.all([1, 2, 3].map(() => a.auth.handler(post("/demo/sign-in", { as: "organiser" }))));
+    const ids = await Promise.all(res.map(async (r) => (await r.json()).userId));
+    expect(res.every((r) => r.status === 200)).toBe(true);
+    expect(new Set(ids).size).toBe(1);
   });
 
   it("is rate-limited per address", async () => {

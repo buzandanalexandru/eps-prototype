@@ -6,13 +6,13 @@ Scope is in `feature-scope.md`. Build steps are in `build-plan.md`.
 ## Hosting and fixed choices
 
 - **Control plane:** Next.js (TypeScript) on Vercel, Frankfurt region: EPS Studio (builder, catalogue, sale settings, dashboards), storefronts, fan account, wallet, squad and AI.
-- **Data plane:** Go on-sale core on DigitalOcean Kubernetes (DOKS), Frankfurt: gateway, core API, worker, fake payment providers, simulator.
+- **Data plane:** Go on-sale core on DigitalOcean Kubernetes (DOKS), Amsterdam (ams3; Frankfurt had no capacity for small nodes when the cluster was created, so the cluster moved to the nearest EU region): gateway, core API, worker, fake payment providers, simulator.
 - **Redis** runs inside the cluster (queue, stock shards, rate limits, streams).
 - **Postgres** is on Neon, Frankfurt: one database, a control schema owned by Next.js and a sales schema owned by Go.
 - **Addresses:** shops live at `/s/<brand>` because there is no demo domain. Routing also reads the host, so a custom domain later is configuration.
 - **Load story:** a live in-system simulator for the 100k on-sale, plus measured k6 throughput per instance and the scaling maths in the vision page. No claim of a real 100k-client test.
 - **No real payments:** every payment path, including Apple Pay, Google Pay and saved cards, runs through simulated providers behind a real network boundary.
-- **Data stays in the EU** (GDPR): all hosting in Frankfurt.
+- **Data stays in the EU** (GDPR): Vercel functions and Neon in Frankfurt, the cluster in Amsterdam.
 - **Accounts** (DigitalOcean, Neon, Vercel, Anthropic) are ready before the build. Keys are entered through secure forms, never in chat or in the repo.
 
 ## System sketch
@@ -27,7 +27,7 @@ Scope is in `feature-scope.md`. Build steps are in `build-plan.md`.
  +-----------+----------------------------------------------+-----------+
              | publish = versioned sale snapshot            | HTTPS + JWT
              v                                              v
- +---- Neon Postgres ----+        +------------- DOKS Frankfurt -----------------+
+ +---- Neon Postgres ----+        +------------- DOKS Amsterdam -----------------+
  | control schema        |<------>| gateway (queue, passes)    HPA               |
  | sales schema (orders) |        | core API (holds, checkout, payments) HPA     |
  | outbox                |        | worker (issuing, webhooks, reconcile)        |

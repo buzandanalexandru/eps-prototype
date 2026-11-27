@@ -26,4 +26,4 @@ export async function setLocale(page: Page, locale: "ro" | "en") {
   ]);
 }
 
-export const DEMO_DOMAIN = process.env.EPS_DEMO_EMAIL_DOMAIN || "demo.eps-prototype.dev";
+export const DEMO_DOMAIN = process.env.EPS_DEMO_EMAIL_DOMAIN || "demo.eps.invalid";

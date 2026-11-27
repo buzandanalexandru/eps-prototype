@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import { demoEmailDomain, demoSignInEnabled, googleConfigured } from "@/lib/env";
+import { hasDatabase } from "@/lib/db/pool";
 import { safeNext } from "@/lib/auth/guard";
 import { isDemoAddress } from "@/lib/auth/mailer";
 import { getMailbox } from "@/lib/auth/server";
@@ -18,7 +19,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
   const sent = sp.sent?.toLowerCase();
 
   let mailbox: { url: string; createdAt: Date }[] | null = null;
-  if (demo && sent && isDemoAddress(sent, domain) && process.env.DATABASE_URL) {
+  if (demo && sent && isDemoAddress(sent, domain) && hasDatabase()) {
     mailbox = await getMailbox()
       .latest(sent, 3)
       .catch(() => []);

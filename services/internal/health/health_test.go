@@ -15,7 +15,7 @@ import (
 func TestUnconfiguredDependenciesAreNotReady(t *testing.T) {
 	var pool *pgxpool.Pool
 	var rdb *redis.Client
-	res, ok := Ready(context.Background(), []Checker{Postgres(pool), Redis(rdb), SchemaAtLeast(pool, db.Sales, 1, true),
+	res, ok := Ready(context.Background(), []Checker{Postgres(pool), Redis(rdb), SchemaAtLeast(pool, db.Sales, 1),
 		CheckFunc(func(context.Context) api.Check { panic("boom") })}, false)
 	if ok || len(res.Checks) != 4 {
 		t.Fatalf("%+v", res)

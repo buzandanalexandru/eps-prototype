@@ -6,10 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +22,12 @@ type fakeSource struct {
 	mu    sync.Mutex
 	keys  map[string]ed25519.PublicKey
 	calls int
+}
+
+func (f *fakeSource) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
 }
 
 func (f *fakeSource) LoadKeys(context.Context) (map[string]ed25519.PublicKey, error) {
@@ -45,7 +53,7 @@ func setup(t *testing.T) (*Verifier, *fakeSource, ed25519.PrivateKey, *clock) {
 	}
 	src := &fakeSource{keys: map[string]ed25519.PublicKey{"k1": pub}}
 	c := &clock{t: time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)}
-	v := NewVerifier(src)
+	v := NewVerifier(src, "https://web.example")
 	v.Now = c.now
 	return v, src, priv, c
 }
@@ -158,40 +166,184 @@ func TestKindRules(t *testing.T) {
 	}
 }
 
-// Scenario "Flood of unknown key ids".
-func TestUnknownKeyIDFloodReloadsAtMostOncePerMinute(t *testing.T) {
+// Scenario "Flood of unknown key ids": unknown key ids reload at most once per UnknownKidEvery
+// (15 s), on a limiter of their own; every such token is rejected.
+func TestUnknownKeyIDFloodIsRateLimited(t *testing.T) {
 	v, src, priv, c := setup(t)
 	ctx := context.Background()
 	if _, err := v.Verify(ctx, sign(t, priv, "k1", organiserClaims(c.t))); err != nil {
 		t.Fatal(err)
 	}
-	if src.calls != 1 {
-		t.Fatalf("initial load calls = %d", src.calls)
+	if src.count() != 1 {
+		t.Fatalf("initial load calls = %d", src.count())
 	}
-	// A flood within the same minute: every token is rejected, at most one reload.
-	c.t = c.t.Add(61 * time.Second)
+	// A 10 s flood (inside one limiter window and inside the refresh interval).
 	for i := 0; i < 500; i++ {
 		tok := sign(t, priv, "unknown-"+string(rune('a'+i%26)), organiserClaims(c.t))
 		if _, err := v.Verify(ctx, tok); err == nil {
 			t.Fatal("token with unknown kid accepted")
 		}
-		c.t = c.t.Add(50 * time.Millisecond) // 25 s in total
+		c.t = c.t.Add(20 * time.Millisecond)
 	}
-	if src.calls > 2 {
-		t.Fatalf("reloaded %d times during a 25 s flood, want at most once more", src.calls-1)
+	if got := src.count(); got != 2 {
+		t.Fatalf("loads during a 10 s flood = %d, want 2 (initial + one unknown-kid reload)", got)
 	}
-	// A key published after a rotation is picked up once the minute has passed.
+	// A key published after a rotation is picked up once the limiter window has passed.
 	pub2, priv2, _ := ed25519.GenerateKey(rand.Reader)
 	src.mu.Lock()
 	src.keys["k2"] = pub2
 	src.mu.Unlock()
-	c.t = c.t.Add(61 * time.Second)
+	c.t = c.t.Add(16 * time.Second)
 	if _, err := v.Verify(ctx, sign(t, priv2, "k2", organiserClaims(c.t))); err != nil {
 		t.Fatalf("rotated key not picked up: %v", err)
 	}
 	// Tokens of the previous key still verify during its grace period.
 	if _, err := v.Verify(ctx, sign(t, priv, "k1", organiserClaims(c.t))); err != nil {
 		t.Fatalf("previous key stopped verifying: %v", err)
+	}
+}
+
+// The periodic refresh is separate from the unknown-kid limiter: a flood that keeps the limiter
+// busy does not stop a stale set from refreshing, and keys are refreshed after RefreshEvery.
+func TestPeriodicRefreshIsIndependentOfUnknownKidLimiter(t *testing.T) {
+	v, src, priv, c := setup(t)
+	ctx := context.Background()
+	if err := v.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Use up the unknown-kid slot.
+	_, _ = v.Verify(ctx, sign(t, priv, "nope", organiserClaims(c.t)))
+	before := src.count()
+	c.t = c.t.Add(61 * time.Second)
+	if _, err := v.Verify(ctx, sign(t, priv, "k1", organiserClaims(c.t))); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for src.count() == before && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if src.count() != before+1 {
+		t.Fatalf("stale key set was not refreshed in the background (loads %d -> %d)", before, src.count())
+	}
+}
+
+type flakySource struct {
+	fakeSource
+	fail atomic.Bool
+	gate chan struct{} // when set, LoadKeys blocks until it is closed
+}
+
+func (f *flakySource) LoadKeys(ctx context.Context) (map[string]ed25519.PublicKey, error) {
+	if f.gate != nil {
+		<-f.gate
+	}
+	if f.fail.Load() {
+		f.mu.Lock()
+		f.calls++
+		f.mu.Unlock()
+		return nil, errors.New("database down")
+	}
+	return f.fakeSource.LoadKeys(ctx)
+}
+
+// A failed first load does not lock verification out for a minute: after the short back-off the
+// next request loads again and succeeds.
+func TestFailedFirstLoadDoesNotLockOut(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	src := &flakySource{fakeSource: fakeSource{keys: map[string]ed25519.PublicKey{"k1": pub}}}
+	src.fail.Store(true)
+	c := &clock{t: time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)}
+	v := NewVerifier(src, "https://web.example")
+	v.Now = c.now
+	ctx := context.Background()
+	if _, err := v.Verify(ctx, sign(t, priv, "k1", organiserClaims(c.t))); err == nil {
+		t.Fatal("verified without keys")
+	}
+	// Within the back-off, no database call.
+	n := src.count()
+	_, _ = v.Verify(ctx, sign(t, priv, "k1", organiserClaims(c.t)))
+	if src.count() != n {
+		t.Fatal("retried inside the back-off")
+	}
+	src.fail.Store(false)
+	c.t = c.t.Add(2 * time.Second)
+	if _, err := v.Verify(ctx, sign(t, priv, "k1", organiserClaims(c.t))); err != nil {
+		t.Fatalf("still locked out after the database recovered: %v", err)
+	}
+}
+
+// Many concurrent requests with an empty cache cause one database load, and readers never wait on
+// a lock held across that load.
+func TestConcurrentFirstLoadIsCollapsed(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	src := &flakySource{fakeSource: fakeSource{keys: map[string]ed25519.PublicKey{"k1": pub}}, gate: make(chan struct{})}
+	v := NewVerifier(src, "https://web.example")
+	now := time.Now()
+	v.Now = func() time.Time { return now }
+	tok := sign(t, priv, "k1", organiserClaims(now))
+	var wg sync.WaitGroup
+	errs := make(chan error, 50)
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := v.Verify(context.Background(), tok)
+			errs <- err
+		}()
+	}
+	// While the load is blocked, the read lock is free.
+	time.Sleep(50 * time.Millisecond)
+	done := make(chan struct{})
+	go func() { v.lookup("k1"); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("lookup blocked while a load was in flight")
+	}
+	close(src.gate)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if src.count() != 1 {
+		t.Fatalf("loads = %d, want 1", src.count())
+	}
+}
+
+// The issuer is pinned per environment, the role must be one of the membership roles, and a
+// rejected key id is bounded before it reaches an error or a log line.
+func TestIssuerRoleAndBoundedKid(t *testing.T) {
+	v, _, priv, c := setup(t)
+	ctx := context.Background()
+	m := organiserClaims(c.t)
+	m["iss"] = "urn:eps:web:other-env"
+	if _, err := v.Verify(ctx, sign(t, priv, "k1", m)); err == nil {
+		t.Fatal("token from another environment's issuer accepted")
+	}
+	m = organiserClaims(c.t)
+	delete(m, "iss")
+	if _, err := v.Verify(ctx, sign(t, priv, "k1", m)); err == nil {
+		t.Fatal("token without issuer accepted")
+	}
+	m = organiserClaims(c.t)
+	m["role"] = "superadmin"
+	if _, err := v.Verify(ctx, sign(t, priv, "k1", m)); err == nil {
+		t.Fatal("unknown role accepted")
+	}
+	none := NewVerifier(&fakeSource{})
+	if _, err := none.Verify(ctx, sign(t, priv, "k1", organiserClaims(time.Now()))); err == nil {
+		t.Fatal("a verifier without issuers accepted a token")
+	}
+	long := strings.Repeat("x", 5000) + "\n"
+	_, err := v.Verify(ctx, sign(t, priv, long, organiserClaims(c.t)))
+	if err == nil || len(err.Error()) > 300 || strings.Contains(err.Error(), "\n") {
+		t.Fatalf("unbounded kid in error (%d bytes)", len(err.Error()))
+	}
+	if got := IssuersFromEnv(func(k string) string { return map[string]string{"EPS_ENV": "prod"}[k] }); len(got) != 1 || got[0] != "urn:eps:web:prod" {
+		t.Fatalf("issuers from EPS_ENV = %v", got)
 	}
 }
 
