@@ -149,6 +149,6 @@ describe("core-token hot path", () => {
       expect(res.status).toBe(200);
     }
     expect(lookup).toHaveBeenCalledTimes(1);
-    expect(lookup).toHaveBeenCalledWith(userId);
+    expect(lookup).toHaveBeenCalledWith(userId, undefined); // no active organiser chosen in this session
   });
 });
