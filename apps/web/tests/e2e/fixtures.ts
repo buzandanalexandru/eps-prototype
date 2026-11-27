@@ -61,7 +61,15 @@ export async function signInWithMailbox(page: Page, email: string, next = "/stud
   await page.locator('form button[type="submit"]').first().click();
   const link = page.getByTestId("demo-mailbox").locator("a").first();
   await expect(link).toBeVisible();
-  await page.goto((await link.getAttribute("href"))!);
+  // The link is built on the deployment's canonical origin (on previews, the branch alias); open it
+  // on the origin under test so the session cookie lands where the rest of the test runs.
+  const href = new URL((await link.getAttribute("href"))!);
+  const here = new URL(page.url());
+  href.protocol = here.protocol;
+  href.host = here.host;
+  await page.goto(href.toString());
+  // The link's callback is absolute on that canonical origin; continue on the origin under test.
+  await page.goto(next);
 }
 
 /** Runs onboarding for the signed-in user (English UI); returns the slugs and brand page URL. */
