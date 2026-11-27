@@ -1,0 +1,162 @@
+name: deploy
+
+# main is production (design D0.6): migrate the Neon default branch, build the images, roll the Go
+# services out atomically in eps-prod, smoke-test the core, wait for Vercel's production
+# deployment and run the Playwright smoke test.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  deployments: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NEON_PROJECT_ID: odd-sun-50771070
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+  SHA: ${{ github.sha }}
+
+jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: deploy/scripts/require-secrets.sh DIGITALOCEAN_ACCESS_TOKEN NEON_API_KEY
+
+  migrate:
+    needs: secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - id: neon
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: deploy/scripts/neon-branch.sh default
+      - working-directory: services
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: go run ./cmd/migrate -control ../apps/web/db/migrations
+
+  images:
+    needs: secrets
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        binary: [core, gateway, worker, fakepsp, simulator]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services
+          target: ${{ matrix.binary }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/eps-${{ matrix.binary }}:${{ env.SHA }}
+            ${{ env.REGISTRY }}/eps-${{ matrix.binary }}:main
+          build-args: |
+            COMMIT=${{ env.SHA }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=${{ matrix.binary }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.binary }}
+
+  core:
+    needs: [migrate, images]
+    runs-on: ubuntu-latest
+    outputs:
+      core_url: ${{ steps.vars.outputs.core_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/kube
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - id: vars
+        run: |
+          base=$(deploy/scripts/core-base-domain.sh)
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "core_url=https://core.prod.$base" >> "$GITHUB_OUTPUT"
+      - name: Database URL secret
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+        run: |
+          export NEON_OUTPUT_FILE="$RUNNER_TEMP/neon.env"
+          deploy/scripts/neon-branch.sh default > /dev/null
+          url=$(grep '^database_url_unpooled=' "$NEON_OUTPUT_FILE" | tail -1 | cut -d= -f2-)
+          rm -f "$NEON_OUTPUT_FILE"
+          kubectl create namespace eps-prod --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n eps-prod create secret generic eps-db --from-literal=DATABASE_URL="$url" \
+            --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+      - name: helm upgrade --install (atomic; a release that never gets ready rolls back)
+        run: |
+          helm upgrade --install eps deploy/helm/eps --namespace eps-prod \
+            -f deploy/helm/eps/values-production.yaml \
+            --set global.baseDomain="${{ steps.vars.outputs.base }}" \
+            --set global.image.registry="$REGISTRY" \
+            --set global.image.tag="$SHA" \
+            --atomic --wait --timeout 10m
+      - name: Core smoke test
+        run: |
+          for i in $(seq 1 30); do
+            v=$(curl -fsS "${{ steps.vars.outputs.core_url }}/v1/version" || true)
+            if [[ "$(jq -r .commit <<<"$v" 2>/dev/null)" == "$SHA" ]]; then echo "$v"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::Production core does not report commit $SHA"; exit 1
+
+  web-smoke:
+    needs: core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for Vercel's production deployment of this commit
+        id: vercel
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for (let i = 0; i < 90; i++) {
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner, repo: context.repo.repo, sha: context.sha, per_page: 20,
+              });
+              for (const d of deployments.filter((d) => /production/i.test(d.environment))) {
+                const { data: statuses } = await github.rest.repos.listDeploymentStatuses({
+                  owner: context.repo.owner, repo: context.repo.repo, deployment_id: d.id, per_page: 5,
+                });
+                const ok = statuses.find((s) => s.state === "success");
+                if (ok) { core.setOutput("url", ok.environment_url || ok.target_url); return; }
+              }
+              await new Promise((r) => setTimeout(r, 10000));
+            }
+            core.setFailed("No successful Vercel production deployment for this commit after 15 minutes.");
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - working-directory: apps/web
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.url }}
+          CORE_URL: ${{ needs.core.outputs.core_url }}
+          EXPECT_WEB_COMMIT: ${{ github.sha }}
+          EXPECT_CORE_COMMIT: ${{ github.sha }}
+        run: npx playwright test tests/e2e/smoke.spec.ts

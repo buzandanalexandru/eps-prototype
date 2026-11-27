@@ -1,0 +1,28 @@
+{{- if .Values.enabled }}
+{{- $ctx := dict "name" "simulator" "ctx" . }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "eps.fullname" $ctx }}
+  labels:
+    {{- include "eps.labels" $ctx | nindent 4 }}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "eps.labels" $ctx | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      {{- include "eps.podSecurity" $ctx | nindent 6 }}
+      containers:
+        - name: simulator
+          image: {{ include "eps.image" $ctx }}
+          env:
+            {{- include "eps.env" $ctx | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- include "eps.containerSecurity" $ctx | nindent 10 }}
+{{- end }}

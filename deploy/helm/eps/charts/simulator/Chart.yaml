@@ -1,0 +1,5 @@
+apiVersion: v2
+name: simulator
+description: EPS simulator (virtual fans and bots for rehearsals, step 6), run as a Job.
+type: application
+version: 0.1.0

@@ -8,7 +8,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
 )
 
-const allowList = "https://eps-prototype.vercel.app,https://eps-prototype-*-devblocks.vercel.app"
+const allowList = "https://eps-prototype-devblocks.vercel.app,https://eps-prototype-*-devblocks.vercel.app"
 
 func preflight(h http.Handler, origin string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodOptions, "/v1/whoami", nil)
@@ -26,7 +26,7 @@ func TestCORSAllowsOnlyPlatformOrigins(t *testing.T) {
 	h := httpx.NewCORS(allowList).Middleware(ok)
 
 	for _, origin := range []string{
-		"https://eps-prototype.vercel.app",
+		"https://eps-prototype-devblocks.vercel.app",
 		"https://eps-prototype-git-step-0-foundation-devblocks.vercel.app",
 		"https://eps-prototype-a1b2c3d4e-devblocks.vercel.app",
 	} {

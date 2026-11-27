@@ -1,0 +1,66 @@
+# Shared by every sub-chart through .Values.global.
+global:
+  # Environment slug: "prod" for main, the branch slug for a pull request (deploy/scripts/slug.sh).
+  env: dev
+  # <load balancer ip>.sslip.io, from deploy/scripts/core-base-domain.sh.
+  baseDomain: example.sslip.io
+  image:
+    registry: ghcr.io/buzandanalexandru
+    tag: dev
+    pullPolicy: IfNotPresent
+  ingress:
+    className: traefik
+    clusterIssuer: letsencrypt-prod
+  # Secret (created by CI in the release namespace) holding DATABASE_URL for this environment's
+  # Neon branch. Never in values files.
+  databaseSecret: eps-db
+  # Browser origins allowed by CORS: the production web app and the project's previews.
+  corsAllowedOrigins: "https://eps-prototype-devblocks.vercel.app,https://eps-prototype-*-devblocks.vercel.app"
+
+core:
+  enabled: true
+  replicas: 1
+  ingress:
+    enabled: true
+    host: core
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+gateway:
+  enabled: true
+  replicas: 1
+  ingress:
+    enabled: true
+    host: gw
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+worker:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: { cpu: 20m, memory: 48Mi }
+    limits: { memory: 128Mi }
+
+fakepsp:
+  enabled: true
+  replicas: 1
+  resources:
+    requests: { cpu: 20m, memory: 32Mi }
+    limits: { memory: 128Mi }
+
+# A Kubernetes Job; off until a rehearsal is started (step 6).
+simulator:
+  enabled: false
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+redis:
+  enabled: true
+  image: redis:8
+  resources:
+    requests: { cpu: 20m, memory: 64Mi }
+    limits: { memory: 256Mi }

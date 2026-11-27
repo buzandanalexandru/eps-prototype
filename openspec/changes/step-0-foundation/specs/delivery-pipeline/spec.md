@@ -93,11 +93,11 @@ Test: services/internal/db/migrate_test.go
 Test: services/internal/health/ready_test.go
 
 ### Requirement: The cluster is reproducible from the repository
-A script in the repository SHALL create the Kubernetes cluster in Frankfurt and install its ingress, certificate and metrics add-ons. Running it again MUST change nothing when the cluster already exists.
+A script in the repository SHALL create the Kubernetes cluster in an EU region (Amsterdam, ams3, because Frankfurt had no capacity) and install its ingress, certificate and metrics add-ons. Running it again MUST change nothing when the cluster already exists.
 
 #### Scenario: First run
 - **WHEN** the cluster script runs and no cluster of that name exists
-- **THEN** a cluster on the newest 1.37 patch is created in fra1 with an autoscaling node pool, and the script prints its id and the load balancer address
+- **THEN** a cluster on 1.37 is created in ams3 with an autoscaling node pool, and the scripts print its id and (once the add-ons are installed) the load balancer address
 Test: manual check on the deployed preview (`deploy/cluster/up.sh` output and the cluster in the DigitalOcean API)
 
 #### Scenario: Second run

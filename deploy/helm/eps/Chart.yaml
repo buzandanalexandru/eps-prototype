@@ -1,0 +1,28 @@
+apiVersion: v2
+name: eps
+description: EPS data plane (R1) - one sub-chart per Go service, plus Redis.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+# Sub-charts live unpacked in charts/ (no repository needed).
+dependencies:
+  - name: common
+    version: 0.1.0
+  - name: core
+    version: 0.1.0
+    condition: core.enabled
+  - name: gateway
+    version: 0.1.0
+    condition: gateway.enabled
+  - name: worker
+    version: 0.1.0
+    condition: worker.enabled
+  - name: fakepsp
+    version: 0.1.0
+    condition: fakepsp.enabled
+  - name: simulator
+    version: 0.1.0
+    condition: simulator.enabled
+  - name: redis
+    version: 0.1.0
+    condition: redis.enabled

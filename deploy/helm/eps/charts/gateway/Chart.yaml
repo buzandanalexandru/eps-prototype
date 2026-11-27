@@ -1,0 +1,5 @@
+apiVersion: v2
+name: gateway
+description: EPS gateway (Go binary services/cmd/gateway).
+type: application
+version: 0.1.0

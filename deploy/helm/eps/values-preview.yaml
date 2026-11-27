@@ -1,0 +1,6 @@
+# Pull request environments: one replica of everything, small requests. CI sets global.env,
+# global.baseDomain and global.image.tag with --set.
+core:
+  replicas: 1
+gateway:
+  replicas: 1

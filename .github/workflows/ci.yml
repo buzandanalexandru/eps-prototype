@@ -1,0 +1,116 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web (lint, typecheck, unit tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint -w apps/web
+      - run: npm run typecheck -w apps/web
+      - run: npm test -w apps/web
+      - run: npm run build -w apps/web
+
+  go:
+    name: go (vet, tests with testcontainers, image contents)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - run: go vet ./...
+      - run: go test -count=1 ./...
+      - name: Image holds only the binary and CA certificates
+        run: EPS_IMAGE_TEST=1 go test -count=1 -run TestImageHoldsOnlyBinaryAndCACerts ./cmd/core/
+
+  contract:
+    name: contract drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - run: npm ci
+      - run: scripts/check-contract-drift.sh
+
+  helm:
+    name: helm (lint, template)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: |
+          for values in values-preview.yaml values-production.yaml; do
+            helm lint deploy/helm/eps -f deploy/helm/eps/$values \
+              --set global.env=ci --set global.baseDomain=203.0.113.10.sslip.io
+            helm template eps-ci deploy/helm/eps -f deploy/helm/eps/$values \
+              --set global.env=ci --set global.baseDomain=203.0.113.10.sslip.io --set global.image.tag=${{ github.sha }} > /dev/null
+          done
+          helm template eps-ci deploy/helm/eps --set simulator.enabled=true | grep -q "kind: Job"
+
+  migrations:
+    name: migration dry run (ephemeral postgres:18)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: services
+    env:
+      DATABASE_URL: postgres://postgres:ci-only-password@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/go.mod
+          cache-dependency-path: services/go.sum
+      - name: Apply both schemas
+        run: go run ./cmd/migrate -control ../apps/web/db/migrations
+      - name: Re-run is a no-op
+        run: go run ./cmd/migrate -control ../apps/web/db/migrations
+
+  slug:
+    name: preview slug vectors (CI script)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          jq -c '.vectors[]' deploy/preview-slug-vectors.json | while read -r v; do
+            branch=$(jq -r .branch <<<"$v"); want=$(jq -r .slug <<<"$v")
+            got=$(deploy/scripts/slug.sh "$branch")
+            [[ "$got" == "$want" ]] || { echo "slug($branch) = $got, want $want"; exit 1; }
+          done
