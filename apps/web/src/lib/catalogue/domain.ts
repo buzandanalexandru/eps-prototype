@@ -359,9 +359,13 @@ export function stepsOf(rows: StepRow[], productId: string): PriceStep[] {
 
 export type PlanRow = { product_id: string; deposit_minor: number; monthly_count: number; day_of_month: number };
 
-/** The all-in price a plan is checked against: the price in force on the first sales day (or now). */
+/**
+ * The day a plan is checked from: the product's first sales day, else now. A buyer on the first sales
+ * day gets the full plan; checkout (step 4) offers later buyers at most the payments that still end
+ * 7 days before the event (maxMonthlyPayments), so no real schedule breaks the rule.
+ */
 export function planReference(product: { sales_from: Date | null }, now: Date): Date {
-  return product.sales_from && product.sales_from.getTime() > now.getTime() ? product.sales_from : now;
+  return product.sales_from ?? now;
 }
 
 export async function pricingContext(c: ClientBase, ev: EventRow): Promise<{ currency: Currency; policy: FeePolicy; fee: { percentBps: number; fixedMinor: number } }> {

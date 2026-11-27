@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "gen:api": "openapi-typescript ../../api/openapi.yaml -o src/lib/core/schema.d.ts"
+    "gen:api": "openapi-typescript ../../api/openapi.yaml -o src/lib/core/schema.d.ts",
+    "seed": "tsx db/seed/run.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.28",
@@ -43,6 +44,7 @@
     "openapi-typescript": "^7.13.0",
     "shadcn": "^4.23.1",
     "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.1.2"
   }
