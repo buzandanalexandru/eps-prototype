@@ -14,6 +14,7 @@ var PlatformTables = map[string]string{
 	"control.rateLimit":        "Better Auth rate-limit counters",
 	"control.organisers":       "the organiser registry itself",
 	"control.demo_mailbox":     "demo-domain magic links shown on screen (no real addresses)",
+	"control.platform_fee":     "the published platform fee (one public value per currency, written only by migrations)",
 	"control.goose_db_version": "migration history",
 	"sales.goose_db_version":   "migration history",
 }
