@@ -2,7 +2,7 @@
 import { expect, expectNoHorizontalScroll, setLocale, test } from "./fixtures";
 
 for (const [locale, title, pass, fan] of [
-  ["en", "Platform fees", "Pass on", "552.48 RON"],
+  ["en", "Platform fees", "Pass on", "RON 552.48"],
   ["ro", "Comisioanele platformei", "Transferat", "552,48 RON"],
 ] as const) {
   test(`fees page in ${locale}: 2.5% and no fixed part, three policies and a worked example`, async ({ page }) => {

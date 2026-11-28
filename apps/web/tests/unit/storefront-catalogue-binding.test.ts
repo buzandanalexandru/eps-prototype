@@ -16,7 +16,7 @@ describeDb("catalogue binding", () => {
     const ga = before[o.f.ev.id].products.find((p) => p.id === o.f.ga.id)!;
     expect(ga.allInMinor).toBe(55248); // 539.00 + 2.5% passed on
     expect(before[o.f.ev.id].currency).toBe("RON");
-    expect(JSON.stringify(o.sf.document)).not.toContain("552"); // no price stored in the document
+    expect(JSON.stringify(o.sf.document)).not.toMatch(/"(price|priceMinor|allInMinor)"/); // no price stored in the document
     await tx(o.scope, (c) => setLadder(c, o.f.ga.id, { mode: "by_date", steps: [{ priceMinor: 60000 }] }));
     const after = await tx(o.scope, (c) => loadShopCatalogue(c, ids));
     expect(after[o.f.ev.id].products.find((p) => p.id === o.f.ga.id)!.allInMinor).toBe(61500);

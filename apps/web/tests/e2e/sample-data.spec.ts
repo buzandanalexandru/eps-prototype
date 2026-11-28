@@ -32,10 +32,10 @@ test.describe("sample data", () => {
     const eventUrl = new URL(page.url()).pathname;
     await page.goto(`${eventUrl}/products`);
     const ga = page.getByTestId("product").filter({ has: page.getByRole("link", { name: "General Access", exact: true }) });
-    await expect(ga.getByTestId("fan-pays")).toHaveText("Fan pays 552.48 RON");
+    await expect(ga.getByTestId("fan-pays")).toHaveText("Fan pays RON 552.48");
     // Instalments: 10 RON now and up to 7 monthly payments, capped per buyer.
     await ga.getByRole("link", { name: "General Access", exact: true }).click();
-    await expect(page.getByTestId("deposit")).toHaveText("10.00 RON now");
+    await expect(page.getByTestId("deposit")).toHaveText("RON 10.00 now");
     await expect(page.getByTestId("breakpoints")).toBeVisible();
     await page.goto(`${eventUrl}/pools`);
     const arena = page.getByTestId("pool").filter({ has: page.getByTestId("pool-name").getByText("Arena", { exact: true }) });

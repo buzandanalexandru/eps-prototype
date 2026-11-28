@@ -15,8 +15,8 @@ describe("policy in force", () => {
   });
   it("Studio shows both sides for 539.00 under pass on", () => {
     const b = feeBreakdown(53900, "pass_on", { percentBps: 250, fixedMinor: 0 });
-    expect(formatMoney(b.allInMinor, "RON", "en")).toBe("552.48 RON");
-    expect(formatMoney(b.organiserNetMinor, "RON", "en")).toBe("539.00 RON");
+    expect(formatMoney(b.allInMinor, "RON", "en")).toBe("RON\u00a0552.48");
+    expect(formatMoney(b.organiserNetMinor, "RON", "en")).toBe("RON\u00a0539.00");
   });
 });
 

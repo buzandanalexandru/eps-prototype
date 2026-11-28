@@ -47,10 +47,10 @@ describe("render safety", () => {
     expect(ro.includes("Bilete disponibile după publicare"), "Bilete disponibile după publicare").toBe(true);
     expect(ro.includes("Date de exemplu"), "Date de exemplu").toBe(true);
     expect(ro.includes("Taxe și comisioane"), "Taxe și comisioane").toBe(true);
-    expect(ro.includes("552,48 RON"), "552,48 RON").toBe(true);
+    expect(ro.includes("552,48\u00a0RON"), "552,48 RON").toBe(true);
     const en = render(doc(), "en", 1);
     expect(en.includes("Tickets available after publishing"), "Tickets available after publishing").toBe(true);
-    expect(en.includes("552.48 RON"), "552.48 RON").toBe(true);
+    expect(en.includes("RON\u00a0552.48"), "RON 552.48").toBe(true);
     expect(render(doc(), "en", 1, "published").includes("Sales open soon")).toBe(true);
   });
 });

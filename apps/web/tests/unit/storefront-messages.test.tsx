@@ -27,7 +27,7 @@ describe("email, ticket and checkout previews", () => {
     const en = renderToStaticMarkup(<ConfirmationEmail doc={d} labels={SHOP_LABELS.en} locale="en" brandName="Sunwave" order={sampleOrder("Sunwave", "EUR", "en")} origin="https://eps.example" />);
     expect(en.includes(`background:${d.tokens.light.primary}`)).toBe(true);
     expect(en.includes("https://eps.example/samples/logo-sunwave.svg")).toBe(true);
-    expect(en.includes("1,104.96 EUR")).toBe(true);
+    expect(en.includes("EUR\u00a01,104.96")).toBe(true);
     expect(en.includes("&lt;script&gt;")).toBe(true);
     expect(en.match(/<script/)).toBeNull();
     const ro = renderToStaticMarkup(<ConfirmationEmail doc={d} labels={SHOP_LABELS.ro} locale="ro" brandName="Sunwave" order={sampleOrder("Sunwave", "EUR", "ro")} />);
