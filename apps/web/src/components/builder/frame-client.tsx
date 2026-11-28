@@ -30,6 +30,7 @@ export function FrameClient(props: {
     () => false,
   );
   const lastSeq = useRef(-1);
+  const requestTag = useRef(0);
   const lastFetch = useRef({ at: 0, key: Object.keys(props.initialCatalogue).sort().join(",") });
 
   const refreshCatalogue = useCallback(
@@ -39,8 +40,10 @@ export function FrameClient(props: {
       const now = Date.now();
       if (key === lastFetch.current.key && now - lastFetch.current.at < CATALOGUE_REFRESH_MS) return;
       lastFetch.current = { at: now, key };
+      // Answers can arrive out of order: apply only the newest request's answer.
+      const tag = ++requestTag.current;
       const r = await frameCatalogueAction(props.storefrontId, ids);
-      if (r.ok) setCatalogue(r.data);
+      if (r.ok && tag === requestTag.current) setCatalogue(r.data);
     },
     [props.storefrontId],
   );

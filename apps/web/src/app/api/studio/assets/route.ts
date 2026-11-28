@@ -9,8 +9,10 @@ import { requireActive, studioTx } from "@/lib/studio/context";
 export async function POST(req: Request) {
   const headers = { "Cache-Control": "private, no-store" };
   if (!sameOrigin(req)) return NextResponse.json({ code: "forbidden" }, { status: 403, headers });
-  const declared = Number(req.headers.get("content-length") ?? "0");
-  if (declared > MAX_ASSET_BYTES + 64 * 1024) return NextResponse.json({ code: "file_too_large" }, { status: 413, headers });
+  // The size is checked before anything is buffered: a request without a length is refused.
+  const length = req.headers.get("content-length");
+  if (!length || !/^\d+$/.test(length)) return NextResponse.json({ code: "length_required" }, { status: 411, headers });
+  if (Number(length) > MAX_ASSET_BYTES + 64 * 1024) return NextResponse.json({ code: "file_too_large" }, { status: 413, headers });
   try {
     const s = await requireActive();
     assertCanDesign(s.active.role);
@@ -25,7 +27,8 @@ export async function POST(req: Request) {
     const d = err instanceof DomainError ? err : fromPgError(err);
     if (d?.code === "signed_out" || d?.code === "no_organiser") return NextResponse.json({ code: d.code }, { status: 401, headers });
     if (d?.code === "designer_only") return NextResponse.json({ code: d.code }, { status: 403, headers });
-    if (d) return NextResponse.json({ code: d.code }, { status: 422, headers });
+    if (d?.code === "upload_rate") return NextResponse.json({ code: d.code, params: d.params }, { status: 429, headers });
+    if (d) return NextResponse.json({ code: d.code, params: d.params }, { status: 422, headers });
     console.error("asset upload failed", (err as Error)?.message);
     return NextResponse.json({ code: "unexpected" }, { status: 500, headers });
   }

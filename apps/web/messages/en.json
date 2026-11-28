@@ -180,7 +180,15 @@
     "empty": "The file is empty.",
     "network": "No connection. Try again.",
     "file_too_large": "The file is larger than 1 MB.",
-    "brand_has_published_storefront": "This brand has a published shop: it cannot be deleted."
+    "brand_has_published_storefront": "This brand has a published shop: it cannot be deleted.",
+    "too_many_links": "At most {max} active preview links: revoke some first.",
+    "upload_rate": "Too many uploads: wait {minutes} minutes.",
+    "asset_quota": "Your uploads are full ({files} images or {mb} MB): delete some first.",
+    "asset_in_use": "This image is used by the shop (a draft or a published version): it cannot be deleted.",
+    "event_page_slug": "An event page's address is the event's own address.",
+    "too_many_events": "A shop shows at most 60 events.",
+    "length_required": "The request had no length.",
+    "stale": "The draft was replaced meanwhile."
   },
   "onboarding": {
     "step": "Step {n} of {of}",
@@ -573,7 +581,7 @@
     "brandPicker": "Brands",
     "address": "Shop address",
     "notPublished": "Not published yet",
-    "live": "Live · version {n}",
+    "live": "Published · version {n}",
     "sample": "Sample data",
     "undo": "Undo",
     "redo": "Redo",
@@ -778,7 +786,7 @@
     "liveBadge": "live",
     "restoredFrom": "restored from v{n}",
     "restore": "Restore",
-    "restoreConfirm": "Publish this version's look again as a new version? Prices always come from the current catalogue.",
+    "restoreConfirm": "Publish this version again as a new version? Your unpublished edits in the draft are replaced by it. Rollback restores the look only: prices always come from the current catalogue.",
     "restored": "Version {n} is live (restored from v{from}).",
     "previewLinks": "Preview links",
     "previewLinksLead": "A private link shows the current draft to anyone who has it, for 7 days, without buying.",
@@ -787,7 +795,19 @@
     "linkRevoked": "revoked",
     "linkExpired": "expired",
     "linkExpires": "expires {date}",
-    "revoke": "Revoke"
+    "revoke": "Revoke",
+    "saveFirst": "Not done: the draft could not be saved first ({reason}). Fix that, then try again.",
+    "revokeAll": "Revoke all links",
+    "publicShopSoon": "The public shop at this address opens with step 3; until then, share a preview link.",
+    "notStarted": "The shop of {brand} has not been started yet. An owner or admin opens the builder first.",
+    "uploads": "Uploaded images",
+    "noUploads": "No uploads yet.",
+    "deleteUpload": "Delete",
+    "overImage": "{text} over a {shade} hero image",
+    "imageShade": {
+      "dark-image": "dark",
+      "light-image": "light"
+    }
   },
   "terms": {
     "title": "Terms and conditions",

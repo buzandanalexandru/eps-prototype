@@ -6,14 +6,14 @@ import { useTranslations } from "next-intl";
 import { Select } from "@/components/ui/field";
 import { imageUrl, SAMPLE_IMAGES } from "@/lib/storefront/links";
 
-export async function uploadImage(file: File): Promise<{ ok: true; ref: string; url: string } | { ok: false; code: string }> {
+export async function uploadImage(file: File): Promise<{ ok: true; ref: string; url: string } | { ok: false; code: string; params?: Record<string, number> }> {
   const fd = new FormData();
   fd.set("file", file);
   try {
     const res = await fetch("/api/studio/assets", { method: "POST", body: fd });
-    const j = (await res.json().catch(() => ({}))) as { ref?: string; url?: string; code?: string };
+    const j = (await res.json().catch(() => ({}))) as { ref?: string; url?: string; code?: string; params?: Record<string, number> };
     if (res.ok && j.ref && j.url) return { ok: true, ref: j.ref, url: j.url };
-    return { ok: false, code: j.code ?? (res.status === 413 ? "file_too_large" : "unexpected") };
+    return { ok: false, code: j.code ?? (res.status === 413 ? "file_too_large" : "unexpected"), params: j.params };
   } catch {
     return { ok: false, code: "network" };
   }
@@ -37,7 +37,7 @@ export function ImagePicker({
   const t = useTranslations("builder");
   const te = useTranslations("errors");
   const id = useId();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ code: string; params?: Record<string, number> } | null>(null);
   const [busy, setBusy] = useState(false);
   const src = value ? imageUrl(value) : null;
   return (
@@ -78,7 +78,7 @@ export function ImagePicker({
                 if (r.ok) {
                   onChange(r.ref);
                   onUploaded?.(file, r.ref);
-                } else setError(r.code);
+                } else setError({ code: r.code, params: r.params });
               }}
             />
           </label>
@@ -86,7 +86,7 @@ export function ImagePicker({
       </div>
       {error && (
         <p role="alert" className="text-xs text-destructive" data-testid="upload-error">
-          {te.has(error) ? te(error) : te("invalid")}
+          {te.has(error.code) ? te(error.code, error.params) : te("invalid")}
         </p>
       )}
     </div>

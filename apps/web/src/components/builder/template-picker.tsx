@@ -7,7 +7,7 @@ import { changeTemplateAction } from "@/app/studio/builder/actions";
 import { TEMPLATE_IDS, type TemplateId } from "@/lib/storefront/templates";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
 
-export function TemplatePicker({ storefrontId, getRevision, flush, onApplied }: { storefrontId: string; getRevision: () => number; flush: () => Promise<boolean>; onApplied: (r: { revision: number; document: StorefrontDocument }) => void }) {
+export function TemplatePicker({ storefrontId, getRevision, flush, onApplied }: { storefrontId: string; getRevision: () => number; flush: () => Promise<{ ok: boolean; code?: string }>; onApplied: (r: { revision: number; document: StorefrontDocument }) => void }) {
   const t = useTranslations("builder");
   const te = useTranslations("errors");
   const [choice, setChoice] = useState<TemplateId>("festival");
@@ -41,7 +41,13 @@ export function TemplatePicker({ storefrontId, getRevision, flush, onApplied }: 
             onClick={async () => {
               setBusy(true);
               setError(null);
-              await flush();
+              const saved = await flush();
+              if (!saved.ok) {
+                setBusy(false);
+                setConfirming(false);
+                setError(saved.code ?? "unexpected");
+                return;
+              }
               const r = await changeTemplateAction(storefrontId, getRevision(), choice);
               setBusy(false);
               setConfirming(false);

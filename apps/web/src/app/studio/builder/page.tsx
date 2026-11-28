@@ -6,7 +6,8 @@ import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 import { listBrands } from "@/lib/organisers/domain";
 import { eventChoices } from "@/lib/storefront/catalogue-load";
-import { ensureStorefront, listPreviewLinks, listVersions, shopContext } from "@/lib/storefront/domain";
+import { ensureStorefront, getStorefrontByBrand, listPreviewLinks, listVersions, shopContext } from "@/lib/storefront/domain";
+import { headers } from "next/headers";
 import { requireStudio, studioTx } from "@/lib/studio/context";
 import { BuilderClient } from "@/components/builder/builder-client";
 
@@ -20,12 +21,24 @@ export default async function BuilderPage({ searchParams }: { searchParams: Prom
     const brands = await listBrands(c);
     const brand = brandParam ? brands.find((b) => b.id === brandParam) : brands[0];
     if (!brand) return null;
-    const sf = await ensureStorefront(c, brand.id, s.user.id);
+    // Only designers (owners, admins) create the storefront on a first visit; others see it once made.
+    const canDesign = s.active.role === "owner" || s.active.role === "admin";
+    const sf = canDesign ? await ensureStorefront(c, brand.id, s.user.id) : await getStorefrontByBrand(c, brand.id);
+    if (!sf) return { brands, brand, sf: null, ctx: null, events: [], versions: [], links: [] };
     const [ctx, events, versions, links] = [await shopContext(c, brand.id), await eventChoices(c, brand.id), await listVersions(c, sf.id, { limit: 50 }), await listPreviewLinks(c, sf.id)];
     return { brands, brand, sf, ctx, events, versions, links };
   });
   if (!data) notFound();
   const { brands, brand, sf, ctx, events, versions, links } = data;
+  const h = await headers();
+  const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+  if (!sf || !ctx) {
+    return (
+      <p className="rounded-md border p-4 text-sm" data-testid="builder-not-started">
+        {t("notStarted", { brand: brand.name })}
+      </p>
+    );
+  }
   return (
     <div className="space-y-3">
       {brands.length > 1 && (
@@ -50,6 +63,7 @@ export default async function BuilderPage({ searchParams }: { searchParams: Prom
         links={links.map((l) => ({ id: l.id, createdAt: l.created_at.toISOString(), expiresAt: l.expires_at.toISOString(), revoked: !!l.revoked_at, expired: l.expired, author: l.author }))}
         events={events}
         canDesign={s.active.role === "owner" || s.active.role === "admin"}
+        origin={origin}
       />
     </div>
   );

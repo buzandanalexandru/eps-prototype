@@ -11,6 +11,8 @@ import { storeMapTiles } from "@/lib/storefront/map-store";
 
 const body = z.strictObject({ revision: z.int().min(1), document: z.unknown() });
 const noStore = { "Cache-Control": "private, no-store" };
+/** The document limit plus room for the revision and JSON escaping of non-ASCII text. */
+const MAX_BODY = LIMITS.bytes * 2;
 
 function fail(err: unknown) {
   if (err instanceof DraftConflictError) return NextResponse.json({ code: "draft_conflict", revision: err.currentRevision }, { status: 409, headers: noStore });
@@ -39,8 +41,12 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!sameOrigin(req)) return NextResponse.json({ code: "forbidden" }, { status: 403, headers: noStore });
   try {
     const { id } = await params;
+    // Checked before buffering: no length, or more than the document limit allows, is refused.
+    const length = req.headers.get("content-length");
+    if (!length || !/^\d+$/.test(length)) return NextResponse.json({ code: "length_required", path: "" }, { status: 411, headers: noStore });
+    if (Number(length) > MAX_BODY) return NextResponse.json({ code: "document_too_large", path: "" }, { status: 413, headers: noStore });
     const text = await req.text();
-    if (text.length > LIMITS.bytes + 1024) return NextResponse.json({ code: "document_too_large", path: "" }, { status: 413, headers: noStore });
+    if (Buffer.byteLength(text) > MAX_BODY) return NextResponse.json({ code: "document_too_large", path: "" }, { status: 413, headers: noStore });
     let json: unknown;
     try {
       json = JSON.parse(text);

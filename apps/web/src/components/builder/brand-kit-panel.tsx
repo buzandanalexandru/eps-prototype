@@ -10,6 +10,7 @@ import { acceptSuggestion, checkContrast, paletteFromPixels } from "@/lib/storef
 import { FONT_IDS, FONTS } from "@/lib/storefront/fonts";
 import { MODES, PALETTE_KEYS, RADII, type Palette, type StorefrontDocument, type Tokens } from "@/lib/storefront/schema";
 import { ImagePicker } from "./image-picker";
+import { deleteAssetAction, listAssetsAction, type AssetView } from "@/app/studio/builder/actions";
 
 type SetDoc = (fn: (d: StorefrontDocument) => StorefrontDocument) => void;
 
@@ -39,16 +40,63 @@ function PaletteEditor({ scheme, palette, onChange, disabled }: { scheme: "light
   return (
     <fieldset className="space-y-2" data-testid={`palette-${scheme}`}>
       <legend className="text-sm font-semibold">{t(`scheme.${scheme}`)}</legend>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2">
         {PALETTE_KEYS.map((k) => (
           <label key={k} className="flex min-w-0 items-center gap-2 text-sm">
             <input type="color" value={palette[k]} disabled={disabled} onChange={(e) => onChange(k, e.target.value.toLowerCase())} className="h-8 w-10 shrink-0 rounded border" aria-label={`${t(`colours.${k}`)} (${t(`scheme.${scheme}`)})`} data-testid={`colour-${scheme}-${k}`} />
-            <span className="min-w-0 truncate">{t(`colours.${k}`)}</span>
-            <code className="ml-auto text-xs text-muted-foreground">{palette[k]}</code>
+            <span className="min-w-0 flex-1">{t(`colours.${k}`)}</span>
+            <code className="shrink-0 text-xs text-muted-foreground">{palette[k]}</code>
           </label>
         ))}
       </div>
     </fieldset>
+  );
+}
+
+/** The organiser's uploads, with delete (refused while any version shows the image). */
+function UploadsLibrary({ readOnly }: { readOnly: boolean }) {
+  const t = useTranslations("builder");
+  const te = useTranslations("errors");
+  const [items, setItems] = useState<AssetView[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <details className="rounded-md border p-2 text-sm" data-testid="uploads" onToggle={async (e) => {
+      if (!(e.currentTarget as HTMLDetailsElement).open || items) return;
+      const r = await listAssetsAction();
+      if (r.ok) setItems(r.data);
+    }}>
+      <summary className="cursor-pointer font-medium">{t("uploads")}</summary>
+      {items && items.length === 0 && <p className="mt-2 text-muted-foreground">{t("noUploads")}</p>}
+      <ul className="mt-2 grid grid-cols-3 gap-2">
+        {(items ?? []).map((a) => (
+          <li key={a.id} className="space-y-1" data-testid="upload-item">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={a.url} alt="" className="aspect-square w-full rounded border object-contain" />
+            {!readOnly && (
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                data-testid="delete-upload"
+                onClick={async () => {
+                  setError(null);
+                  const r = await deleteAssetAction(a.id);
+                  if (r.ok) setItems(r.data);
+                  else setError(r.code);
+                }}
+              >
+                {t("deleteUpload")}
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {error && (
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {te.has(error) ? te(error) : te("invalid")}
+        </p>
+      )}
+    </details>
   );
 }
 
@@ -93,6 +141,7 @@ export function BrandKitPanel({ doc, setDoc, readOnly }: { doc: StorefrontDocume
           </div>
         </div>
       )}
+      <UploadsLibrary readOnly={readOnly} />
       <label className="grid gap-1 text-sm font-medium">
         {t("mode")}
         <Select value={tokens.mode} disabled={readOnly} onChange={(e) => setTokens({ mode: e.target.value as Tokens["mode"] })} data-testid="mode">
@@ -112,17 +161,25 @@ export function BrandKitPanel({ doc, setDoc, readOnly }: { doc: StorefrontDocume
         </h3>
         <ul className="space-y-1 text-sm">
           {checks.map((c) => (
-            <li key={`${c.scheme}-${c.fg}-${c.bg}`} className="flex flex-wrap items-center gap-2" data-testid="contrast-pair" data-ok={c.ok ? "true" : "false"}>
-              <Swatch colour={tokens[c.scheme][c.fg]} />
-              <Swatch colour={tokens[c.scheme][c.bg]} />
-              <span className="min-w-0">
-                {t(`colours.${c.fg}`)} / {t(`colours.${c.bg}`)} ({t(`scheme.${c.scheme}`)})
+            <li
+              key={`${c.scheme}-${c.fg}-${c.bg}-${c.over ?? ""}`}
+              className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-md border p-1.5"
+              data-testid="contrast-pair"
+              data-ok={c.ok ? "true" : "false"}
+            >
+              <span className="flex gap-0.5">
+                <Swatch colour={tokens[c.scheme][c.fg]} />
+                <Swatch colour={tokens[c.scheme][c.bg]} />
               </span>
-              <span className={c.ok ? "text-muted-foreground" : "font-semibold text-destructive"} data-testid="contrast-ratio">
+              <span className="min-w-0">
+                {c.over ? t("overImage", { text: t(`colours.${c.fg}`), shade: t(`imageShade.${c.over}`) }) : `${t(`colours.${c.fg}`)} / ${t(`colours.${c.bg}`)}`}{" "}
+                <span className="text-muted-foreground">({t(`scheme.${c.scheme}`)})</span>
+              </span>
+              <span className={`text-right tabular-nums ${c.ok ? "text-muted-foreground" : "font-semibold text-destructive"}`} data-testid="contrast-ratio">
                 {c.ratio.toFixed(2)}:1 {c.ok ? "✓" : `< ${c.min}:1`}
               </span>
               {!c.ok && c.suggestion && !readOnly && (
-                <Button type="button" size="xs" variant="outline" onClick={() => setTokens(acceptSuggestion(tokens, c))} data-testid="accept-suggestion">
+                <Button type="button" size="xs" variant="outline" className="col-span-3 justify-self-start" onClick={() => setTokens(acceptSuggestion(tokens, c))} data-testid="accept-suggestion">
                   <Swatch colour={c.suggestion} /> {t("useSuggestion", { colour: c.suggestion })}
                 </Button>
               )}

@@ -3,7 +3,7 @@
 // collapsing to tabs below 1024 px. The draft lives in client state with undo and redo; every change
 // is posted to the frame (batched per animation frame) and autosaved after 800 ms with its revision.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/studio/copy-button";
 import { acceptFromFrame, readyMessage, renderedMessage, selectMessage } from "@/lib/storefront/frame-protocol";
@@ -23,7 +23,7 @@ export type BuilderBrand = { id: string; name: string; slug: string; currency: "
 type SaveState = "saved" | "dirty" | "saving" | "conflict" | "error";
 const AUTOSAVE_MS = 800;
 const HISTORY_MAX = 100;
-const FRAME_HEIGHT = 760;
+const FRAME_MIN_HEIGHT = 520;
 
 export type BuilderProps = {
   storefrontId: string;
@@ -37,6 +37,8 @@ export type BuilderProps = {
   links: LinkView[];
   events: BuilderEvent[];
   canDesign: boolean;
+  /** The platform's origin, for the absolute shop address. */
+  origin: string;
 };
 
 export type Tab = "pages" | "brand" | "checkout" | "messages" | "publish";
@@ -51,7 +53,10 @@ export function BuilderClient(props: BuilderProps) {
   const [pageId, setPageId] = useState(props.initial.document.pages[0].id);
   const [selected, setSelected] = useState<string | null>(null);
   const [device, setDevice] = useState<"desktop" | "phone">("desktop");
-  const [locale, setLocale] = useState<Locale>(props.initial.document.locales.default);
+  // The preview starts in the Studio language when the shop has it, and follows the language of the
+  // field being edited (focus on an RO or EN input switches it).
+  const uiLocale = useLocale() as Locale;
+  const [locale, setLocale] = useState<Locale>(props.initial.document.locales.enabled.includes(uiLocale) ? uiLocale : props.initial.document.locales.default);
   const [scheme, setScheme] = useState<"light" | "dark" | null>(null);
   const [tab, setTab] = useState<Tab>("pages");
   const [pane, setPane] = useState<"structure" | "preview" | "settings">("preview");
@@ -110,49 +115,69 @@ export function BuilderClient(props: BuilderProps) {
   }, [postToFrame]);
 
   // ---------------------------------------------------------------- autosave
-  const saveOnce = useCallback(async (): Promise<boolean> => {
+  // `generation` changes whenever the draft is replaced from the server (reload, restore, template
+  // change): a save response from an older generation is dropped, so it can never overwrite the
+  // adopted revision. After a 409 the draft stays dirty and no save is sent until the user reloads.
+  const generation = useRef(0);
+  const conflicted = useRef(false);
+  type SaveResult = { ok: boolean; code?: string };
+  const saveOnce = useCallback(async (): Promise<SaveResult> => {
+    const gen = generation.current;
     dirty.current = false;
     const body = JSON.stringify({ revision: revRef.current, document: docRef.current });
     setSave({ state: "saving" });
-    let ok = false;
+    let result: SaveResult = { ok: false, code: "unexpected" };
     inFlight.current = (async () => {
       try {
         const res = await fetch(`/api/studio/storefronts/${props.storefrontId}/draft`, { method: "PUT", headers: { "content-type": "application/json" }, body });
         const j = (await res.json().catch(() => ({}))) as { revision?: number; code?: string; path?: string };
+        if (gen !== generation.current) {
+          result = { ok: false, code: "stale" };
+          return; // the draft was replaced meanwhile: ignore this answer
+        }
         if (res.ok && j.revision) {
           revRef.current = j.revision;
           setRevision(j.revision);
-          ok = true;
+          result = { ok: true };
           setSave(dirty.current ? { state: "dirty" } : { state: "saved" });
         } else if (res.status === 409) {
+          dirty.current = true;
+          conflicted.current = true;
+          result = { ok: false, code: "draft_conflict" };
           setSave({ state: "conflict" });
         } else {
           dirty.current = true;
+          result = { ok: false, code: j.code ?? "unexpected" };
           setSave({ state: "error", code: j.code ?? "unexpected", path: j.path });
         }
       } catch {
-        dirty.current = true;
-        setSave({ state: "error", code: "network" });
+        if (gen === generation.current) {
+          dirty.current = true;
+          result = { ok: false, code: "network" };
+          setSave({ state: "error", code: "network" });
+        }
       } finally {
         inFlight.current = null;
       }
     })();
     await inFlight.current;
-    return ok;
+    return result;
   }, [props.storefrontId]);
 
-  /** Saves now (waiting for a save in flight); true when the server holds the current draft. */
-  const flush = useCallback(async (): Promise<boolean> => {
+  /** Saves now (waiting for a save in flight); ok when the server holds the current draft. */
+  const flush = useCallback(async (): Promise<SaveResult> => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
     for (let i = 0; i < 5; i++) {
       while (inFlight.current) await inFlight.current;
-      if (!dirty.current) return true;
-      if (!(await saveOnce())) return false;
+      if (conflicted.current) return { ok: false, code: "draft_conflict" };
+      if (!dirty.current) return { ok: true };
+      const r = await saveOnce();
+      if (!r.ok) return r;
     }
-    return !dirty.current;
+    return dirty.current ? { ok: false, code: "unexpected" } : { ok: true };
   }, [saveOnce]);
 
   const schedule = useCallback(() => {
@@ -221,11 +246,22 @@ export function BuilderClient(props: BuilderProps) {
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
 
+  /** Starts a new generation: pending autosaves are cancelled and answers in flight are ignored. */
+  const newGeneration = () => {
+    generation.current += 1;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    conflicted.current = false;
+    dirty.current = false;
+  };
+
   const reload = async () => {
     const res = await fetch(`/api/studio/storefronts/${props.storefrontId}/draft`, { cache: "no-store" });
     if (!res.ok) return;
     const j = (await res.json()) as { revision: number; document: StorefrontDocument };
-    dirty.current = false;
+    newGeneration();
     revRef.current = j.revision;
     setRevision(j.revision);
     docRef.current = j.document;
@@ -239,7 +275,7 @@ export function BuilderClient(props: BuilderProps) {
 
   /** Replaces the draft with a server result (restore, template change) without saving again. */
   const adopt = (next: { revision: number; document: StorefrontDocument }) => {
-    dirty.current = false;
+    newGeneration();
     revRef.current = next.revision;
     setRevision(next.revision);
     setPast((p) => [...p, docRef.current]);
@@ -250,6 +286,16 @@ export function BuilderClient(props: BuilderProps) {
     setSelected(null);
     setSave({ state: "saved" });
   };
+
+  const enabledLocales = doc.locales.enabled.join(",");
+  useEffect(() => {
+    const onFocus = (e: FocusEvent) => {
+      const l = (e.target as HTMLElement | null)?.closest?.("[data-locale]")?.getAttribute("data-locale");
+      if ((l === "ro" || l === "en") && enabledLocales.split(",").includes(l)) setLocale(l);
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => document.removeEventListener("focusin", onFocus);
+  }, [enabledLocales]);
 
   // The frame keeps its real width (1280 or 390 px) and is scaled down to fit the pane.
   const stageRef = useRef<HTMLDivElement>(null);
@@ -263,9 +309,20 @@ export function BuilderClient(props: BuilderProps) {
   }, []);
   const frameWidth = device === "desktop" ? 1280 : 390;
   const scale = stageWidth > 0 ? Math.min(1, stageWidth / frameWidth) : 1;
+  // The stage fills the viewport below the header; the frame's own height is that divided by the scale.
+  const [viewport, setViewport] = useState(900);
+  useEffect(() => {
+    const on = () => setViewport(window.innerHeight);
+    on();
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const stageHeight = Math.max(FRAME_MIN_HEIGHT, viewport - 140);
+  const FRAME_HEIGHT = Math.round(stageHeight / scale);
 
   const page = doc.pages.find((p) => p.id === pageId) ?? doc.pages[0];
   const address = `/s/${props.brand.slug}`;
+  const absoluteAddress = `${props.origin}${address}`;
   const tabs: [Tab, string][] = [
     ["pages", t("tabs.pages")],
     ["brand", t("tabs.brand")],
@@ -363,13 +420,18 @@ export function BuilderClient(props: BuilderProps) {
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="text-muted-foreground">{t("address")}</span>
             <code data-testid="brand-address">{address}</code>
-            <CopyButton value={address} />
+            <CopyButton value={absoluteAddress} />
             <span
               data-testid="address-state"
               className={`rounded-full px-2 py-0.5 text-xs font-semibold ${live ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-100" : "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100"}`}
             >
               {live ? t("live", { n: live.number }) : t("notPublished")}
             </span>
+            {live && (
+              <span className="text-xs text-muted-foreground" data-testid="address-note">
+                {t("publicShopSoon")}
+              </span>
+            )}
             {props.hostnames.map((h) => (
               <code key={h} className="text-xs text-muted-foreground" data-testid="brand-hostname">
                 {h}
@@ -410,11 +472,11 @@ export function BuilderClient(props: BuilderProps) {
         ))}
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[17rem_minmax(0,1fr)_21rem]">
+      <div className="grid items-start gap-3 lg:grid-cols-[15rem_minmax(0,1fr)_19rem]">
         <aside className={`min-w-0 rounded-lg border p-3 ${pane === "structure" ? "" : "hidden"} lg:block`} data-testid="pane-structure-body">
           {left}
         </aside>
-        <section className={`min-w-0 space-y-2 ${pane === "preview" ? "" : "hidden"} lg:block`} aria-label={t("panes.preview")}>
+        <section className={`min-w-0 space-y-2 ${pane === "preview" ? "" : "hidden"} lg:sticky lg:top-2 lg:block`} aria-label={t("panes.preview")} data-testid="preview-stage">
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <div className="flex overflow-hidden rounded-md border" role="group" aria-label={t("device.label")}>
               {(["desktop", "phone"] as const).map((d) => (

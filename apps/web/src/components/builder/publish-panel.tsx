@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useFormatter, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/studio/copy-button";
-import { createLinkAction, publishAction, restoreAction, revokeLinkAction, type LinkView, type VersionView } from "@/app/studio/builder/actions";
+import { createLinkAction, publishAction, restoreAction, revokeAllLinksAction, revokeLinkAction, type LinkView, type VersionView } from "@/app/studio/builder/actions";
 import type { PublishProblem } from "@/lib/storefront/publish-checks";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
 
@@ -16,7 +16,7 @@ export function PublishPanel(props: {
   problems: PublishProblem[];
   doc: StorefrontDocument;
   getRevision: () => number;
-  flush: () => Promise<boolean>;
+  flush: () => Promise<{ ok: boolean; code?: string }>;
   saving: boolean;
   canDesign: boolean;
   live: { number: number; publishedAt: string } | null;
@@ -45,9 +45,10 @@ export function PublishPanel(props: {
     setMessage(null);
     setServerProblems(null);
     const saved = await props.flush();
-    if (!saved) {
+    if (!saved.ok) {
       setBusy(false);
-      setMessage({ kind: "error", text: te("draft_conflict") });
+      // The draft could not be saved: say why (a conflict, or the save error and where to fix it).
+      setMessage({ kind: "error", text: saved.code === "draft_conflict" ? te("draft_conflict") : t("saveFirst", { reason: te.has(saved.code ?? "") ? te(saved.code!) : te("unexpected") }) });
       return;
     }
     const r = await publishAction(props.storefrontId, props.getRevision());
@@ -63,7 +64,14 @@ export function PublishPanel(props: {
   const restore = async (n: number) => {
     setBusy(true);
     setMessage(null);
-    await props.flush();
+    const saved = await props.flush();
+    if (!saved.ok) {
+      // Never restore over work that could not be saved: the organiser decides first.
+      setBusy(false);
+      setRestoring(null);
+      setMessage({ kind: "error", text: saved.code === "draft_conflict" ? te("draft_conflict") : t("saveFirst", { reason: te.has(saved.code ?? "") ? te(saved.code!) : te("unexpected") }) });
+      return;
+    }
     const r = await restoreAction(props.storefrontId, n, props.getRevision());
     setBusy(false);
     setRestoring(null);
@@ -155,7 +163,11 @@ export function PublishPanel(props: {
             variant="outline"
             data-testid="create-link"
             onClick={async () => {
-              await props.flush();
+              const saved = await props.flush();
+              if (!saved.ok) {
+                setMessage({ kind: "error", text: saved.code === "draft_conflict" ? te("draft_conflict") : t("saveFirst", { reason: te.has(saved.code ?? "") ? te(saved.code!) : te("unexpected") }) });
+                return;
+              }
               const r = await createLinkAction(props.storefrontId);
               if (r.ok) {
                 setFresh(`${window.location.origin}${r.data.path}`);
@@ -176,6 +188,20 @@ export function PublishPanel(props: {
               <CopyButton value={fresh} />
             </div>
           </div>
+        )}
+        {props.canDesign && links.some((l) => !l.revoked && !l.expired) && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            data-testid="revoke-all-links"
+            onClick={async () => {
+              const r = await revokeAllLinksAction(props.storefrontId);
+              if (r.ok) setLinks(r.data);
+            }}
+          >
+            {t("revokeAll")}
+          </Button>
         )}
         <ul className="space-y-1 text-sm" data-testid="links">
           {links.map((l) => (

@@ -21,6 +21,7 @@ import {
   revokePreviewLink,
 } from "@/lib/storefront/domain";
 import { storeMapTiles } from "@/lib/storefront/map-store";
+import { deleteAsset, listAssets } from "@/lib/storefront/assets";
 import type { PublishProblem } from "@/lib/storefront/publish-checks";
 import { LIMITS, type StorefrontDocument } from "@/lib/storefront/schema";
 import { TEMPLATE_IDS } from "@/lib/storefront/templates";
@@ -153,6 +154,23 @@ export async function revokeAllLinksAction(storefrontId: string) {
     studioTx(s, async (c) => {
       await revokeAllPreviewLinks(c, id);
       return (await listPreviewLinks(c, id)).map(linkView);
+    }),
+  );
+}
+
+export type AssetView = { id: string; ref: string; url: string; width: number; height: number; size: number };
+
+export async function listAssetsAction() {
+  return run((s) => studioTx(s, async (c) => (await listAssets(c)).map((a): AssetView => ({ id: a.id, ref: `asset:${a.id}`, url: `/assets/${a.id}`, width: a.width, height: a.height, size: a.size }))), false);
+}
+
+export async function deleteAssetAction(assetId: string) {
+  const id = parse(uuid, assetId);
+  if (id === undefined) return bad;
+  return run((s) =>
+    studioTx(s, async (c) => {
+      await deleteAsset(c, id);
+      return (await listAssets(c)).map((a): AssetView => ({ id: a.id, ref: `asset:${a.id}`, url: `/assets/${a.id}`, width: a.width, height: a.height, size: a.size }));
     }),
   );
 }
