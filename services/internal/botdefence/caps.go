@@ -2,6 +2,7 @@ package botdefence
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
@@ -44,10 +45,27 @@ func Identity(kind, id, email string) string {
 	return "guest:" + strings.TrimPrefix(id, "guest:")
 }
 
-// IdentityHash is what is stored for a cap identity (never the email itself).
-func IdentityHash(org, identity string) string {
-	h := sha256.Sum256([]byte(org + "|" + identity))
-	return hex.EncodeToString(h[:16])
+// IdentityHash is what is stored for a cap identity (never the email itself): a keyed hash, so a
+// stored value cannot be matched against guessed emails without the environment's key (review
+// sec L4).
+func IdentityHash(secret []byte, org, identity string) string {
+	m := hmac.New(sha256.New, secret)
+	m.Write([]byte("cap|" + org + "|" + identity))
+	return hex.EncodeToString(m.Sum(nil)[:16])
+}
+
+// Identities are every identity a buyer's tickets count under (review D-g): an account, and its
+// verified email when it has one (so a guest order with that email shares the cap); a guest, under
+// its guest id until it gives an email, then under the email.
+func Identities(kind, id, email string) []string {
+	if kind == "account" {
+		out := []string{"acct:" + id}
+		if email != "" {
+			out = append(out, "mail:"+NormaliseEmail(email))
+		}
+		return out
+	}
+	return []string{Identity(kind, id, email)}
 }
 
 // capScript adds an order's tickets under a person's cap unless that goes above it. Entries of

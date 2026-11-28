@@ -51,6 +51,7 @@ func poolFor(ctx context.Context, name string, def int32) *pgxpool.Pool {
 
 func main() {
 	log := service.Logger("worker")
+	wire.RequireMACKey(log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	pool := service.Postgres(ctx, log)

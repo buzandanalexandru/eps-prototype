@@ -63,9 +63,10 @@ func TestSuspectMovedBackSilently(t *testing.T) {
 	if rank, _ := env.Redis.ZRank(ctx, k.Line(), c.QID).Result(); rank != 999 {
 		t.Fatalf("rank %d, want behind all 999 others", rank)
 	}
+	// Its page shows its drawn place (300), going down only as fans are let in (review D-j).
 	got := env.Status(t, s, bot)
-	if got.State != queue.PlaceWaiting || got.Ahead == nil || *got.Ahead != 999 || got.EstimateSeconds == nil || got.Pass != "" {
-		t.Fatalf("suspect's page %+v, want a normal waiting page", got)
+	if got.State != queue.PlaceWaiting || got.Ahead == nil || *got.Ahead != 300 || got.EstimateSeconds == nil || got.Pass != "" {
+		t.Fatalf("suspect's page %+v (ahead %v), want a normal waiting page at its drawn place", got, *got.Ahead)
 	}
 	// A fan who joins later still goes ahead of the suspect; the suspect is let in last.
 	late := onsaletest.NewFan()
@@ -81,6 +82,9 @@ func TestSuspectMovedBackSilently(t *testing.T) {
 	}
 	if ok, _ := env.Redis.HExists(ctx, k.Fan(c.QID), "adm").Result(); ok {
 		t.Fatal("the suspect was let in before the last fan")
+	}
+	if after := env.Status(t, s, bot); after.State != queue.PlaceWaiting || *after.Ahead >= 300 || *after.Ahead < 1 {
+		t.Fatalf("after admissions the suspect shows %+v", after)
 	}
 }
 

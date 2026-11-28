@@ -25,6 +25,7 @@ import (
 
 func main() {
 	log := service.Logger("gateway")
+	wire.RequireMACKey(log)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	rdb := service.Redis(log)
@@ -41,7 +42,7 @@ func main() {
 		verifier := auth.NewVerifier(auth.RedisKeySource{Redis: rdb, MACKey: mac}, auth.IssuersFromEnv(os.Getenv)...)
 		verifier.Start(ctx)
 		perMin, _ := strconv.Atoi(os.Getenv("QUEUE_JOINS_PER_MINUTE"))
-		engine := &queue.Engine{Redis: rdb, Sales: wire.SalesService(nil, rdb, nil), Signer: queue.NewSigner(priv), Scorer: &botdefence.Scorer{Redis: rdb}, JoinsPerMinute: perMin}
+		engine := &queue.Engine{Redis: rdb, Sales: wire.SalesService(nil, rdb, nil), Signer: queue.NewSigner(priv), Scorer: &botdefence.Scorer{Redis: rdb}, JoinsPerMinute: perMin, Secret: wire.IdentitySecret()}
 		go (&queue.Admitter{Engine: engine, Log: log}).Run(ctx)
 		h := &queue.HTTP{Engine: engine, Verifier: verifier, Log: log}
 		extra = h.Routes

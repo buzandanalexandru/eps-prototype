@@ -75,7 +75,9 @@ func TestHeldRecordWithoutOrderLapses(t *testing.T) {
 	ctx := context.Background()
 	clock := time.Now()
 	f.inv.Now = func() time.Time { return clock }
-	f.inv.LiveOrders = func(context.Context, string, string, []string) (map[string]bool, error) { return map[string]bool{}, nil }
+	f.inv.LiveOrders = func(context.Context, string, string, []string) (map[string]bool, error) {
+		return map[string]bool{}, nil
+	}
 	if err := f.inv.Reserve(ctx, f.hold("no-order", map[string]int64{"arena": 4}, time.Second), map[string]int64{"arena": 100}); err != nil {
 		t.Fatal(err)
 	}

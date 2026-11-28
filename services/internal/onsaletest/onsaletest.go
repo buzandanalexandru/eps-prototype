@@ -77,9 +77,9 @@ func Setup(t *testing.T) *Env {
 		}}
 	scorer := &botdefence.Scorer{Redis: base.Redis}
 	caps := &botdefence.Caps{Redis: base.Redis}
-	engine := &queue.Engine{Redis: base.Redis, Sales: sv, Signer: queue.NewSigner(priv), Scorer: scorer, Now: clk.Now, JoinsPerMinute: 100000}
+	engine := &queue.Engine{Redis: base.Redis, Sales: sv, Signer: queue.NewSigner(priv), Scorer: scorer, Now: clk.Now, JoinsPerMinute: 100000, NewGuestsPerMinute: 100000, Secret: []byte("test-secret")}
 	gate := &onsale.Gate{Sales: sv, Redis: base.Redis, Pool: base.Pool, Passes: &queue.PassCheck{Verifier: queue.NewVerifier(priv.Public().(ed25519.PublicKey)), Redis: base.Redis},
-		Caps: caps, Scorer: scorer, OTP: &botdefence.OTP{Redis: base.Redis, Now: clk.Now}, Checkout: base.Svc, Now: clk.Now}
+		Caps: caps, Scorer: scorer, OTP: &botdefence.OTP{Redis: base.Redis, Now: clk.Now}, Checkout: base.Svc, Now: clk.Now, Secret: []byte("test-secret")}
 	base.Svc.Gate = gate
 	return &Env{Env: base, Clock: clk, Sales: sv, Engine: engine, Gate: gate, Scorer: scorer, Caps: caps, Key: priv,
 		Life: &onsale.Lifecycle{Checkout: base.Svc, Engine: engine, Caps: caps}}

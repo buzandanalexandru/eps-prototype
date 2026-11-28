@@ -63,6 +63,7 @@ CREATE TABLE sales.queue_entries (
 );
 
 -- Tickets per person per event at payment (the record of truth behind the Redis cap check).
+-- cap_identity on orders is a comma-separated list of the identity hashes the order counts under.
 CREATE TABLE sales.cap_ledger (
     organiser_id  uuid        NOT NULL,
     event_id      uuid        NOT NULL,
@@ -70,7 +71,8 @@ CREATE TABLE sales.cap_ledger (
     order_id      uuid        NOT NULL,
     tickets       int         NOT NULL CHECK (tickets >= 0),
     at            timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (organiser_id, order_id),
+    -- One row per identity the order counts under (an account and its verified email).
+    PRIMARY KEY (organiser_id, order_id, identity_hash),
     FOREIGN KEY (organiser_id, order_id) REFERENCES sales.orders (organiser_id, id) ON DELETE CASCADE
 );
 CREATE INDEX cap_ledger_identity_idx ON sales.cap_ledger (organiser_id, event_id, identity_hash);

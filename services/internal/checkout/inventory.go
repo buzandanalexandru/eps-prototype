@@ -77,4 +77,3 @@ var ErrNotReady = errors.New("checkout: inventory counters not loaded")
 
 // ErrNoHold means the hold is not live (released, committed or unknown).
 var ErrNoHold = errors.New("checkout: hold not live")
-

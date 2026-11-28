@@ -144,7 +144,7 @@ var devSeed = sha256.Sum256([]byte("eps-dev-queue-pass-key"))
 // QUEUE_PASS_PUBLIC_KEY (hex; the core). Outside EPS_ENV=dev a missing key is an error (fail
 // closed); in dev a fixed development key is used.
 func KeysFromEnv(needPrivate bool) (ed25519.PrivateKey, ed25519.PublicKey, error) {
-	dev := os.Getenv("EPS_ENV") == "" || os.Getenv("EPS_ENV") == "dev"
+	dev := os.Getenv("EPS_ENV") == "dev"
 	var priv ed25519.PrivateKey
 	if s := strings.TrimSpace(os.Getenv("QUEUE_PASS_PRIVATE_KEY")); s != "" {
 		b, err := hex.DecodeString(s)

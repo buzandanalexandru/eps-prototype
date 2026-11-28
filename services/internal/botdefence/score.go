@@ -35,18 +35,18 @@ type Signal struct {
 
 // The signals.
 var (
-	NoProofOfWork  = Signal{"pow", 40, 40}
-	FastPolling    = Signal{"fast", 10, 30} // per 10 polls under 2 s apart and before the time the page was told
-	RegularPolling = Signal{"regular", 20, 20}
-	ManyPerIP      = Signal{"ip", 15, 15}     // more than 3 places from one address (or /64)
-	BusyIP         = Signal{"ip", 40, 40}     // more than 20 places from one address: risky alone
-	ManyPerSubnet  = Signal{"subnet", 25, 25} // more than 50 places from one /24 (or /48)
-	DataCentre     = Signal{"dc", 20, 20}
-	Headless       = Signal{"headless", 25, 25}
-	SharedPrint    = Signal{"print", 15, 15} // one browser print shared by more than 20 people
-	NewIdentity    = Signal{"new", 10, 10}
-	BadPass        = Signal{"pass", 30, 60} // another account's pass presented from another session
-	OTPExhausted   = Signal{"otp", 20, 20}
+	NoProofOfWork   = Signal{"pow", 40, 40}
+	FastPolling     = Signal{"fast", 10, 30} // per 10 polls under 2 s apart and before the time the page was told
+	RegularPolling  = Signal{"regular", 20, 20}
+	ManyPerIP       = Signal{"ip", 15, 15}     // more than 3 places from one address (or /64)
+	BusyIP          = Signal{"ip", 40, 40}     // more than 20 places from one address: risky alone
+	ManyPerSubnet   = Signal{"subnet", 25, 25} // more than 50 places from one /24 (or /48)
+	DataCentre      = Signal{"dc", 20, 20}
+	Headless        = Signal{"headless", 25, 25}
+	SharedPrint     = Signal{"print", 15, 15} // one browser print shared by more than 20 people
+	NewIdentity     = Signal{"new", 10, 10}
+	BadPass         = Signal{"pass", 30, 60} // another account's pass presented from another session
+	OTPExhausted    = Signal{"otp", 20, 20}
 	allSignalFields = []string{"pow", "fast", "regular", "ip", "subnet", "dc", "headless", "print", "new", "pass", "otp"}
 )
 

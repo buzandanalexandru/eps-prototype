@@ -65,7 +65,11 @@ func (l *Lifecycle) End(ctx context.Context, o *checkout.Order, how string) erro
 		}
 	}
 	if o.CapIdentity != nil && l.Caps != nil {
-		return l.Caps.Drop(ctx, o.OrganiserID, o.EventID, *o.CapIdentity, o.ID)
+		for _, id := range strings.Split(*o.CapIdentity, ",") {
+			if err := l.Caps.Drop(ctx, o.OrganiserID, o.EventID, id, o.ID); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

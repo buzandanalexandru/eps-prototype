@@ -4,7 +4,9 @@ package wire
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -132,7 +134,30 @@ func OnSale(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, co *ch
 	}
 	sv := SalesService(pool, rdb, snaps)
 	g := &onsale.Gate{Sales: sv, Redis: rdb, Pool: pool, Passes: &queue.PassCheck{Verifier: queue.NewVerifier(pub), Redis: rdb},
-		Caps: &botdefence.Caps{Redis: rdb}, Scorer: &botdefence.Scorer{Redis: rdb}, OTP: &botdefence.OTP{Redis: rdb}, Checkout: co}
+		Caps: &botdefence.Caps{Redis: rdb}, Scorer: &botdefence.Scorer{Redis: rdb}, OTP: &botdefence.OTP{Redis: rdb}, Checkout: co, Secret: IdentitySecret()}
 	co.Gate = g
 	return &coreapi.OnSale{Sales: sv, Gate: g, Redis: rdb}
+}
+
+// IdentitySecret keys the stored identity and address hashes of the waiting rooms and caps
+// (review sec L4): derived from SNAPSHOT_CACHE_KEY, so every core and gateway of an environment
+// agrees and no new secret is needed.
+func IdentitySecret() []byte {
+	m := hmac.New(sha256.New, []byte(os.Getenv("SNAPSHOT_CACHE_KEY")))
+	m.Write([]byte("eps-identity-hashes-v1"))
+	return m.Sum(nil)
+}
+
+// RequireMACKey stops a process outside EPS_ENV=dev whose Redis copies would be signed with an
+// empty key, and any process without EPS_ENV at all (review sec L6).
+func RequireMACKey(log *slog.Logger) {
+	envName := os.Getenv("EPS_ENV")
+	if envName == "" {
+		log.Error("EPS_ENV is required (dev for local development)")
+		os.Exit(1)
+	}
+	if envName != "dev" && os.Getenv("SNAPSHOT_CACHE_KEY") == "" {
+		log.Error("SNAPSHOT_CACHE_KEY is required outside EPS_ENV=dev")
+		os.Exit(1)
+	}
 }

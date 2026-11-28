@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -30,8 +31,10 @@ type Gate struct {
 	Caps   *botdefence.Caps
 	Scorer *botdefence.Scorer
 	OTP    *botdefence.OTP
-	// Checkout cancels an order whose codes were all used.
+	// Checkout cancels an order whose codes were all used and counts pre-sale-moment purchases.
 	Checkout *checkout.Service
+	// Secret keys the stored cap identity hashes (review sec L4).
+	Secret []byte
 	Now      func() time.Time
 }
 
@@ -123,10 +126,22 @@ func (g *Gate) BeforeHold(ctx context.Context, h checkout.GateHold) (*checkout.G
 	if h.MaxPerAccount > 0 && h.MaxPerAccount < capN {
 		capN = h.MaxPerAccount // the stricter of the two caps
 	}
-	identity := botdefence.IdentityHash(h.Org, botdefence.Identity(h.Buyer.Kind, h.Buyer.ID, h.Buyer.Email))
-	paid, err := g.paidTickets(ctx, h.Org, h.EventID, identity)
+	ids := g.identities(h.Org, botdefence.Identities(h.Buyer.Kind, h.Buyer.ID, h.Buyer.Email))
+	// The person's paid tickets: the ledger per identity (the most of them), plus what the buyer paid
+	// before the event had sale moments (review D-g).
+	legacy, err := g.Checkout.LegacyTickets(ctx, h.Org, h.EventID, h.Buyer.ID, h.Buyer.Email)
 	if err != nil {
 		return nil, err
+	}
+	base := map[string]int{}
+	paid := 0
+	for _, id := range ids {
+		n, err := g.paidTickets(ctx, h.Org, h.EventID, id)
+		if err != nil {
+			return nil, err
+		}
+		base[id] = n + legacy
+		paid = max(paid, n+legacy)
 	}
 	if paid+h.Tickets > capN {
 		return nil, capReached(capN, max(0, capN-paid))
@@ -135,29 +150,50 @@ func (g *Gate) BeforeHold(ctx context.Context, h checkout.GateHold) (*checkout.G
 	if st.BotDefence {
 		score = g.score(ctx, sale, c.QID)
 	}
-	res := &checkout.GateResult{SaleID: sale.ID, PassQID: c.QID, CapIdentity: identity, CapPerPerson: capN, CapTickets: h.Tickets,
+	res := &checkout.GateResult{SaleID: sale.ID, PassQID: c.QID, CapIdentity: strings.Join(ids, ","), CapPerPerson: capN, CapTickets: h.Tickets,
 		OTPRequired: st.OTPOn && (score >= botdefence.RiskyAt || h.Tickets > st.OTPThreshold), HoldMinutes: st.HoldMinutes}
-	res.Taken = func(ctx context.Context, until time.Time) error {
-		ok, left, err := g.Caps.Hold(ctx, h.Org, h.EventID, identity, h.OrderID, h.Tickets, capN, paid, until)
-		if err != nil {
-			return err
+	var taken []string
+	undo := func(ctx context.Context) {
+		for _, id := range taken {
+			_ = g.Caps.Drop(ctx, h.Org, h.EventID, id, h.OrderID)
 		}
-		if !ok {
-			return capReached(capN, left)
+	}
+	res.Taken = func(ctx context.Context, until time.Time) error {
+		for _, id := range ids {
+			ok, left, err := g.Caps.Hold(ctx, h.Org, h.EventID, id, h.OrderID, h.Tickets, capN, base[id], until)
+			if err != nil {
+				undo(ctx)
+				return err
+			}
+			if !ok {
+				undo(ctx)
+				return capReached(capN, left)
+			}
+			taken = append(taken, id)
 		}
 		return nil
 	}
-	res.Undo = func(ctx context.Context) { _ = g.Caps.Drop(ctx, h.Org, h.EventID, identity, h.OrderID) }
+	res.Undo = undo
 	return res, nil
 }
 
+// identities hashes a buyer's cap identities with the environment's key.
+func (g *Gate) identities(org string, raw []string) []string {
+	out := make([]string, len(raw))
+	for i, r := range raw {
+		out[i] = botdefence.IdentityHash(g.Secret, org, r)
+	}
+	return out
+}
+
 // BeforeDetails moves a guest's cap entry to the normalised email it gives (D-7), refusing an
-// email whose person is already at the cap.
+// email whose person is already at the cap; an account with that verified email shares the cap
+// (its orders count under the email too: review D-g).
 func (g *Gate) BeforeDetails(ctx context.Context, o *checkout.Order, email string) (string, error) {
 	if o.SaleID == nil || o.CapIdentity == nil || o.CapPerPerson == nil || o.CapTickets == nil {
 		return "", nil
 	}
-	id := botdefence.IdentityHash(o.OrganiserID, botdefence.Identity("guest", o.BuyerID, email))
+	id := botdefence.IdentityHash(g.Secret, o.OrganiserID, botdefence.Identity("guest", o.BuyerID, email))
 	if id == *o.CapIdentity {
 		return id, nil
 	}
@@ -165,14 +201,20 @@ func (g *Gate) BeforeDetails(ctx context.Context, o *checkout.Order, email strin
 	if err != nil {
 		return "", err
 	}
-	ok, left, err := g.Caps.Hold(ctx, o.OrganiserID, o.EventID, id, o.ID, *o.CapTickets, *o.CapPerPerson, paid, o.HoldExpiresAt.Add(checkout.AttemptLimit+checkout.HoldGrace))
+	legacy, err := g.Checkout.LegacyTickets(ctx, o.OrganiserID, o.EventID, "", email)
+	if err != nil {
+		return "", err
+	}
+	ok, left, err := g.Caps.Hold(ctx, o.OrganiserID, o.EventID, id, o.ID, *o.CapTickets, *o.CapPerPerson, paid+legacy, o.HoldExpiresAt.Add(checkout.AttemptLimit+checkout.HoldGrace))
 	if err != nil {
 		return "", err
 	}
 	if !ok {
 		return "", capReached(*o.CapPerPerson, left)
 	}
-	_ = g.Caps.Drop(ctx, o.OrganiserID, o.EventID, *o.CapIdentity, o.ID)
+	for _, old := range strings.Split(*o.CapIdentity, ",") {
+		_ = g.Caps.Drop(ctx, o.OrganiserID, o.EventID, old, o.ID)
+	}
 	return id, nil
 }
 

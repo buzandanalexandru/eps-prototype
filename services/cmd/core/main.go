@@ -25,6 +25,7 @@ import (
 
 func main() {
 	log := service.Logger("core")
+	wire.RequireMACKey(log)
 	ctx := context.Background()
 	pool := service.Postgres(ctx, log)
 	rdb := service.Redis(log)

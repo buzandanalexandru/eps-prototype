@@ -26,7 +26,7 @@ type client struct {
 	ip    string
 	print string
 	polls []time.Duration // gaps between status polls
-	tab   string
+	tabs  []string        // the tab of each poll ("" one tab)
 	qid   string
 }
 
@@ -56,6 +56,23 @@ func crowd(r *mrand.Rand) []*client {
 		}
 		if i%10 == 0 {
 			c.polls = append(c.polls[:5], append([]time.Duration{800 * time.Millisecond, 600 * time.Millisecond}, c.polls[5:]...)...)
+		}
+		switch {
+		case i%10 == 3:
+			// Two tabs open (review D-e): each polls on its own schedule, so the combined gaps are short.
+			c.polls, c.tabs = nil, nil
+			for p := 0; p < 12; p++ {
+				a := jitter(r, 5*time.Second, 1500*time.Millisecond)
+				c.polls = append(c.polls, a, 10*time.Second-a)
+				c.tabs = append(c.tabs, "tab-a", "tab-b")
+			}
+		case i < 60:
+			// Carrier-grade NAT (review D-e): 60 phones behind 10 addresses of one /24.
+			c.ip = fmt.Sprintf("100.64.7.%d", 1+i%10)
+		}
+		if i%5 == 1 {
+			// One popular phone model: a fifth of the crowd shares the same browser print.
+			c.print = "fp-iphone-15-ios-17-4"
 		}
 		out = append(out, c)
 	}
@@ -124,6 +141,7 @@ func TestSimulatedCrowd(t *testing.T) {
 		sv := &sales.Service{Pool: env.Pool, Redis: env.Redis, MACKey: []byte("test-key"), Now: clk.Now}
 		eng := *env.Engine
 		eng.Sales, eng.Now = sv, clk.Now
+		eng.NewGuestsPerMinute = 1 << 30 // the guest limit is tested on its own
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -142,9 +160,13 @@ func TestSimulatedCrowd(t *testing.T) {
 				}
 				vc, _ := eng.Verifier().Verify(st.QueueToken, queue.KindQueue, clk.Now(), false)
 				c.qid = vc.QID
-				for _, gap := range c.polls {
+				for j, gap := range c.polls {
 					clk.Add(gap)
-					if _, err := eng.StatusOf(ctx, s.ID, st.QueueToken, session, c.tab); err != nil {
+					tab := ""
+					if j < len(c.tabs) {
+						tab = c.tabs[j]
+					}
+					if _, err := eng.StatusOf(ctx, s.ID, st.QueueToken, session, tab); err != nil {
 						errs <- err
 						return
 					}

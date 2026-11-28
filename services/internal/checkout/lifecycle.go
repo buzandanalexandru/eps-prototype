@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -468,27 +469,69 @@ func (s *Service) Issue(ctx context.Context, org, orderID string) error {
 }
 
 // capOverTx reports whether paying this order would take its buyer above the sale's cap per
-// person, counting the paid tickets in the cap ledger (step 5, D-7: checked again at payment).
+// person (step 5, D-7 and review D-g): for each identity the order counts under (an account and
+// its verified email, or a guest's email), the paid tickets in the cap ledger, plus the tickets of
+// the buyer's paid orders from before the event had sale moments (no ledger row).
 func capOverTx(ctx context.Context, tx pgx.Tx, o *Order) (bool, error) {
 	if o.CapIdentity == nil || o.CapPerPerson == nil || o.CapTickets == nil || *o.CapPerPerson <= 0 {
 		return false, nil
 	}
-	var have int
-	if err := tx.QueryRow(ctx, `select coalesce(sum(tickets), 0) from sales.cap_ledger where event_id = $1 and identity_hash = $2 and order_id <> $3`,
-		o.EventID, *o.CapIdentity, o.ID).Scan(&have); err != nil {
+	have := 0
+	for _, id := range strings.Split(*o.CapIdentity, ",") {
+		var n int
+		if err := tx.QueryRow(ctx, `select coalesce(sum(tickets), 0) from sales.cap_ledger where event_id = $1 and identity_hash = $2 and order_id <> $3`,
+			o.EventID, id, o.ID).Scan(&n); err != nil {
+			return false, err
+		}
+		have = max(have, n)
+	}
+	email := ""
+	if o.BuyerEmail != nil {
+		email = *o.BuyerEmail
+	}
+	legacy, err := LegacyTicketsTx(ctx, tx, o.EventID, o.BuyerID, email, o.ID)
+	if err != nil {
 		return false, err
 	}
-	return have+*o.CapTickets > *o.CapPerPerson, nil
+	return have+legacy+*o.CapTickets > *o.CapPerPerson, nil
 }
 
-// capLedgerTx records a paid order's tickets under its cap identity.
+// LegacyTicketsTx counts the units of a buyer's paid orders for an event that have no cap-ledger
+// row (bought before the event had sale moments), by buyer id or email (review D-g).
+func LegacyTicketsTx(ctx context.Context, tx pgx.Tx, eventID, buyerID, email, exclude string) (int, error) {
+	var n int
+	if exclude == "" {
+		exclude = "00000000-0000-0000-0000-000000000000"
+	}
+	err := tx.QueryRow(ctx, `select coalesce(sum(l.qty), 0) from sales.order_lines l join sales.orders o on o.organiser_id = l.organiser_id and o.id = l.order_id
+		where o.event_id = $1 and o.state in ('paid', 'issued') and o.id <> $4::uuid and (o.buyer_id = $2 or ($3 <> '' and o.buyer_email = $3))
+		and not exists (select 1 from sales.cap_ledger c where c.organiser_id = o.organiser_id and c.order_id = o.id)`, eventID, buyerID, strings.ToLower(strings.TrimSpace(email)), exclude).Scan(&n)
+	return n, err
+}
+
+// LegacyTickets is LegacyTicketsTx in its own transaction.
+func (s *Service) LegacyTickets(ctx context.Context, org, eventID, buyerID, email string) (int, error) {
+	var n int
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		var err error
+		n, err = LegacyTicketsTx(ctx, tx, eventID, buyerID, email, "")
+		return err
+	})
+	return n, err
+}
+
+// capLedgerTx records a paid order's tickets under each of its cap identities.
 func capLedgerTx(ctx context.Context, tx pgx.Tx, o *Order) error {
 	if o.CapIdentity == nil || o.CapTickets == nil {
 		return nil
 	}
-	_, err := tx.Exec(ctx, `insert into sales.cap_ledger (organiser_id, event_id, identity_hash, order_id, tickets) values ($1, $2, $3, $4, $5)
-		on conflict (organiser_id, order_id) do nothing`, o.OrganiserID, o.EventID, *o.CapIdentity, o.ID, *o.CapTickets)
-	return err
+	for _, id := range strings.Split(*o.CapIdentity, ",") {
+		if _, err := tx.Exec(ctx, `insert into sales.cap_ledger (organiser_id, event_id, identity_hash, order_id, tickets) values ($1, $2, $3, $4, $5)
+			on conflict (organiser_id, order_id, identity_hash) do nothing`, o.OrganiserID, o.EventID, id, o.ID, *o.CapTickets); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // LiveHoldRefs says which of these inventory holds an order of the event still carries as a live

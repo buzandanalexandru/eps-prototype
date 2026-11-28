@@ -88,7 +88,7 @@ func TestGuestEmailVariants(t *testing.T) {
 func TestParallelHoldsAtTheCap(t *testing.T) {
 	env := onsaletest.Setup(t)
 	ctx := context.Background()
-	id := botdefence.IdentityHash("org", botdefence.Identity("account", "user-1", ""))
+	id := botdefence.IdentityHash([]byte("k"), "org", botdefence.Identity("account", "user-1", ""))
 	var ok atomic.Int64
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
@@ -129,5 +129,45 @@ func TestPerOrderCap(t *testing.T) {
 	}
 	if used := sale.Used(t); len(used) != 0 {
 		t.Fatalf("stock taken: %v", used)
+	}
+}
+
+// Review D-g (sec M2, the reviewer's repro): tickets paid before the event had any sale moment
+// count toward the cap once one exists.
+func TestCapCountsPurchasesBeforeSaleMoments(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	sale := env.Env.NewSale(t, 100, 100) // snapshot maxPerAccount 6
+	fan := onsaletest.NewFan()
+	o := sale.Hold(t, fan.Buyer, ga(6)) // no sale moment yet: step 4's checkout
+	if out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "pay-"+o.ID[:8], "test payment", nil); err != nil || !out.Paid {
+		t.Fatalf("pay: %+v %v", out, err)
+	}
+	gen := env.NewSale(t, sale, env.Open())
+	f := env.Admitted(t, gen, fan)
+	_, _, err := env.Svc.CreateOrder(ctx, f.Buyer, sale.Request(ga(1)), "")
+	if c, d := problem(err); c != apperr.CapReached || d["left"] != 0 {
+		t.Fatalf("an account that paid 6 (cap 6) before the sale moment held more: %v %v", err, d)
+	}
+}
+
+// Review D-g (sec M2): an account with a verified email and a guest using that email share one cap.
+func TestVerifiedAccountAndGuestEmailShareTheCap(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	sale := env.Env.NewSale(t, 100, 100)
+	st := env.Open()
+	st.CapPerOrder, st.CapPerPerson = 4, 6
+	s := env.NewSale(t, sale, st)
+	acct := onsaletest.NewFan()
+	acct.Buyer.Email = "Ana.Pop@Gmail.com"
+	env.Admitted(t, s, acct)
+	pay(t, env, sale, sale.Hold(t, acct.Buyer, ga(4)))
+	g := &onsaletest.Fan{Buyer: salestest.Guest(), Session: "guest-session-secret-for-the-cap-test", IP: "192.0.2.31"}
+	env.Admitted(t, s, g)
+	o := sale.Hold(t, g.Buyer, ga(3))
+	_, err := env.Svc.SetDetails(ctx, o, checkout.Details{Name: "Ana Pop", Email: "anapop+x@gmail.com"})
+	if c, d := problem(err); c != apperr.CapReached || d["left"] != 2 {
+		t.Fatalf("the guest with the account's email: %v %v", err, d)
 	}
 }
