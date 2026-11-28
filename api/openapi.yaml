@@ -1367,6 +1367,7 @@ components:
         wallet:
           type: object
           description: The caller's wallet at this organiser (accounts only).
+          required: [balanceMinor, creditMinor]
           properties:
             balanceMinor:
               $ref: "#/components/schemas/Money"

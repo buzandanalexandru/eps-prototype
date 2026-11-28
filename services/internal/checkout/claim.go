@@ -20,8 +20,11 @@ func NormaliseEmail(e string) string { return strings.ToLower(strings.TrimSpace(
 // orderID it claims that order only, and refuses one placed with another email. It returns the
 // claimed order ids.
 func (s *Service) Claim(ctx context.Context, b Buyer, orderID string) ([]string, error) {
-	if b.Kind != "account" || b.Email == "" {
-		return nil, apperr.New(http.StatusForbidden, apperr.ClaimRefused, "Sign in with a verified email to add orders to your account.", false)
+	if b.Kind != "account" {
+		return nil, apperr.New(http.StatusForbidden, apperr.Forbidden, "Sign in to add orders to your account.", false)
+	}
+	if b.Email == "" {
+		return nil, apperr.New(http.StatusForbidden, apperr.ClaimRefused, "Verify your email to add orders to your account.", false)
 	}
 	email := NormaliseEmail(b.Email)
 	type ref struct{ org, id string }

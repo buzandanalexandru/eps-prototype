@@ -12,7 +12,7 @@ export type AuthLike = {
   api: {
     getSession(opts: { headers: Headers; query?: { disableCookieCache?: boolean } }): Promise<{
       session: { id: string; activeOrganiserId?: string | null };
-      user: { id: string };
+      user: { id: string; email?: string | null; emailVerified?: boolean | null };
     } | null>;
     signJWT(opts: { body: { payload: Record<string, unknown> } }): Promise<{ token: string }>;
   };
@@ -59,9 +59,11 @@ export async function issueCoreToken(
   const session = await deps.auth.api.getSession({ headers: req.headers, query: { disableCookieCache: true } });
   if (session) {
     const m = await deps.memberships(session.user.id, session.session.activeOrganiserId);
+    // A verified email lets the core add guest orders placed with it to the account (step 4, D-9).
+    const email = session.user.emailVerified && session.user.email ? { email: session.user.email.trim().toLowerCase() } : {};
     const payload = m
-      ? { ...base, sub: session.user.id, sid: session.session.id, kind: "organiser", org: m.organiserId, role: m.role }
-      : { ...base, sub: session.user.id, sid: session.session.id, kind: "fan" };
+      ? { ...base, ...email, sub: session.user.id, sid: session.session.id, kind: "organiser", org: m.organiserId, role: m.role }
+      : { ...base, ...email, sub: session.user.id, sid: session.session.id, kind: "fan" };
     const { token } = await deps.auth.api.signJWT({ body: { payload } });
     return { status: 200, token, kind: payload.kind as CoreKind, expiresAt: exp };
   }
