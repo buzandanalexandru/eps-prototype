@@ -43,10 +43,15 @@ type Knobs struct {
 	WebhookDelayMs  int     `json:"webhook_delay_ms"`
 	WebhookDropRate float64 `json:"webhook_drop_rate"`
 	ChallengeRate   float64 `json:"challenge_rate"` // share of charges that ask for the bank code
+	// ResetsAt is when changed knobs go back to normal by themselves (read only).
+	ResetsAt *time.Time `json:"resets_at,omitempty"`
 }
 
-// DefaultKnobs: everything off, 150 ms ± 100 latency.
-func DefaultKnobs() Knobs { return Knobs{LatencyMs: 150, LatencyJitterMs: 100, OutageMode: "hang"} }
+// KnobLife is how long changed knobs last before they reset to the defaults (review D-d).
+const KnobLife = 15 * time.Minute
+
+// DefaultKnobs: everything off, 150 ms ± 100 latency; an outage answers 503 unless set to hang.
+func DefaultKnobs() Knobs { return Knobs{LatencyMs: 150, LatencyJitterMs: 100, OutageMode: "503"} }
 
 // Validate clamps nothing: it refuses values out of range.
 func (k Knobs) Validate() error {
@@ -251,7 +256,7 @@ func (p *Provider) Knobs(ctx context.Context, merchant string) Knobs {
 	}
 	p.mu.Unlock()
 	k := DefaultKnobs()
-	if ok, err := p.get(ctx, p.key("knobs", merchant), &k); err != nil || !ok {
+	if ok, err := p.get(ctx, p.key("knobs", merchant), &k); err != nil || !ok || (k.ResetsAt != nil && !p.now().Before(*k.ResetsAt)) {
 		k = DefaultKnobs()
 	}
 	p.mu.Lock()
@@ -268,7 +273,9 @@ func (p *Provider) SetKnobs(ctx context.Context, merchant string, k Knobs) error
 	if err := k.Validate(); err != nil {
 		return err
 	}
-	if err := p.put(ctx, p.key("knobs", merchant), k, 0); err != nil {
+	at := p.now().Add(KnobLife).UTC().Truncate(time.Second)
+	k.ResetsAt = &at
+	if err := p.put(ctx, p.key("knobs", merchant), k, KnobLife); err != nil {
 		return err
 	}
 	p.mu.Lock()

@@ -25,8 +25,7 @@ func TestBalancedEntries(t *testing.T) {
 	if _, err := r.w.PayOrder(ctx, fan, o, "wallet-pay-0001"); err != nil {
 		t.Fatal(err)
 	}
-	w, _ := r.w.Wallet(ctx, r.sale.Org, fan.ID, "RON")
-	if _, err := r.w.Stand(ctx, r.sale.Org, w.Code, 2500, "Lemonade"); err != nil {
+	if _, err := r.stand(t, r.sale.Org, fan.ID, 2500, "Lemonade"); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := r.w.CloseSeason(ctx, r.sale.Org, time.Now().AddDate(1, 0, 0)); err != nil {

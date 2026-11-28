@@ -14,7 +14,7 @@ import (
 type pageText struct {
 	Lang, Title, Notice, Amount, Approve, DeclineFunds, Decline3DS, Cancel, ApplePay, GooglePay, SheetNote string
 	ChallengeTitle, ChallengeLead, BankCode, CodeLabel, Submit, TriesLeft, WrongCode                       string
-	Done, Approved, Declined, Back, Simulated                                                              string
+	Done, Approved, Declined, Back, Simulated, Merchant, Order                                             string
 }
 
 var texts = map[string]pageText{
@@ -23,13 +23,13 @@ var texts = map[string]pageText{
 		ApplePay: "Pay with Apple Pay (simulated)", GooglePay: "Pay with Google Pay (simulated)", SheetNote: "A simulated wallet sheet: confirm to pay.",
 		ChallengeTitle: "Confirm with your bank (simulated)", ChallengeLead: "Enter the code your bank sent you.", BankCode: "Simulated bank code", CodeLabel: "Code",
 		Submit: "Confirm", TriesLeft: "Tries left", WrongCode: "Wrong code.", Done: "Payment finished", Approved: "Approved", Declined: "Declined",
-		Back: "Back to the shop", Simulated: "simulated"},
+		Back: "Back to the shop", Simulated: "simulated", Merchant: "Paying", Order: "order"},
 	"ro": {Lang: "ro", Title: "Furnizor de plăți simulat", Notice: "Pagină de test: nu se face nicio plată reală și nu se folosesc date de card.", Amount: "Sumă",
 		Approve: "Card de test: aprobă", DeclineFunds: "Refuz: fonduri insuficiente", Decline3DS: "Refuz: 3-D Secure eșuat", Cancel: "Anulează la bancă",
 		ApplePay: "Plătește cu Apple Pay (simulat)", GooglePay: "Plătește cu Google Pay (simulat)", SheetNote: "Un ecran de portofel simulat: confirmă pentru a plăti.",
 		ChallengeTitle: "Confirmă la bancă (simulat)", ChallengeLead: "Introdu codul trimis de bancă.", BankCode: "Cod bancar simulat", CodeLabel: "Cod",
 		Submit: "Confirmă", TriesLeft: "Încercări rămase", WrongCode: "Cod greșit.", Done: "Plată încheiată", Approved: "Aprobată", Declined: "Refuzată",
-		Back: "Înapoi la magazin", Simulated: "simulat"},
+		Back: "Înapoi la magazin", Simulated: "simulat", Merchant: "Plătești către", Order: "comanda"},
 }
 
 var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
@@ -48,6 +48,7 @@ label{display:block;margin-top:.75rem;font-weight:600}input{font-size:1.25rem;pa
 .err{color:#b42318}a{color:#101828}
 </style></head><body><main><div class="card" data-testid="psp-page" data-status="{{.Status}}" data-method="{{.Method}}">
 <h1>{{.T.Title}} {{.Provider}}</h1>
+{{if .Merchant}}<p data-testid="psp-merchant">{{.T.Merchant}}: <strong>{{.Merchant}}</strong>{{if .OrderRef}} · {{.T.Order}} <span data-testid="psp-order">{{.OrderRef}}</span>{{end}}</p>{{end}}
 <p class="note" role="note">{{.T.Notice}}</p>
 <p>{{.T.Amount}}</p><p class="amount" data-testid="psp-amount">{{.Amount}}</p>
 {{if eq .Status "pending"}}
@@ -110,6 +111,7 @@ func (p *Provider) render(w http.ResponseWriter, r *http.Request, s *stored, wro
 	_ = pageTmpl.Execute(w, map[string]any{
 		"T": t, "Provider": strings.ToUpper(p.ID), "Status": s.Status, "Method": s.Method, "Amount": money(s.AmountMinor, s.Currency, t.Lang),
 		"Action": "/" + p.ID + "/pay/" + s.ID, "Code": s.ChallengeCode, "Wrong": wrong, "Left": 3 - s.ChallengeTries, "Return": template.URL(s.ReturnURL),
+		"Merchant": s.Metadata["merchant_name"], "OrderRef": s.Metadata["order_ref"],
 	})
 }
 

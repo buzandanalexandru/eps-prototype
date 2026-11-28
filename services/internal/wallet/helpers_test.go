@@ -36,7 +36,7 @@ func newRig(t *testing.T) *rig {
 	env := salestest.Setup(t)
 	r := &rig{env: env, sale: env.NewSale(t, 1000, 1000)}
 	r.pay = &payments.Service{Pool: env.Pool, Checkout: env.Svc, Providers: map[string]payments.Provider{}, Breaker: &payments.Breaker{Redis: env.Redis}, Log: env.Log}
-	r.w = &wallet.Service{Pool: env.Pool, Checkout: env.Svc, Payments: r.pay}
+	r.w = &wallet.Service{Pool: env.Pool, Redis: env.Redis, Checkout: env.Svc, Payments: r.pay}
 	r.pay.Topups = r.w
 	hooks := &payments.Webhooks{Svc: r.pay, Secrets: map[string][]byte{"a": []byte("s")}}
 	mux := http.NewServeMux()
@@ -116,4 +116,14 @@ func code(err error) string {
 		return err.Error()
 	}
 	return ""
+}
+
+// stand charges at a stand with a fresh pay code from the fan.
+func (r *rig) stand(t *testing.T, org, owner string, amount int64, label string) (*wallet.Wallet, error) {
+	t.Helper()
+	code, pc, _, err := r.w.PayCode(context.Background(), org, owner, "RON")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r.w.Stand(context.Background(), org, code, pc, amount, label, "stand-"+pc+"-"+label)
 }
