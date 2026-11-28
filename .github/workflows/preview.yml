@@ -166,6 +166,9 @@ jobs:
           rm -f "$f" "$l"
           deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL WEB_URL "$GIT_BRANCH"
           deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL_UNPOOLED WEB_URL_UNPOOLED "$GIT_BRANCH"
+          # The deployed e2e suite signs in through the demo buttons from one runner address; previews
+          # allow more demo sign-ins per minute than production (30) so the suite is not rate limited.
+          DEMO_RATE=150 deploy/scripts/vercel-env.sh upsert-branch EPS_DEMO_SIGNIN_PER_MINUTE DEMO_RATE "$GIT_BRANCH"
           deploy/scripts/vercel-env.sh redeploy "$DEPLOYMENT" | tee -a "$GITHUB_OUTPUT"
       - name: The URL handed to the tests is this project's Vercel deployment
         env:
