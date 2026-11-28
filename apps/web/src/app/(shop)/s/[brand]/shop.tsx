@@ -6,7 +6,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { isLocale, type Locale } from "@/i18n/locale";
 import type { ShopCatalogue, ShopEvent } from "@/lib/storefront/catalogue";
-import { fill, SHOP_LABELS, type ShopLabels } from "@/lib/storefront/labels";
+import { SHOP_LABELS, type ShopLabels } from "@/lib/storefront/labels";
 import type { PublishedShop, ShopKey } from "@/lib/storefront/published";
 import { keyFromParam, shopBase } from "@/lib/storefront/routing";
 import type { Page } from "@/lib/storefront/schema";

@@ -70,36 +70,42 @@ async function poll(eventId: string, version: number, e: Entry) {
   e.timer = setTimeout(() => void poll(eventId, version, e), jitter(wait));
 }
 
-export function useAvailability(eventId: string, version: number): Load {
+function subscribe(eventId: string, version: number, cb: () => void): () => void {
   const e = entryFor(eventId, version);
-  const load = useSyncExternalStore(
-    (cb) => {
-      e.listeners.add(cb);
-      if (!e.running) {
-        e.running = true;
-        void poll(eventId, version, e);
-      }
-      return () => {
-        e.listeners.delete(cb);
-        if (!e.listeners.size && e.timer) {
-          clearTimeout(e.timer);
-          e.running = false;
-        }
-      };
-    },
-    () => e.load,
+  e.listeners.add(cb);
+  if (!e.running) {
+    e.running = true;
+    void poll(eventId, version, e);
+  }
+  return () => {
+    e.listeners.delete(cb);
+    if (!e.listeners.size && e.timer) {
+      clearTimeout(e.timer);
+      e.running = false;
+    }
+  };
+}
+
+const snapshotOf = (eventId: string, version: number): Load => entryFor(eventId, version).load;
+
+export function useAvailability(eventId: string, version: number): Load {
+  return useSyncExternalStore(
+    (cb) => subscribe(eventId, version, cb),
+    () => snapshotOf(eventId, version),
     () => LOADING,
   );
-  return load;
 }
 
 /** The present, after hydration (the first render uses the page's render time, so nothing mismatches). */
 export function useNow(renderedAt: string): Date {
   const [now, setNow] = useState(() => new Date(renderedAt));
   useEffect(() => {
-    setNow(new Date());
+    const first = setTimeout(() => setNow(new Date()), 0);
     const t = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(t);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
   }, []);
   return now;
 }
