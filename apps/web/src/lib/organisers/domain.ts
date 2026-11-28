@@ -10,7 +10,7 @@ import type { Currency } from "../pricing/money";
 import { assertKeepsAnOwner, assertOwner, isRole, ROLES, type Role, type ScopeType } from "./roles";
 import { checkSlug, type SlugKind } from "./slugs";
 
-export const TEMPLATES = ["festival", "resort", "club", "blank"] as const;
+export const TEMPLATES = ["festival", "resort", "club", "theatre", "blank"] as const;
 export type Template = (typeof TEMPLATES)[number];
 export const LANGUAGES = ["ro", "en"] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -159,6 +159,9 @@ export async function deleteBrand(c: ClientBase, role: string, brandId: string):
   // Published or archived events (and, later, their sales) keep their brand.
   const live = await c.query<{ n: number }>("select count(*)::int as n from control.events where brand_id = $1 and status <> 'draft'", [brandId]);
   if (live.rows[0].n > 0) throw new DomainError("brand_has_published_events");
+  // A published storefront keeps its brand (its versions are never deleted).
+  const shop = await c.query("select 1 from control.storefronts where brand_id = $1 and live_version_id is not null", [brandId]);
+  if (shop.rowCount) throw new DomainError("brand_has_published_storefront");
   await c.query("delete from control.events where brand_id = $1 and status = 'draft'", [brandId]);
   const r = await c.query("delete from control.brands where id = $1", [brandId]);
   if (r.rowCount === 0) throw new DomainError("not_found");
