@@ -97,13 +97,19 @@ var (
 	hashMismatches = metrics.NewCounter("eps_snapshot_hash_mismatch_total", "Cached snapshots discarded because their content did not match the hash.")
 )
 
+// Default cache lifetimes: a lost activation is healed within DefaultMemTTL + DefaultRedisTTL.
+const (
+	DefaultMemTTL   = 5 * time.Second
+	DefaultRedisTTL = 4 * time.Second
+)
+
 // NewStore builds a store over a source and an optional Redis client.
 func NewStore(src Source, rdb *redis.Client, log *slog.Logger, o Options) *Store {
 	if o.MemTTL <= 0 {
-		o.MemTTL = 5 * time.Second
+		o.MemTTL = DefaultMemTTL
 	}
 	if o.RedisTTL <= 0 {
-		o.RedisTTL = 4 * time.Second
+		o.RedisTTL = DefaultRedisTTL
 	}
 	if o.VersionTTL <= 0 {
 		o.VersionTTL = time.Hour
