@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getTranslations } from "next-intl/server";
+import { headers } from "next/headers";
 import Link from "next/link";
 import { LocaleSwitcher } from "@/components/locale-switcher";
 import "./globals.css";
@@ -15,6 +16,16 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const locale = await getLocale();
   const t = await getTranslations("common");
+  const layout = (await headers()).get("x-eps-layout");
+  if (layout === "bare") {
+    return (
+      <html lang={locale} className="h-full antialiased">
+        <body className="min-h-full">
+          <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        </body>
+      </html>
+    );
+  }
   return (
     <html lang={locale} className="h-full antialiased">
       <body className="flex min-h-full flex-col bg-background text-foreground">
@@ -32,7 +43,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </div>
             </nav>
           </header>
-          <main className="mx-auto w-full max-w-4xl flex-1 px-4 py-8">{children}</main>
+          <main className={layout === "wide" ? "w-full flex-1 px-3 py-4 sm:px-4" : "mx-auto w-full max-w-4xl flex-1 px-4 py-8"}>{children}</main>
         </NextIntlClientProvider>
       </body>
     </html>

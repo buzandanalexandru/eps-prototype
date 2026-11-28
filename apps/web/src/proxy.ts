@@ -16,7 +16,24 @@ export function proxy(req: NextRequest) {
   const headers = new Headers(req.headers);
   headers.delete("x-eps-brand-host"); // never trust a client-supplied value
   if (host.kind === "brand") headers.set("x-eps-brand-host", host.host);
-  return NextResponse.next({ request: { headers } });
+  // Page chrome (step 2): the builder frame and preview links render the shop alone; the builder is wide.
+  headers.delete("x-eps-layout");
+  const layout = layoutFor(pathname);
+  if (layout) headers.set("x-eps-layout", layout);
+  const res = NextResponse.next({ request: { headers } });
+  if (pathname.startsWith("/p/")) {
+    res.headers.set("Cache-Control", "private, no-store");
+    res.headers.set("X-Robots-Tag", "noindex, nofollow");
+    res.headers.set("Referrer-Policy", "no-referrer");
+  }
+  if (pathname.startsWith("/studio/builder/frame/")) res.headers.set("X-Frame-Options", "SAMEORIGIN");
+  return res;
+}
+
+export function layoutFor(pathname: string): "bare" | "wide" | null {
+  if (pathname.startsWith("/studio/builder/frame/") || pathname.startsWith("/p/")) return "bare";
+  if (pathname === "/studio/builder" || pathname.startsWith("/studio/builder/")) return "wide";
+  return null;
 }
 
 export const config = {

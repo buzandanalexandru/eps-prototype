@@ -8,7 +8,17 @@ export const sunwave: SampleOrganiser = {
   slug: "sunwave",
   owner: null,
   feePolicy: "split",
-  brands: [{ key: "festival", name: "Sunwave Festival", slug: "sunwave-festival", languages: ["ro", "en"], currency: "EUR", template: "festival" }],
+  brands: [
+    {
+      key: "festival",
+      name: "Sunwave Festival",
+      slug: "sunwave-festival",
+      languages: ["ro", "en"],
+      currency: "EUR",
+      template: "club",
+      storefront: { template: "club", logo: "sample:logo-sunwave", event: "beach-day-2027" },
+    },
+  ],
   venues: [{ key: "beach", name: "Sunwave Beach", address: "Vama Veche, Constanța, România", lat: 43.7531, lng: 28.5753, stages: ["Beach Stage"] }],
   events: [
     {

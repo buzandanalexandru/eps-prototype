@@ -31,9 +31,12 @@ import { eventReadiness, type Problem } from "@/lib/catalogue/readiness";
 import { dateRange, zonedToUtc } from "@/lib/catalogue/time";
 import { maxMonthlyPayments } from "@/lib/pricing/instalments";
 import { demoOrganiserEmail } from "@/lib/auth/demo-plugin";
+import { ensureStorefront, getStorefront, publishDraft, saveDraft } from "@/lib/storefront/domain";
+import type { StorefrontDocument } from "@/lib/storefront/schema";
+import { buildTemplate } from "@/lib/storefront/templates";
 import { nibiru } from "./nibiru";
 import { sunwave } from "./sunwave";
-import type { SampleOrganiser } from "./types";
+import type { SampleOrganiser, SampleStorefront } from "./types";
 import { sid, uuidv5 } from "./uuid";
 
 export const SAMPLE_ORGANISERS: SampleOrganiser[] = [nibiru, sunwave];
@@ -46,6 +49,27 @@ export function organiserId(o: SampleOrganiser): string {
 export const DEMO_ORGANISER_USER_ID = `seed_${uuidv5("user/demo-organiser").replaceAll("-", "").slice(0, 24)}`;
 
 export type SeedResult = { organiser: string; id: string; events: { key: string; id: string; skipped?: "published"; problems: Problem[] }[] };
+
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`;
+  if (v && typeof v === "object") return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(v);
+}
+
+/** A sample shop document with stable ids, so re-running the seed writes the same document. */
+export function sampleStorefront(spec: SampleStorefront, brandName: string, languages: ("ro" | "en")[], event: { id: string; slug: string; name: { ro: string; en: string } } | null): StorefrontDocument {
+  const doc = buildTemplate(spec.template, { brandName, languages, event });
+  doc.tokens.logo = spec.logo;
+  let n = 0;
+  for (const p of doc.pages) {
+    p.id = `p${n++}`;
+    for (const sct of p.sections) {
+      sct.id = `${sct.type.replace("_", "")}-${n++}`;
+      for (const b of sct.blocks) b.id = `b${n++}`;
+    }
+  }
+  return doc;
+}
 
 /** The demo organiser user (by email; created with a stable id when missing). Runs as the owner. */
 async function ensureDemoOrganiser(c: pg.ClientBase, domain: string): Promise<string> {
@@ -108,7 +132,7 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
   const existingBrands = await ids(c, "brands");
   for (const b of o.brands) {
     const bid = brandIds.get(b.key)!;
-    const { key: _key, ...input } = b; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const { key: _key, storefront: _sf, ...input } = b; // eslint-disable-line @typescript-eslint/no-unused-vars
     if (existingBrands.has(bid) && (await getBrand(c, bid))) await updateBrand(c, id, bid, input);
     else await createBrand(c, id, input, bid, { sample: true });
   }
@@ -201,11 +225,28 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
     const g = await loadEventGraph(c, eid);
     events.push({ key: e.key, id: eid, problems: eventReadiness(g!, opts.now) });
   }
+  // Sample shops (step 2): each brand's draft is reset to its sample document; a brand with no
+  // published version yet gets version 1. Published versions are never changed.
+  for (const b of o.brands) {
+    if (!b.storefront) continue;
+    const bid = brandIds.get(b.key)!;
+    const ev = b.storefront.event ? await loadEventGraph(c, eventIds.get(b.storefront.event)!) : null;
+    const doc = sampleStorefront(b.storefront, b.name, b.languages as ("ro" | "en")[], ev ? { id: ev.event.id, slug: ev.event.slug, name: ev.event.name } : null);
+    const sf = await ensureStorefront(c, bid, opts.userId, { document: doc, source: "seed" });
+    const fresh = await getStorefront(c, sf.id);
+    let revision = fresh!.draft_revision;
+    if (canonical(fresh!.document) !== canonical(doc)) revision = (await saveDraft(c, sf.id, { revision, document: doc })).revision;
+    if (!fresh!.live_version_id) await publishDraft(c, { storefrontId: sf.id, revision, userId: opts.userId });
+  }
+
   // Venues and brands a visitor added go only when nothing uses them any more.
   await c.query("delete from control.venues v where not (id = any($1::uuid[])) and not exists (select 1 from control.events e where e.venue_id = v.id)", [
     [...venueIds.values()],
   ]);
-  await c.query("delete from control.brands b where not (id = any($1::uuid[])) and not exists (select 1 from control.events e where e.brand_id = b.id)", [
+  await c.query(
+    `delete from control.brands b where not (id = any($1::uuid[])) and not exists (select 1 from control.events e where e.brand_id = b.id)
+     and not exists (select 1 from control.storefronts s where s.brand_id = b.id and s.live_version_id is not null)`,
+    [
     [...brandIds.values()],
   ]);
   return { organiser: o.key, id, events };

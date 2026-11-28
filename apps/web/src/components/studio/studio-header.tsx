@@ -27,6 +27,7 @@ export async function StudioHeader({ studio }: { studio: Studio }) {
   const nav = [
     ["/studio", t("nav.overview")],
     ["/studio/brands", t("nav.brands")],
+    ["/studio/builder", t("nav.builder")],
     ["/studio/events", t("nav.events")],
     ["/studio/venues", t("nav.venues")],
     ["/studio/team", t("nav.team")],

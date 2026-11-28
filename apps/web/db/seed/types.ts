@@ -3,6 +3,7 @@
 import type { BrandInput } from "@/lib/organisers/domain";
 import type { InstalmentInput, LadderInput, PoolInput, ProductInput, RulesInput, VenueInput } from "@/lib/catalogue/schema";
 import type { FeePolicy } from "@/lib/pricing/fees";
+import type { TemplateId } from "@/lib/storefront/templates";
 
 export type SampleProduct = ProductInput & { key: string; pools: string[]; ladder: LadderInput; plan?: InstalmentInput };
 
@@ -25,6 +26,9 @@ export type SampleEvent = {
   products: SampleProduct[];
 };
 
+/** A brand's sample shop: a starting template with the brand's logo and first event, published once. */
+export type SampleStorefront = { template: TemplateId; logo: string; event?: string };
+
 export type SampleOrganiser = {
   key: string;
   name: string;
@@ -32,7 +36,7 @@ export type SampleOrganiser = {
   /** "demo-organiser": the shared demo organiser user (step 0) becomes owner. */
   owner: "demo-organiser" | null;
   feePolicy: FeePolicy;
-  brands: (BrandInput & { key: string })[];
+  brands: (BrandInput & { key: string; storefront?: SampleStorefront })[];
   venues: (VenueInput & { key: string })[];
   events: SampleEvent[];
 };
