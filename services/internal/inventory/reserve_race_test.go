@@ -44,6 +44,7 @@ func TestHeavyContentionNeverOversells(t *testing.T) {
 				if i%2 == 0 {
 					if err := f.inv.Commit(ctx, f.org, f.event, id, caps); err != nil {
 						other.Add(1)
+						t.Logf("commit %s: %v", id, err)
 					}
 				}
 			case errors.As(err, &s):
