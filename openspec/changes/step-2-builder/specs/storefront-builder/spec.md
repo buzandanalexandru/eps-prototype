@@ -213,7 +213,7 @@ Test: apps/web/tests/unit/storefront-schema.test.ts
 #### Scenario: Locked preview
 - **WHEN** the organiser opens the Checkout tab
 - **THEN** it shows the checkout in the brand's tokens with labelled slot placeholders and no editing controls
-Test: apps/web/tests/e2e/builder.spec.ts
+Test: apps/web/tests/e2e/builder-preview.spec.ts
 
 ### Requirement: Languages and currency per shop
 Each storefront SHALL choose its languages from Romanian and English with a default, and show prices in the brand's currency. The preview SHALL switch language.

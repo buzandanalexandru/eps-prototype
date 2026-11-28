@@ -17,7 +17,7 @@ test.describe("builder preview", () => {
     await expect(page.getByTestId("save-state")).toHaveText("All changes saved", { timeout: 10_000 });
   });
 
-  test("phone width: the frame is 390 px wide, has no horizontal scroll and the ticket grid stacks", async ({ page }) => {
+  test("phone width: 390 px frame, no horizontal scroll, stacked ticket grid; Romanian preview; click to select; locked checkout", async ({ page }) => {
     await setLocale(page, "en");
     await signInDemoOrganiser(page);
     await openBuilder(page);
@@ -32,18 +32,23 @@ test.describe("builder preview", () => {
     expect(new Set(xs).size).toBe(1);
     await expect(f.getByTestId("ticket-price").first()).toContainText("RON");
     await expectNoHorizontalScroll(page);
-  });
-
-  test("clicking a section in the preview opens its settings; the language switch shows Romanian with diacritics", async ({ page }) => {
-    await setLocale(page, "en");
-    await signInDemoOrganiser(page);
-    await openBuilder(page);
+    // Romanian preview with diacritics, then select a section from the preview.
     await page.getByTestId("preview-locale").selectOption("ro");
-    await expect(frame(page).getByTestId("buy-disabled").first()).toHaveText("Bilete disponibile după publicare");
-    await expect(frame(page).getByTestId("ticket-price").first()).toContainText(/\d,\d{2} RON/);
-    await frame(page).locator("[data-eps-type=faq] h2").click();
+    await expect(f.getByTestId("buy-disabled").first()).toHaveText("Bilete disponibile după publicare");
+    await expect(f.getByTestId("ticket-price").first()).toContainText(/\d,\d{2} RON/);
+    await f.locator("[data-eps-type=faq] h2").click();
     await showPane(page, "settings");
     await expect(page.getByTestId("section-form")).toHaveAttribute("data-section-type", "faq");
+    // The checkout tab: a locked preview with the two named slots (one sign-in per test: the demo
+    // sign-in is rate limited per address on previews).
+    await showPane(page, "structure");
+    await page.getByTestId("tab-checkout").click();
+    const checkout = page.getByTestId("checkout-preview");
+    await expect(checkout).toBeVisible();
+    await expect(page.getByTestId("checkout-locked-note")).toBeVisible();
+    await expect(checkout.getByTestId("slot-afterContact")).toContainText("checkout.slots.afterContact");
+    await expect(checkout.getByTestId("slot-consents")).toContainText("checkout.slots.consents");
+    await expect(checkout.locator("input, textarea, select")).toHaveCount(0);
     await expectNoHorizontalScroll(page);
   });
 });
