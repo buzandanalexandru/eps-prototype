@@ -61,8 +61,9 @@ describe("ticket picker", () => {
 
   it("asks for the day of a pick-a-day ticket and the day and start time of a slot, and carries that instance", () => {
     const snap = galaxiaSnapshot();
-    const day = { ...snap.pools[0], poolId: "0c000000-0000-4000-8000-0000000000d1", scope: "day" as const, instances: [] };
-    const slot = { ...snap.pools[0], poolId: "0c000000-0000-4000-8000-0000000000d2", scope: "slot" as const, instances: [] };
+    const inst = (capacity: number) => [{ instanceId: "x", date: "2027-07-15", slotStart: null, capacity }];
+    const day = { ...snap.pools[0], poolId: "0c000000-0000-4000-8000-0000000000d1", scope: "day" as const, instances: inst(8000) };
+    const slot = { ...snap.pools[0], poolId: "0c000000-0000-4000-8000-0000000000d2", scope: "slot" as const, instances: inst(2) };
     snap.pools.push(day, slot);
     snap.products.push(
       { ...snap.products[0], productId: "0d000000-0000-4000-8000-0000000000d1", type: "day_ticket", config: { day: null }, poolIds: [day.poolId], instalments: null },

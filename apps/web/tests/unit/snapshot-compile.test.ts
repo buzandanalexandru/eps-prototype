@@ -10,7 +10,7 @@ import { getStorefront, publishDraft, restoreVersion, saveDraft } from "@/lib/st
 import { withTx } from "@/lib/db/tx";
 import { applySeed, organiserId, SAMPLE_ORGANISERS } from "../../db/seed/apply";
 import { asOwner, describeDb, makeOrganiser, testPool, tx, uniq } from "./db";
-import { clone, shopOrganiser } from "./storefront-fixtures";
+import { clone, doc as templateDoc, shopOrganiser } from "./storefront-fixtures";
 import { validateSnapshot } from "./snapshot-schema";
 
 type Shop = Awaited<ReturnType<typeof shopOrganiser>>;
@@ -51,7 +51,10 @@ describeDb("sale snapshot compiler", () => {
     const ga = s.products.find((p) => p.productId === o.f.ga.id)!;
     expect(ga.priceSteps).toEqual([{ index: 0, mode: "by_date", fromAt: null, afterSold: null, faceMinor: 53900, allInMinor: 55248, fanFeeMinor: 1348, organiserNetMinor: 53900 }]);
     expect(ga.poolIds).toEqual([o.f.arena.id]);
-    expect(s.rules).toEqual({ minAge: null, consentUnderAge: null, maxPerAccount: null });
+    expect(s.rules).toMatchObject({ minAge: null, consentUnderAge: null, maxPerAccount: null, holdMinutes: 8 });
+    // The shop's checkout slots at publish, for step 4's checkout.
+    const sfDoc = (await tx(o.scope, (c) => getStorefront(c, o.sf.id)))!.document;
+    expect(s.rules.checkoutQuestions).toEqual(sfDoc.checkout.slots);
     const ev = await tx(o.scope, async (c) => (await c.query("select status, live_snapshot_version from control.events where id = $1", [o.f.ev.id])).rows[0]);
     expect(ev).toEqual({ status: "published", live_snapshot_version: 1 });
   });
@@ -66,6 +69,57 @@ describeDb("sale snapshot compiler", () => {
     expect(compiled).toEqual([expect.objectContaining({ version: 1, created: false })]);
     expect(await snapshotCount(o.f.ev.id)).toBe(1);
     expect((await tx(o.scope, (c) => getStorefront(c, o.sf.id)))!.live_number).toBe(2);
+  });
+
+  it("publishing a catalogue-only change (the look already published) makes the new terms live", async () => {
+    const o = await shopOrganiser();
+    await publish(o, 1);
+    await tx(o.scope, (c) => setLadder(c, o.f.ga.id, { mode: "by_date", steps: [{ priceMinor: 59900 }] }));
+    const again = await publish(o, 1); // same draft revision: no new storefront version
+    expect(again).toEqual([expect.objectContaining({ eventId: o.f.ev.id, version: 2, created: true })]);
+    expect((await tx(o.scope, (c) => getStorefront(c, o.sf.id)))!.live_number).toBe(1);
+    expect((await liveSnapshot(o, o.f.ev.id)).products[0].priceSteps[0].allInMinor).toBe(61398);
+  });
+
+  it("an event the shop no longer sells goes off sale: no live version, nothing for the core or the shop", async () => {
+    const o = await shopOrganiser();
+    await publish(o, 1);
+    const d = templateDoc("festival", null);
+    const rev = (await tx(o.scope, (c) => saveDraft(c, o.sf.id, { revision: 1, document: d }))).revision;
+    const compiled = await publish(o, rev);
+    expect(compiled).toEqual([expect.objectContaining({ eventId: o.f.ev.id, offSale: true })]);
+    const ev = await tx(o.scope, async (c) => (await c.query("select live_snapshot_version from control.events where id = $1", [o.f.ev.id])).rows[0]);
+    expect(ev.live_snapshot_version).toBeNull();
+    // The published-only reads return nothing for it, not even an explicit earlier version.
+    const reads = await asOwner(async (c) => {
+      await c.query("begin; set local role eps_core");
+      const live = (await c.query("select count(*)::int as n from control.live_snapshot($1, null)", [o.f.ev.id])).rows[0].n;
+      const v1 = (await c.query("select count(*)::int as n from control.live_snapshot($1, 1)", [o.f.ev.id])).rows[0].n;
+      await c.query("rollback");
+      return { live, v1 };
+    });
+    expect(reads).toEqual({ live: 0, v1: 0 });
+    // Selling it again: a new version.
+    const back = await publish(o, (await tx(o.scope, (c) => saveDraft(c, o.sf.id, { revision: rev, document: o.sf.document }))).revision);
+    expect(back).toEqual([expect.objectContaining({ eventId: o.f.ev.id, version: 2, created: true })]);
+  });
+
+  it("an explicit version above the live one is never served, and the web role cannot read live_snapshot", async () => {
+    const o = await shopOrganiser();
+    await publish(o, 1);
+    const r = await asOwner(async (c) => {
+      await c.query("begin; set local role eps_core");
+      const n = (await c.query("select count(*)::int as n from control.live_snapshot($1, 2)", [o.f.ev.id])).rows[0].n;
+      await c.query("rollback");
+      return n;
+    });
+    expect(r).toBe(0);
+    await expect(tx(o.scope, (c) => c.query("select * from control.live_snapshot($1, null)", [o.f.ev.id]))).rejects.toThrow(/permission denied/);
+    // The public view has no organiser side and no fee settings.
+    const pub = await tx({}, async (c) => (await c.query("select document from control.public_snapshot($1)", [o.f.ev.id])).rows[0].document);
+    expect(pub.fee).toBeUndefined();
+    expect(JSON.stringify(pub)).not.toContain("organiserNetMinor");
+    expect(pub.products[0].priceSteps[0]).toMatchObject({ allInMinor: 55248, fanFeeMinor: 1348 });
   });
 
   it("a restore makes the old look live with the current price, not the price at the time", async () => {

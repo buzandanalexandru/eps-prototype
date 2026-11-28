@@ -37,11 +37,30 @@ describe("shop routing", () => {
   });
 
   it("platform hosts route by path, and a client cannot claim a brand host", () => {
+    // The host form is refused on a platform host: the platform 404, whatever the client claims.
     const res = call("localhost:3000", "/s/~evil.test/en", { "x-eps-brand-host": "evil.test" });
-    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(res.headers.get("x-middleware-rewrite")).toBe("http://localhost:3000/_eps/not-found");
+    const shop = call("localhost:3000", "/s/nibiru/en", { "x-eps-brand-host": "evil.test" });
+    expect(shop.headers.get("x-middleware-rewrite")).toBeNull();
     // The forwarded request headers never carry the client's value.
-    expect(res.headers.get("x-middleware-request-x-eps-brand-host")).toBeNull();
-    expect(res.headers.get("x-middleware-request-x-eps-shop-locale")).toBe("en");
+    expect(shop.headers.get("x-middleware-request-x-eps-brand-host")).toBeNull();
+    expect(shop.headers.get("x-middleware-request-x-eps-shop-locale")).toBe("en");
+    // Shop pages are static: a fixed policy without a nonce, nothing from other origins.
+    const csp = shop.headers.get("content-security-policy")!;
+    expect(csp).not.toContain("nonce-");
+    expect(csp).toContain("connect-src 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(shop.headers.get("x-middleware-request-x-nonce")).toBeNull();
+  });
+
+  it("/s/<brand> redirects to the visitor's language, and / on a brand host likewise", () => {
+    const a = call("localhost:3000", "/s/nibiru", { "accept-language": "ro-RO,ro;q=0.9" });
+    expect(a.status).toBe(307);
+    expect(a.headers.get("location")).toBe("http://localhost:3000/s/nibiru/ro");
+    const b = call("localhost:3000", "/s/nibiru", { cookie: "NEXT_LOCALE=en", "accept-language": "ro" });
+    expect(b.headers.get("location")).toBe("http://localhost:3000/s/nibiru/en");
+    const c = call("tickets.sunwave.test", "/", { "accept-language": "en" });
+    expect(c.headers.get("location")).toBe("http://tickets.sunwave.test/en");
   });
 });
 
