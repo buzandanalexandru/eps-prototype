@@ -50,12 +50,12 @@
 
 ## 8. Review and release loop (CLAUDE.md)
 
-- [ ] 8.1 Open a PR from `step-5-onsale-engine` to `main`; verify CI is green and the preview (Vercel + Neon branch + per-PR DOKS namespace) is deployed
-- [ ] 8.2 Run the three adversarial reviewers in parallel (correctness: shuffle fairness, shard races, expiry, cap races; security and data: pass forgery and replay, organiser isolation of keys, abuse paths, real fans not blocked; spec and scale: every scenario tested, opening spike, Redis load, operability); verify each report is attached to the PR
-- [ ] 8.3 Fix every confirmed finding or record in the PR why it is rejected, then re-run the affected tests; verify CI is green again
-- [ ] 8.4 Run Playwright against the deployed preview URL (desktop and phone, RO and EN, no console errors, no horizontal scroll) for sale settings, waiting room and OTP, plus API checks against the deployed gateway and core (pass required, forged pass refused, rate dial live) and both k6 scripts at reduced rate; verify all pass
-- [ ] 8.5 Squash-merge to `main`; verify the merge commit is on `main`
-- [ ] 8.6 Run the Playwright production smoke test (join a queued sale, get admitted, buy with a pass); verify it passes on production
+- [x] 8.1 Open a PR from `step-5-onsale-engine` to `main`; verify CI is green and the preview (Vercel + Neon branch + per-PR DOKS namespace) is deployed
+- [x] 8.2 Run the three adversarial reviewers in parallel (correctness: shuffle fairness, shard races, expiry, cap races; security and data: pass forgery and replay, organiser isolation of keys, abuse paths, real fans not blocked; spec and scale: every scenario tested, opening spike, Redis load, operability); verify each report is attached to the PR
+- [x] 8.3 Fix every confirmed finding or record in the PR why it is rejected, then re-run the affected tests; verify CI is green again
+- [x] 8.4 Run Playwright against the deployed preview URL (desktop and phone, RO and EN, no console errors, no horizontal scroll) for sale settings, waiting room and OTP, plus API checks against the deployed gateway and core (pass required, forged pass refused, rate dial live) and both k6 scripts at reduced rate; verify all pass
+- [x] 8.5 Squash-merge to `main`; verify the merge commit is on `main`
+- [x] 8.6 Run the Playwright production smoke test (join a queued sale, get admitted, buy with a pass); verify it passes on production
 
 ## Workflow follow-up
 
