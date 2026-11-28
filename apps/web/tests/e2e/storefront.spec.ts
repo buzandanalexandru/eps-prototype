@@ -42,10 +42,13 @@ test("an unknown brand and a brand with only a draft give the same 404", async (
 
 test("the event page shows dates, venue, line-up and tickets from the live snapshot in the brand's look", async ({ page }) => {
   await page.goto(GALAXIA);
-  await expect(page.getByTestId("event-summary").locator("h1")).toHaveText("Galaxia 2027");
+  await expect(page.getByTestId("event-name")).toHaveText("Galaxia 2027");
+  await expect(page.locator("h1")).toHaveCount(1);
   await expect(page.getByTestId("event-dates")).toHaveText("15 July 2027 – 18 July 2027");
   await expect(page.getByTestId("event-venue")).toHaveText("NIBIRU Arena");
   await expect(page.locator("[data-eps-type=lineup]")).toContainText("Nova Drift");
+  await expect(page.locator("[data-eps-type=lineup]")).not.toContainText("(artist de exemplu)");
+  await expect(page.getByTestId("sample-artist").first()).toHaveText("sample artist");
   await expect(page.getByTestId("ticket-card")).toHaveCount(6);
   await expect(page.getByTestId("shop-tickets")).toHaveAttribute("data-availability", "ok");
   const primary = await page.getByTestId("storefront").evaluate((el) => getComputedStyle(el).getPropertyValue("--eps-l-primary").trim());

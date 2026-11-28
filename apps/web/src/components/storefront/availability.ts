@@ -4,7 +4,7 @@
 // snapshot version than the page's (a publish in flight) is not mixed with this page's prices: the
 // page's own facts are used and the core is asked again soon. Failures back off with jitter, from
 // 10 seconds to a minute, so a crowd does not retry in step.
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { AvailabilityState } from "@/lib/storefront/picker";
 import type { Availability, InstanceAvailability } from "@/lib/storefront/sale-view";
 
@@ -62,12 +62,14 @@ async function poll(eventId: string, version: number, e: Entry) {
   e.load = next;
   e.failures = next.state === "ok" ? 0 : e.failures + 1;
   for (const l of e.listeners) l();
-  if (!e.listeners.size) {
-    e.running = false;
-    return;
-  }
   const wait = next.state === "ok" ? 30_000 : next.state === "stale" ? 3_000 : Math.min(60_000, 10_000 * 2 ** Math.min(e.failures - 1, 3));
-  e.timer = setTimeout(() => void poll(eventId, version, e), jitter(wait));
+  e.timer = setTimeout(() => {
+    if (!e.listeners.size) {
+      e.running = false;
+      return;
+    }
+    void poll(eventId, version, e);
+  }, jitter(wait));
 }
 
 function subscribe(eventId: string, version: number, cb: () => void): () => void {
@@ -77,20 +79,19 @@ function subscribe(eventId: string, version: number, cb: () => void): () => void
     e.running = true;
     void poll(eventId, version, e);
   }
+  // The poll stops by itself once nobody listens (checked before each next request), so a quick
+  // unsubscribe and subscribe again never starts a second poll.
   return () => {
     e.listeners.delete(cb);
-    if (!e.listeners.size && e.timer) {
-      clearTimeout(e.timer);
-      e.running = false;
-    }
   };
 }
 
 const snapshotOf = (eventId: string, version: number): Load => entryFor(eventId, version).load;
 
 export function useAvailability(eventId: string, version: number): Load {
+  const sub = useCallback((cb: () => void) => subscribe(eventId, version, cb), [eventId, version]);
   return useSyncExternalStore(
-    (cb) => subscribe(eventId, version, cb),
+    sub,
     () => snapshotOf(eventId, version),
     () => LOADING,
   );
