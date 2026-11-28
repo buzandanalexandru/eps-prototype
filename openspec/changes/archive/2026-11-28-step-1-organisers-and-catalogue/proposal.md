@@ -35,3 +35,38 @@ None.
 - EPS Studio screens under `/studio`, a public `/fees` page, a shared money and pricing module in `apps/web/src/lib/pricing/` that steps 3 and 4 reuse.
 - Previews are seeded after migrations; production is seeded only on request (`seed.yml`).
 - `zod` for input validation (small utility).
+
+## Status
+
+Built and merged as PR #2 (squash f612670) on 28 Nov 2026.
+
+**What was built:**
+- Organiser sign-up with resumable onboarding, plus brands with an active-organiser switch that the core token follows.
+- Team: roles, scopes and invitation links. Only owner versus everyone else is enforced; the screen labels scopes as not enforced in the prototype.
+- Fee policy (absorb, pass or split, with a per-event override) and all-in prices in integer minor units, with vectors shared with Go.
+- Venues, and events with days and line-up.
+- Seven product types, with capacity pools scoped by event, day or slot.
+- Price ladders, instalment plans capped per buyer in the event's local dates, and buying rules.
+- Copy-as-new-edition and a readiness checklist.
+- A public `/fees` page.
+- NIBIRU and Sunwave sample data, labelled "Date de exemplu / Sample data", loaded by a manual `seed.yml` workflow.
+
+**Deviations, recorded in design.md:**
+- An empty day means the buyer picks the day.
+- The instalment limit is computed per buyer from the purchase date. The NIBIRU sample is "10 RON + up to 7 monthly".
+- Brand slugs and organiser slugs are separate namespaces.
+- The core token carries the exact role: owner, admin, box_office, finance or staff.
+- Invite URLs contain the organiser id.
+- `tsx` was added as a dev dependency.
+- New columns were added for later steps: personalisation and check-in deadlines, a late check-in fee and deposit_bps.
+- Seeding moved out of deploy.yml into seed.yml.
+- Migrations 00005 and 00006 were edited in place before reaching production.
+
+**Checks run:**
+- Vitest 201/201 against the database; tsc, eslint and next build pass.
+- Go vet and tests pass; contract drift, actionlint and `openspec validate --all --strict` pass.
+- Local Playwright: 31 passed, 9 skipped (specs that need the core, and phone runs of the flows that create data).
+- All 17 PR checks are green; the deployed e2e had 37 passed and 9 skipped.
+- An independent Playwright check of the preview, on desktop and phone: the demo sign-in opens Studio with NIBIRU labelled "Date de exemplu"; no horizontal scroll.
+- Three adversarial reviews found 2 high and 3 medium security issues, 2 major and 6 minor correctness defects, and 4 high, 6 medium and 4 low spec/scale issues. All confirmed findings were fixed: prototype-safe form parsing with zod, RLS and narrowed grants on `control.organisers`, update-only edits with server-generated ids, sample slugs reserved, a safe idempotent seed, pool scopes enforced, composite foreign keys including event_id, indexes, and Studio home queries bounded and paginated.
+- Production deploy run 4 is green. The production seed (`seed.yml`, target production) ran after it, (run 46088607056, green), followed by a production Playwright smoke check on desktop and phone: the pages render with no console errors and no horizontal scroll, and the demo sign-in opens Studio with NIBIRU labelled "Date de exemplu".

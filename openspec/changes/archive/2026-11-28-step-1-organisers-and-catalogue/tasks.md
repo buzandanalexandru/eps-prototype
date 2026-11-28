@@ -39,9 +39,9 @@
 - [x] 6.1 Run the step's tests locally, then the full suite once; verify all pass
 - [x] 6.2 Run `npx openspec validate step-1-organisers-and-catalogue --strict`; verify it passes
 - [x] 6.3 Open the PR to `main`; verify CI is green and the preview is seeded
-- [ ] 6.4 Run the three adversarial reviewers in parallel (correctness; security and data; spec and scale), fix every confirmed finding or record its rejection in the PR, re-run affected tests; verify no open confirmed finding
+- [x] 6.4 Run the three adversarial reviewers in parallel (correctness; security and data; spec and scale), fix every confirmed finding or record its rejection in the PR, re-run affected tests; verify no open confirmed finding
 - [x] 6.5 Run Playwright against the deployed preview URL (onboarding, brands, team, fees page, catalogue, sample data; desktop and phone, RO and EN, no console errors, no horizontal scroll); verify all pass
-- [ ] 6.6 Squash-merge when green; verify the production deploy, the production seed and the Playwright smoke test pass
+- [x] 6.6 Squash-merge when green; verify the production deploy, the production seed and the Playwright smoke test pass
 
 ## Workflow follow-up
 
