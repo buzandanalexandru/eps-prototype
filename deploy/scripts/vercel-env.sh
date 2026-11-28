@@ -5,8 +5,11 @@
 #   vercel-env.sh create-secret-if-missing <KEY> <target>     (48 random bytes, type sensitive)
 #   vercel-env.sh upsert-branch <KEY> <VALUE_VAR> <git-branch> (preview only, scoped to one branch)
 #   vercel-env.sh delete-branch <KEY> <git-branch>
+#   vercel-env.sh get-branch <KEY> <git-branch> <FILE>        writes the branch-scoped value to FILE
+#                                                             (empty when unset); never prints it
 #   vercel-env.sh exists <KEY> <target>                       prints true or false
 #   vercel-env.sh upsert-secret <KEY> <VALUE_VAR> <target>    (production: type sensitive)
+#   vercel-env.sh describe <deployment-host>                  prints url= and origins= lines
 #   vercel-env.sh redeploy <deployment-host> [production]     rebuilds it with the current env;
 #                                                             prints url= and origins= lines
 set -euo pipefail
@@ -58,6 +61,13 @@ case "${1-}" in
     for id in $ids; do v DELETE "/v9/projects/$PROJECT/env/$id?teamId=$TEAM" > /dev/null; done
     echo "Removed $key for preview branch $branch."
     ;;
+  get-branch)
+    key="$2" branch="$3" file="$4"
+    id=$(v GET "/v10/projects/$PROJECT/env?teamId=$TEAM&gitBranch=$(jq -rn --arg b "$branch" '$b|@uri')" |
+      jq -r --arg k "$key" --arg b "$branch" '[.envs[] | select(.key == $k and .gitBranch == $b)][0].id // empty')
+    : > "$file"
+    if [[ -n "$id" ]]; then v GET "/v9/projects/$PROJECT/env/$id?teamId=$TEAM&decrypt=true" | jq -r '.value // empty' > "$file"; fi
+    ;;
   exists)
     key="$2" target="$3"
     n=$(v GET "/v10/projects/$PROJECT/env?teamId=$TEAM" |
@@ -70,6 +80,13 @@ case "${1-}" in
     body=$(jq -n --arg k "$key" --arg v "$value" --arg t "$target" '{key: $k, value: $v, type: "sensitive", target: [$t]}')
     v POST "/v10/projects/$PROJECT/env?teamId=$TEAM&upsert=true" "$body" > /dev/null
     echo "Set $key for $target."
+    ;;
+  describe)
+    host="${2:?deployment host}"
+    host="${host#https://}"; host="${host%%/*}"
+    d=$(v GET "/v13/deployments/$host?teamId=$TEAM")
+    echo "url=https://$(jq -r .url <<<"$d")"
+    echo "origins=$(jq -r '[("https://" + .url)] + [(.alias // [])[] | "https://" + .] | unique | join(",")' <<<"$d")"
     ;;
   redeploy)
     host="${2:?deployment host}" target="${3-}"

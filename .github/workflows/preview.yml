@@ -101,14 +101,32 @@ jobs:
         run: command -v psql || (sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client)
       - name: Empty seed branch (schema-only from production, application schemas dropped)
         run: deploy/scripts/neon-branch.sh ensure-seed
-      - name: Fresh preview branch from the seed (no production data)
+      - name: Fresh preview branch from the seed (no production data), restored in place
         id: neon
-        run: deploy/scripts/neon-branch.sh recreate "$NEON_BRANCH"
+        run: deploy/scripts/neon-branch.sh reset "$NEON_BRANCH"
       - name: Migrate both schemas and check the branch holds no user data
         working-directory: services
         env:
           DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
         run: go run ./cmd/migrate -control ../apps/web/db/migrations -assert-empty
+      # The running preview keeps its connection string through a push: the branch keeps its host
+      # (restored in place) and the web login keeps the password already stored for this branch.
+      - name: Keep this preview's web login password
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GIT_BRANCH: ${{ env.BRANCH }}
+          DATABASE_URL: ${{ steps.neon.outputs.database_url_unpooled }}
+        run: |
+          if [[ -z "$VERCEL_TOKEN" ]]; then echo "No VERCEL_TOKEN: nothing stored to keep."; exit 0; fi
+          f="$RUNNER_TEMP/existing.url"
+          deploy/scripts/vercel-env.sh get-branch EPS_DATABASE_URL_UNPOOLED "$GIT_BRANCH" "$f"
+          pw=$(python3 -c 'import sys,urllib.parse as u; s=open(sys.argv[1]).read().strip(); print(u.unquote(u.urlsplit(s).password or "") if s else "")' "$f")
+          rm -f "$f"
+          if [[ -z "$pw" ]]; then echo "No stored login for this branch yet: the web job sets one."; exit 0; fi
+          echo "::add-mask::$pw"
+          l="$RUNNER_TEMP/login.env"
+          (cd services && EPS_LOGIN_PASSWORD="$pw" go run ./cmd/migrate -login web -out "$l")
+          rm -f "$l"
       # Step 1 (sample-data): the NIBIRU and Sunwave sample organisers, after the empty-branch check.
       - uses: actions/setup-node@v4
         with:
@@ -154,21 +172,35 @@ jobs:
             echo "::warning::VERCEL_TOKEN is not set: the Vercel preview cannot be pointed at the CI database, so it has none (it never falls back to the integration's copy of production). The e2e job will fail until the owner adds the secret."
             exit 0
           fi
-          f="$RUNNER_TEMP/neon.env"; l="$RUNNER_TEMP/login.env"
+          f="$RUNNER_TEMP/neon.env"; l="$RUNNER_TEMP/login.env"; e="$RUNNER_TEMP/existing.url"
           NEON_OUTPUT_FILE="$f" deploy/scripts/neon-branch.sh uri "$NEON_BRANCH" > /dev/null
           DATABASE_URL=$(sed -n 's/^database_url_unpooled=//p' "$f")
           DATABASE_URL_POOLED=$(sed -n 's/^database_url=//p' "$f")
           export DATABASE_URL DATABASE_URL_POOLED
+          # Reuse the password already stored for this branch, so a push never changes it.
+          deploy/scripts/vercel-env.sh get-branch EPS_DATABASE_URL_UNPOOLED "$GIT_BRANCH" "$e"
+          old_unpooled=$(cat "$e"); deploy/scripts/vercel-env.sh get-branch EPS_DATABASE_URL "$GIT_BRANCH" "$e"; old_pooled=$(cat "$e")
+          deploy/scripts/vercel-env.sh get-branch EPS_DEMO_SIGNIN_PER_MINUTE "$GIT_BRANCH" "$e"; old_rate=$(cat "$e"); rm -f "$e"
+          [[ -n "$old_unpooled" ]] && echo "::add-mask::$old_unpooled"; [[ -n "$old_pooled" ]] && echo "::add-mask::$old_pooled"
+          EPS_LOGIN_PASSWORD=$(python3 -c 'import sys,urllib.parse as u; s=sys.argv[1]; print(u.unquote(u.urlsplit(s).password or "") if s else "")' "$old_unpooled")
+          [[ -n "$EPS_LOGIN_PASSWORD" ]] && echo "::add-mask::$EPS_LOGIN_PASSWORD"
+          export EPS_LOGIN_PASSWORD
           (cd services && go run ./cmd/migrate -login web -out "$l")
           pw=$(sed -n 's/^password=//p' "$l"); echo "::add-mask::$pw"
           WEB_URL=$(sed -n 's/^pooled_url=//p' "$l"); WEB_URL_UNPOOLED=$(sed -n 's/^url=//p' "$l")
           export WEB_URL WEB_URL_UNPOOLED
           rm -f "$f" "$l"
-          deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL WEB_URL "$GIT_BRANCH"
-          deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL_UNPOOLED WEB_URL_UNPOOLED "$GIT_BRANCH"
           # The deployed e2e suite signs in through the demo buttons from one runner address; previews
           # allow more demo sign-ins per minute than production (30) so the suite is not rate limited.
-          DEMO_RATE=150 deploy/scripts/vercel-env.sh upsert-branch EPS_DEMO_SIGNIN_PER_MINUTE DEMO_RATE "$GIT_BRANCH"
+          DEMO_RATE=150; export DEMO_RATE
+          if [[ "$WEB_URL" == "$old_pooled" && "$WEB_URL_UNPOOLED" == "$old_unpooled" && "$old_rate" == "$DEMO_RATE" ]]; then
+            echo "The preview's variables are unchanged: no redeploy, the running preview stays up."
+            deploy/scripts/vercel-env.sh describe "$DEPLOYMENT" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL WEB_URL "$GIT_BRANCH"
+          deploy/scripts/vercel-env.sh upsert-branch EPS_DATABASE_URL_UNPOOLED WEB_URL_UNPOOLED "$GIT_BRANCH"
+          deploy/scripts/vercel-env.sh upsert-branch EPS_DEMO_SIGNIN_PER_MINUTE DEMO_RATE "$GIT_BRANCH"
           deploy/scripts/vercel-env.sh redeploy "$DEPLOYMENT" | tee -a "$GITHUB_OUTPUT"
       - name: The URL handed to the tests is this project's Vercel deployment
         env:
