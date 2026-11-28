@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useFormatter, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/studio/copy-button";
-import { createLinkAction, publishAction, restoreAction, revokeAllLinksAction, revokeLinkAction, type LinkView, type VersionView } from "@/app/studio/builder/actions";
+import { createLinkAction, publishAction, restoreAction, revokeAllLinksAction, revokeLinkAction, type LinkView, type VersionView } from "@/app/(platform)/studio/builder/actions";
 import type { PublishProblem } from "@/lib/storefront/publish-checks";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
 
@@ -37,8 +37,19 @@ export function PublishPanel(props: {
   const [fresh, setFresh] = useState<string | null>(null);
   const problems = serverProblems ?? props.problems;
 
+  const tr = useTranslations("readiness");
   const problemText = (p: PublishProblem) =>
-    t(`problems.${p.code}`, { locale: p.locale ? p.locale.toUpperCase() : "", field: p.path.split(".").slice(-2).join(" "), detail: p.detail ?? "" });
+    t(`problems.${p.code}`, {
+      locale: p.locale ? p.locale.toUpperCase() : "",
+      field: p.path.split(".").slice(-2).join(" "),
+      detail: p.detail ?? "",
+      // Step 3's gate: the event's readiness problem, the pool and its numbers.
+      event: p.event ?? "",
+      reason: p.code === "event_not_ready" && p.detail && tr.has(`codes.${p.detail}`) ? tr(`codes.${p.detail}`, { detail: p.reasonDetail ?? "" }) : (p.detail ?? ""),
+      pool: p.pool ?? "",
+      used: p.used ?? 0,
+      capacity: p.capacity ?? 0,
+    });
 
   const publish = async () => {
     setBusy(true);
@@ -94,15 +105,22 @@ export function PublishPanel(props: {
           <ul className="space-y-1 text-sm" data-testid="problems">
             {problems.slice(0, 50).map((p, i) => (
               <li key={i}>
-                <button type="button" className="text-left text-destructive underline" onClick={() => props.onGoTo(p)} data-testid="problem" data-code={p.code} data-path={p.path}>
-                  {problemText(p)}
-                </button>
+                {p.href ? (
+                  // Catalogue problems are fixed in Studio's event screens.
+                  <a href={p.href} className="text-destructive underline" data-testid="problem" data-code={p.code} data-path={p.path}>
+                    {problemText(p)}
+                  </a>
+                ) : (
+                  <button type="button" className="text-left text-destructive underline" onClick={() => props.onGoTo(p)} data-testid="problem" data-code={p.code} data-path={p.path}>
+                    {problemText(p)}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         )}
         {props.canDesign && (
-          <Button type="button" onClick={publish} disabled={busy || problems.length > 0} data-testid="publish">
+          <Button type="button" onClick={publish} disabled={busy || props.problems.length > 0} data-testid="publish">
             {busy ? t("publishing") : t("publish")}
           </Button>
         )}

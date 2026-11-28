@@ -125,6 +125,7 @@ jobs:
           kubectl create namespace eps-prod --dry-run=client -o yaml | kubectl apply -f -
           kubectl -n eps-prod create secret generic eps-db --from-literal=DATABASE_URL="$url" \
             --from-literal=LOGIN_PASSWORD="$pw" --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+          deploy/scripts/runtime-secret.sh eps-prod
       - name: helm upgrade --install (atomic; a release that never gets ready rolls back)
         run: |
           helm upgrade --install eps deploy/helm/eps --namespace eps-prod \

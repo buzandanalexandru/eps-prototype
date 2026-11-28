@@ -91,15 +91,16 @@ export const nibiru: SampleOrganiser = {
       days: { from: "2027-07-15", to: "2027-07-18", opens: "17:00", closes: "03:00" },
       // ASSUMPTION: from 14, parental consent under 18, at most 6 per account.
       rules: { minAge: 14, consentUnderAge: 18, maxPerAccount: 6 },
-      // ASSUMPTION: the real line-up is not announced; placeholder sample artists.
+      // ASSUMPTION: the real line-up is not announced; placeholder sample artists, labelled as such
+      // by the shop in its own language (sample: true).
       lineup: [
-        { day: "2027-07-15", artist: "Nova Drift (artist de exemplu)", stage: "Main Stage", starts: "22:00" },
-        { day: "2027-07-15", artist: "Lumen Kids (artist de exemplu)", stage: "Galaxy Stage", starts: "19:00" },
-        { day: "2027-07-15", artist: "Orbital Sea (artist de exemplu)", stage: "Main Stage", starts: "00:30" },
-        { day: "2027-07-16", artist: "Kepler Nine (artist de exemplu)", stage: "Main Stage", starts: "23:00" },
-        { day: "2027-07-16", artist: "Tidal Static (artist de exemplu)", stage: "Galaxy Stage", starts: "20:00" },
-        { day: "2027-07-17", artist: "Solar Choir (artist de exemplu)", stage: "Main Stage", starts: "23:30" },
-        { day: "2027-07-18", artist: "Last Light (artist de exemplu)", stage: "Main Stage", starts: "22:30" },
+        { day: "2027-07-15", artist: "Nova Drift", stage: "Main Stage", starts: "22:00" },
+        { day: "2027-07-15", artist: "Lumen Kids", stage: "Galaxy Stage", starts: "19:00" },
+        { day: "2027-07-15", artist: "Orbital Sea", stage: "Main Stage", starts: "00:30" },
+        { day: "2027-07-16", artist: "Kepler Nine", stage: "Main Stage", starts: "23:00" },
+        { day: "2027-07-16", artist: "Tidal Static", stage: "Galaxy Stage", starts: "20:00" },
+        { day: "2027-07-17", artist: "Solar Choir", stage: "Main Stage", starts: "23:30" },
+        { day: "2027-07-18", artist: "Last Light", stage: "Main Stage", starts: "22:30" },
       ],
       pools: [
         // ASSUMPTION: pool sizes (the teardown claims 282k+ visits over the 2026 edition).

@@ -9,7 +9,7 @@ import { CopyButton } from "@/components/studio/copy-button";
 import { acceptFromFrame, readyMessage, renderedMessage, selectMessage } from "@/lib/storefront/frame-protocol";
 import { publishProblems } from "@/lib/storefront/publish-checks";
 import type { Locale, StorefrontDocument } from "@/lib/storefront/schema";
-import type { LinkView, VersionView } from "@/app/studio/builder/actions";
+import type { LinkView, VersionView } from "@/app/(platform)/studio/builder/actions";
 import { TreePanel } from "./tree-panel";
 import { SettingsPanel } from "./settings-panel";
 import { BrandKitPanel } from "./brand-kit-panel";
@@ -428,9 +428,9 @@ export function BuilderClient(props: BuilderProps) {
               {live ? t("live", { n: live.number }) : t("notPublished")}
             </span>
             {live && (
-              <span className="text-xs text-muted-foreground" data-testid="address-note">
-                {t("publicShopSoon")}
-              </span>
+              <a href={address} target="_blank" rel="noopener" className="text-xs font-semibold underline" data-testid="address-note">
+                {t("openShop")}
+              </a>
             )}
             {props.hostnames.map((h) => (
               <code key={h} className="text-xs text-muted-foreground" data-testid="brand-hostname">

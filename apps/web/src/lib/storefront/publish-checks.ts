@@ -9,7 +9,19 @@ import { sectionDef } from "./sections";
 import { parseDocument, type Locale, type Section, type StorefrontDocument } from "./schema";
 
 export type PublishProblem = {
-  code: "invalid" | "contrast" | "missing_translation" | "required" | "event_page_needs_tickets" | "unknown_event" | "countdown_target";
+  code:
+    | "invalid"
+    | "contrast"
+    | "missing_translation"
+    | "required"
+    | "event_page_needs_tickets"
+    | "unknown_event"
+    | "countdown_target"
+    // Step 3's publish gate (sale snapshots): checked on the server only.
+    | "event_not_ready"
+    | "capacity_below_usage"
+    | "removed_with_usage"
+    | "core_unreachable";
   /** Dotted path of the field to fix. */
   path: string;
   pageId?: string;
@@ -17,6 +29,15 @@ export type PublishProblem = {
   blockId?: string;
   locale?: Locale;
   detail?: string;
+  /** Studio page where the problem is fixed (catalogue problems). */
+  href?: string;
+  /** event_not_ready: the event's name and the readiness problem's own detail. */
+  event?: string;
+  reasonDetail?: string;
+  /** capacity_below_usage, removed_with_usage: the pool instance and the numbers. */
+  pool?: string;
+  used?: number;
+  capacity?: number;
 };
 
 type Ctx = { knownEvents: ReadonlySet<string> };

@@ -6,7 +6,7 @@ import type { BetterAuthPlugin } from "better-auth";
 import * as z from "zod";
 import en from "../../messages/en.json";
 import { googleConfigured, demoSignInEnabled } from "@/lib/env";
-import { SignInForm } from "@/app/sign-in/sign-in-form";
+import { SignInForm } from "@/app/(platform)/sign-in/sign-in-form";
 import { renderWithIntl } from "./render";
 import { cookieFrom, DOMAIN, makeAuth, post } from "./helpers";
 

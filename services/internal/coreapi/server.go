@@ -18,6 +18,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/version"
 )
 
@@ -26,6 +27,10 @@ type Server struct {
 	Service string
 	Pool    *pgxpool.Pool // may be nil (version then omits schema versions)
 	Checks  []health.Checker
+	// Sale snapshots (step 3): nil in contract tests without a database.
+	Snapshots    *snapshot.Store
+	Availability *snapshot.AvailabilityService
+	Usage        snapshot.Usage
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)

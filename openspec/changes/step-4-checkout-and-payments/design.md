@@ -149,5 +149,5 @@ New tables in the sales schema through the Go migrations from step 0; nothing ex
 
 ## Open Questions
 
-- Assumption on step 3: the snapshot payload can carry `checkout_questions` and `hold_minutes`; if not, the core reads them through a small control-plane endpoint keyed by snapshot version. Either way the spec holds.
+- From step 3 (as built): the snapshot's `rules.holdMinutes` (5 to 15, default 8, from `events.hold_minutes`) and `rules.checkoutQuestions` (`afterContact` and `consents` slot ids, from the selling shop's storefront document) are what the core uses; no control-plane endpoint is needed. Holds clamp to the live snapshot's instance capacities and treat over-capacity instances as sold out. The core re-prices every order from snapshot `v`, refuses hidden products and off-sale events (the published-only read returns nothing for them) and re-applies the per-order and per-account caps: the shop's checkout URL is never trusted.
 - Assumption on step 0: an email sender or dev mailbox exists for the resume link and the confirmation email; if not, the links are shown on screen only.

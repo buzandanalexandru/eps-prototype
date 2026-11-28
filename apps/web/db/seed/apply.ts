@@ -33,6 +33,7 @@ import { maxMonthlyPayments } from "@/lib/pricing/instalments";
 import { demoOrganiserEmail } from "@/lib/auth/demo-plugin";
 import { ensureStorefront, getStorefront, publishDraft, saveDraft } from "@/lib/storefront/domain";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
+import { noSalesBeforeFirstPublish, snapshotHook } from "@/lib/snapshot/publish";
 import { buildTemplate } from "@/lib/storefront/templates";
 import { ensureTiles, mapTilesForDocument, type TileFetcher } from "@/lib/storefront/maps";
 import { nibiru } from "./nibiru";
@@ -133,9 +134,12 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
   const existingBrands = await ids(c, "brands");
   for (const b of o.brands) {
     const bid = brandIds.get(b.key)!;
-    const { key: _key, storefront: _sf, ...input } = b; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const { key: _key, storefront: _sf, hostnames, ...input } = b; // eslint-disable-line @typescript-eslint/no-unused-vars
     if (existingBrands.has(bid) && (await getBrand(c, bid))) await updateBrand(c, id, bid, input);
     else await createBrand(c, id, input, bid, { sample: true });
+    for (const h of hostnames ?? []) {
+      await c.query(`insert into control.brand_hostnames (hostname, organiser_id, brand_id) values ($1, $2, $3) on conflict (hostname) do nothing`, [h, id, bid]);
+    }
   }
   const existingVenues = await ids(c, "venues");
   for (const v of o.venues) {
@@ -184,7 +188,9 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
     for (const [i, l] of (e.lineup ?? []).entries()) {
       const day = days.find((d) => d.day === l.day);
       if (!day) throw new Error(`${e.key}: line-up day ${l.day} is not an event day`);
-      await addLineupSlot(c, eid, { dayId: day.id, artist: l.artist, stage: l.stage, starts: l.starts, sort: i }, ek("lineup", String(i)));
+      const slot = await addLineupSlot(c, eid, { dayId: day.id, artist: l.artist, stage: l.stage, starts: l.starts, sort: i }, ek("lineup", String(i)));
+      // Sample data: every seeded artist is a placeholder, labelled as a sample artist by the shop.
+      await c.query("update control.lineup_slots set sample = true where id = $1", [slot.id]);
     }
     const poolIds = new Map(e.pools.map((p) => [p.key, ek("pool", p.key)]));
     const productIds = new Map(e.products.map((p) => [p.key, ek("product", p.key)]));
@@ -237,7 +243,11 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
     const fresh = await getStorefront(c, sf.id);
     let revision = fresh!.draft_revision;
     if (canonical(fresh!.document) !== canonical(doc)) revision = (await saveDraft(c, sf.id, { revision, document: doc })).revision;
-    if (!fresh!.live_version_id) await publishDraft(c, { storefrontId: sf.id, revision, userId: opts.userId });
+    // The first publish also compiles the sale snapshots of the events the shop sells (step 3);
+    // a brand's first publish has no sales to check against.
+    if (!fresh!.live_version_id) {
+      await publishDraft(c, { storefrontId: sf.id, revision, userId: opts.userId }, [snapshotHook({ usage: noSalesBeforeFirstPublish, userId: opts.userId, now: () => opts.now })]);
+    }
     // Static map tiles for the sample shops' map sections (best effort; the map shows a link without).
     await ensureTiles(c, await mapTilesForDocument(c, doc), opts.tileFetcher, 3);
   }

@@ -12,6 +12,8 @@ import { ActionForm, FieldError } from "@/components/studio/action-form";
 import { EventFields } from "@/components/studio/event-fields";
 import { EventNav } from "@/components/studio/event-nav";
 import { ReadinessList } from "@/components/studio/readiness-list";
+import { PublicationStateCard } from "@/components/studio/publication-state";
+import { publicationState } from "@/lib/snapshot/publish";
 import { Card, Check, Hint, Input, Label, Select } from "@/components/ui/field";
 import {
   addLineupAction,
@@ -35,10 +37,10 @@ export default async function EventPage({ params, searchParams }: { params: Prom
   const data = await studioTx(s, async (c) => {
     const g = await loadEventGraph(c, id);
     if (!g) return null;
-    return { g, brands: await listBrands(c), venues: await listVenues(c) };
+    return { g, brands: await listBrands(c), venues: await listVenues(c), publication: await publicationState(c, id) };
   });
   if (!data) notFound();
-  const { g, brands, venues } = data;
+  const { g, brands, venues, publication } = data;
   const ev = g.event;
   const problems = eventReadiness(g);
   const grouped = groupLineup(g.days, g.lineup);
@@ -53,6 +55,7 @@ export default async function EventPage({ params, searchParams }: { params: Prom
           {t("copiedLead")}
         </p>
       )}
+      <PublicationStateCard state={publication} />
       <ReadinessList problems={problems} />
 
       <Card>

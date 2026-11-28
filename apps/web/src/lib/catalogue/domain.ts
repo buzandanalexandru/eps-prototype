@@ -114,10 +114,11 @@ export type EventRow = {
   min_age: number | null;
   consent_under_age: number | null;
   max_per_account: number | null;
+  hold_minutes: number;
 };
 
 const EVENT_COLS =
-  "id, brand_id, venue_id, slug, name, description, timezone, starts_at, ends_at, status, edition_of, fee_policy, min_age, consent_under_age, max_per_account";
+  "id, brand_id, venue_id, slug, name, description, timezone, starts_at, ends_at, status, edition_of, fee_policy, min_age, consent_under_age, max_per_account, hold_minutes";
 
 export async function createEvent(c: ClientBase, raw: EventInput, fixedId?: string): Promise<EventRow> {
   const e = eventSchema.parse(raw);
@@ -226,7 +227,7 @@ async function listDaysOf(c: ClientBase, eventIds: string[]): Promise<(DayRow & 
   ).rows;
 }
 
-export type LineupRow = { id: string; day_id: string; artist: string; stage: string; starts: string; sort: number };
+export type LineupRow = { id: string; day_id: string; artist: string; stage: string; starts: string; sort: number; sample?: boolean };
 
 export async function addLineupSlot(c: ClientBase, eventId: string, raw: LineupInput, fixedId?: string): Promise<LineupRow> {
   const l = lineupSchema.parse(raw);
@@ -252,7 +253,7 @@ export async function listLineup(c: ClientBase, eventId: string): Promise<Lineup
 async function listLineupOf(c: ClientBase, eventIds: string[]): Promise<(LineupRow & { event_id: string })[]> {
   return (
     await c.query(
-      `select id, event_id, day_id, artist, stage, to_char(starts, 'HH24:MI') as starts, sort from control.lineup_slots where event_id = any($1::uuid[])`,
+      `select id, event_id, day_id, artist, stage, to_char(starts, 'HH24:MI') as starts, sort, sample from control.lineup_slots where event_id = any($1::uuid[])`,
       [eventIds],
     )
   ).rows;

@@ -48,7 +48,7 @@ export async function loadShopCatalogue(c: ClientBase, eventIds: string[], now =
       venue: v ? { name: v.name, address: v.address, lat: v.lat, lng: v.lng, map: mapOf.get(v.id) ?? null } : null,
       days: g.days.map((d) => ({ date: d.day, opens: d.opens.slice(0, 5), closes: d.closes.slice(0, 5) })).sort((a, b) => a.date.localeCompare(b.date)),
       lineup: g.lineup
-        .map((l) => ({ date: dayOf.get(l.day_id) ?? "", artist: l.artist, stage: l.stage, starts: l.starts.slice(0, 5), sort: l.sort }))
+        .map((l) => ({ date: dayOf.get(l.day_id) ?? "", artist: l.artist, stage: l.stage, starts: l.starts.slice(0, 5), sort: l.sort, sample: !!l.sample }))
         .sort((a, b) => a.date.localeCompare(b.date) || a.sort - b.sort)
         .map(({ sort: _s, ...l }) => l), // eslint-disable-line @typescript-eslint/no-unused-vars
       products,

@@ -216,8 +216,16 @@ export async function publishDraft(
     "select number from control.storefront_versions where storefront_id = $1 and state <> 'draft' and revision = $2",
     [sf.id, p.revision],
   );
-  if (done.rows[0]) return { ...need(await getVersion(c, sf.id, done.rows[0].number)), created: false };
   const parsed = parseDocument(draft.document);
+  if (done.rows[0]) {
+    // The look is already live, but the catalogue may have changed since: the hooks (step 3's sale
+    // snapshots) run again, so publishing a catalogue-only change makes it live.
+    const v = need(await getVersion(c, sf.id, done.rows[0].number));
+    if (parsed.ok) {
+      for (const h of hooks) await h(c, { storefrontId: sf.id, brandId: sf.brand_id, versionId: v.id, number: v.number, document: parsed.doc, restoredFrom: v.restored_from });
+    }
+    return { ...v, created: false };
+  }
   if (!parsed.ok) throw new PublishBlockedError([{ code: "invalid", path: parsed.path, detail: parsed.code }]);
   return { ...(await writeVersion(c, sf, { document: parsed.doc, revision: draft.revision, userId: p.userId, restoredFrom: null }, hooks)), created: true };
 }

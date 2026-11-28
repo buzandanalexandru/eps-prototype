@@ -14,6 +14,8 @@ global:
   # Secret (created by CI in the release namespace) holding DATABASE_URL for this environment's
   # Neon branch, as the service login role (eps_core_login). Never in values files.
   databaseSecret: eps-db
+  # Secret (created once per environment by CI) with REDIS_PASSWORD and SNAPSHOT_CACHE_KEY.
+  runtimeSecret: eps-runtime
   # Exact browser origins allowed by CORS (no wildcards: any Vercel account can register a project
   # whose URL matches a pattern). Production's web origin here; a preview's exact Vercel URLs are
   # set by CI.
@@ -36,6 +38,8 @@ core:
   ingress:
     enabled: true
     host: core
+    # Requests per second (and burst) to /v1/public/... across all clients of this core host.
+    publicRateLimit: { enabled: true, average: 200, burst: 400 }
   resources:
     requests: { cpu: 100m, memory: 64Mi }
     limits: { cpu: "1", memory: 256Mi }

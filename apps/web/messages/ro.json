@@ -779,7 +779,11 @@
       "required": "Obligatoriu: {field}.",
       "event_page_needs_tickets": "Pagina evenimentului are nevoie de o grilă de bilete pentru evenimentul ei.",
       "unknown_event": "Eveniment necunoscut: {field}.",
-      "countdown_target": "Numărătoarea inversă are nevoie de un eveniment sau de o dată."
+      "countdown_target": "Numărătoarea inversă are nevoie de un eveniment sau de o dată.",
+      "event_not_ready": "{event} nu poate fi pus în vânzare: {reason}",
+      "capacity_below_usage": "{pool}: {used, number} vândute sau rezervate, capacitate nouă {capacity, number}",
+      "removed_with_usage": "{pool} ar fi șters, dar are {used, number} vândute sau rezervate",
+      "core_unreachable": "Vânzările nu au putut fi verificate cu motorul de vânzare, așa că nu s-a publicat nimic. Încearcă din nou peste câteva momente."
     },
     "history": "Versiuni",
     "noVersions": "Nimic publicat încă.",
@@ -798,7 +802,7 @@
     "revoke": "Revocă",
     "saveFirst": "Nu s-a făcut: ciorna nu a putut fi salvată mai întâi ({reason}). Rezolvă asta și încearcă din nou.",
     "revokeAll": "Revocă toate linkurile",
-    "publicShopSoon": "Magazinul public de la această adresă se deschide odată cu pasul 3; până atunci, trimite un link de previzualizare.",
+    "openShop": "Deschide magazinul",
     "notStarted": "Magazinul {brand} nu a fost început încă. Un proprietar sau administrator deschide mai întâi constructorul.",
     "uploads": "Imagini încărcate",
     "noUploads": "Nicio imagine încărcată.",
@@ -814,5 +818,11 @@
     "lead": "Biletele din magazinele EPS sunt vândute de organizatorul numit în fiecare magazin. EPS operează platforma și include toate comisioanele în preț.",
     "prototype": "Acesta este un prototip: nu se fac plăți reale și niciun bilet nu este valabil pentru intrare.",
     "privacy": "Confidențialitate: magazinele EPS încarcă pagini, imagini și fonturi doar de pe EPS. Nu folosesc reclame, urmărire sau servicii terțe; hărțile locațiilor sunt imagini statice salvate de pe OpenStreetMap (© contributorii OpenStreetMap), deci browserul tău nu contactează niciun serviciu de hărți."
+  },
+  "publication": {
+    "notPublished": "Încă nu este de vânzare: publică magazinul care vinde acest eveniment ca termenii de vânzare să intre în vigoare.",
+    "live": "De vânzare: versiunea {version}, publicată {date}",
+    "changed": "Modificări nepublicate",
+    "lead": "Modificările la produse, capacități, prețuri și reguli nu schimbă nimic în vânzare până la următoarea publicare."
   }
 }

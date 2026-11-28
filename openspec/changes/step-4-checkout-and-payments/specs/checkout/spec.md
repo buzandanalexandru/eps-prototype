@@ -24,6 +24,19 @@ Creating an order SHALL hold the requested quantities from every capacity pool t
 - **THEN** exactly 100 holds succeed and the pool never shows less than zero
 - Test: services/internal/checkout/hold_race_test.go
 
+### Requirement: Holds follow the live snapshot's capacity and terms
+Holds and order confirmation SHALL never take a pool instance above its capacity in the live sale snapshot, and an instance whose sold and held units reach or exceed that capacity MUST be treated as sold out. The core SHALL re-price every order from snapshot `v`, refuse hidden products and off-sale events, and apply the per-order and per-account maxima again, whatever the checkout URL says.
+
+#### Scenario: Capacity lowered below what is taken
+- **WHEN** a pool instance has 1,000 units sold or held and a publish sets its capacity to 900 (the step 3 gate was bypassed or raced)
+- **THEN** a new hold for it fails with `EPS-HOLD-SOLD-OUT` and confirming an older hold never takes the instance above 900 sold
+- Test: services/internal/checkout/hold_test.go
+
+#### Scenario: Hidden product or off-sale event
+- **WHEN** a checkout URL names a hidden product, a product of another snapshot, or an event that is off sale
+- **THEN** the hold is refused and nothing is taken
+- Test: services/internal/checkout/hold_test.go
+
 ### Requirement: Visible countdown and automatic release
 The checkout SHALL show the time left on the hold, counting down from the server's deadline. When the deadline passes without a payment in progress, the system SHALL release the stock within 5 seconds and move the order to `expired`.
 

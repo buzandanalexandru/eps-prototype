@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "snapshotId": "5e1a7f00-0000-4000-8000-000000000001",
+  "organiserId": "0a000000-0000-4000-8000-000000000001",
+  "brandId": "0b000000-0000-4000-8000-000000000001",
+  "eventId": "0e000000-0000-4000-8000-000000000001",
+  "version": 1,
+  "publishedAt": "2026-12-05T10:00:00.000Z",
+  "currency": "RON",
+  "timezone": "Europe/Bucharest",
+  "isSample": true,
+  "fee": { "policy": "pass_on", "bps": 250, "fixedMinor": 0 },
+  "event": {
+    "slug": "galaxia-2027",
+    "name": { "ro": "Galaxia 2027", "en": "Galaxia 2027" },
+    "description": { "ro": "Patru nopți pe malul mării.", "en": "Four nights by the sea." },
+    "startsAt": "2027-07-15T14:00:00.000Z",
+    "endsAt": "2027-07-19T00:00:00.000Z",
+    "timezone": "Europe/Bucharest",
+    "venue": { "name": "NIBIRU Arena", "address": "Costinești – Tuzla", "lat": 43.9295, "lng": 28.6312 },
+    "days": [
+      { "date": "2027-07-15", "opens": "17:00", "closes": "03:00" },
+      { "date": "2027-07-16", "opens": "17:00", "closes": "03:00" }
+    ],
+    "lineup": [{ "date": "2027-07-15", "artist": "Nova Drift", "stage": "Main Stage", "starts": "22:00", "sample": true }]
+  },
+  "rules": { "minAge": 14, "consentUnderAge": 18, "maxPerAccount": 6, "holdMinutes": 8, "checkoutQuestions": { "afterContact": [], "consents": [] } },
+  "pools": [
+    {
+      "poolId": "0c000000-0000-4000-8000-000000000001",
+      "name": "Arena",
+      "scope": "event",
+      "instances": [{ "instanceId": "0c000000-0000-4000-8000-000000000001", "date": null, "slotStart": null, "capacity": 40000 }]
+    },
+    {
+      "poolId": "0c000000-0000-4000-8000-000000000002",
+      "name": "Camping",
+      "scope": "event",
+      "instances": [{ "instanceId": "0c000000-0000-4000-8000-000000000002", "date": null, "slotStart": null, "capacity": 3000 }]
+    }
+  ],
+  "products": [
+    {
+      "productId": "0d000000-0000-4000-8000-000000000001",
+      "type": "pass",
+      "name": { "ro": "General Access", "en": "General Access" },
+      "perks": [],
+      "zone": "Arena",
+      "config": { "zone": "Arena", "days": ["2027-07-15", "2027-07-16"] },
+      "named": true,
+      "salesFrom": "2026-10-01T09:00:00.000Z",
+      "salesUntil": null,
+      "visible": true,
+      "maxPerOrder": 6,
+      "sortOrder": 1,
+      "poolIds": ["0c000000-0000-4000-8000-000000000001"],
+      "requires": [],
+      "priceSteps": [
+        { "index": 0, "mode": "by_sales", "fromAt": null, "afterSold": null, "faceMinor": 53900, "allInMinor": 55248, "fanFeeMinor": 1348, "organiserNetMinor": 53900 },
+        { "index": 1, "mode": "by_sales", "fromAt": null, "afterSold": 10000, "faceMinor": 59900, "allInMinor": 61398, "fanFeeMinor": 1498, "organiserNetMinor": 59900 }
+      ],
+      "instalments": { "depositMinor": 1000, "depositBps": null, "monthlyCount": 7, "dayOfMonth": 1, "lastDueBy": "2027-07-08" }
+    },
+    {
+      "productId": "0d000000-0000-4000-8000-000000000002",
+      "type": "add_on",
+      "name": { "ro": "Camping Galaxia", "en": "Galaxia camping" },
+      "perks": [{ "ro": "Loc de cort", "en": "Tent pitch" }],
+      "zone": null,
+      "config": { "requires": "any_ticket" },
+      "named": false,
+      "salesFrom": "2026-10-01T09:00:00.000Z",
+      "salesUntil": null,
+      "visible": true,
+      "maxPerOrder": 4,
+      "sortOrder": 6,
+      "poolIds": ["0c000000-0000-4000-8000-000000000002"],
+      "requires": ["0d000000-0000-4000-8000-000000000001"],
+      "priceSteps": [
+        { "index": 0, "mode": "by_date", "fromAt": null, "afterSold": null, "faceMinor": 19900, "allInMinor": 20398, "fanFeeMinor": 498, "organiserNetMinor": 19900 }
+      ],
+      "instalments": null
+    }
+  ]
+}

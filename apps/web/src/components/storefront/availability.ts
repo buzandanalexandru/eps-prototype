@@ -1,0 +1,88 @@
+"use client";
+// The availability island's data (design D3.6): one poll per event shared by every component on the
+// page (ticket grid, "from" price). The core is asked through our own origin. An answer for another
+// snapshot version than the page's (a publish in flight) is not mixed with this page's prices: the
+// page's own facts are used and the core is asked again soon. Failures back off with jitter, from
+// 10 seconds to a minute, so a crowd does not retry in step.
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { readAnswer, type Answer, type Load } from "@/lib/storefront/availability-answer";
+
+export type { Load };
+
+type Entry = { load: Load; listeners: Set<() => void>; timer?: ReturnType<typeof setTimeout>; failures: number; running: boolean };
+const entries = new Map<string, Entry>();
+const LOADING: Load = { state: "loading" };
+
+function jitter(ms: number) {
+  return Math.round(ms * (0.75 + Math.random() * 0.5));
+}
+
+function entryFor(eventId: string, version: number): Entry {
+  const key = `${eventId}@${version}`;
+  let e = entries.get(key);
+  if (!e) {
+    e = { load: LOADING, listeners: new Set(), failures: 0, running: false };
+    entries.set(key, e);
+  }
+  return e;
+}
+
+async function poll(eventId: string, version: number, e: Entry) {
+  let next: Load = { state: "failed" };
+  try {
+    const res = await fetch(`/api/public/events/${eventId}/availability`, { headers: { accept: "application/json" } });
+    if (res.ok) next = readAnswer((await res.json()) as Answer, version);
+  } catch {
+    // network failure: buying stays paused, the page keeps its prices
+  }
+  e.load = next;
+  e.failures = next.state === "ok" ? 0 : e.failures + 1;
+  for (const l of e.listeners) l();
+  const wait = next.state === "ok" ? 30_000 : next.state === "stale" ? 3_000 : Math.min(60_000, 10_000 * 2 ** Math.min(e.failures - 1, 3));
+  e.timer = setTimeout(() => {
+    if (!e.listeners.size) {
+      e.running = false;
+      return;
+    }
+    void poll(eventId, version, e);
+  }, jitter(wait));
+}
+
+function subscribe(eventId: string, version: number, cb: () => void): () => void {
+  const e = entryFor(eventId, version);
+  e.listeners.add(cb);
+  if (!e.running) {
+    e.running = true;
+    void poll(eventId, version, e);
+  }
+  // The poll stops by itself once nobody listens (checked before each next request), so a quick
+  // unsubscribe and subscribe again never starts a second poll.
+  return () => {
+    e.listeners.delete(cb);
+  };
+}
+
+const snapshotOf = (eventId: string, version: number): Load => entryFor(eventId, version).load;
+
+export function useAvailability(eventId: string, version: number): Load {
+  const sub = useCallback((cb: () => void) => subscribe(eventId, version, cb), [eventId, version]);
+  return useSyncExternalStore(
+    sub,
+    () => snapshotOf(eventId, version),
+    () => LOADING,
+  );
+}
+
+/** The present, after hydration (the first render uses the page's render time, so nothing mismatches). */
+export function useNow(renderedAt: string): Date {
+  const [now, setNow] = useState(() => new Date(renderedAt));
+  useEffect(() => {
+    const first = setTimeout(() => setNow(new Date()), 0);
+    const t = setInterval(() => setNow(new Date()), 60_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, []);
+  return now;
+}

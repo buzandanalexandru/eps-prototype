@@ -8,7 +8,8 @@ import type { ShopLabels } from "@/lib/storefront/labels";
 import { imageUrl } from "@/lib/storefront/links";
 import { osmLink } from "@/lib/storefront/maps";
 import type { Locale, Section } from "@/lib/storefront/schema";
-import { formatMoney } from "@/lib/pricing/money";
+import { AllInPrice } from "./all-in-price";
+import { ShopTickets } from "./shop-tickets";
 import { Countdown } from "./countdown";
 import { Gallery } from "./gallery";
 import { shopHref } from "./href";
@@ -110,6 +111,11 @@ function Lineup({ s, ctx }: S<{ heading: Localized; layout: "grid" | "list" }>) 
                 {slots.map((l, i) => (
                   <li key={i} className={s.settings.layout === "grid" ? `${card} p-4` : "flex flex-wrap justify-between gap-2 py-2"}>
                     <span className="font-[family-name:var(--eps-font-heading)] text-lg font-semibold">{l.artist}</span>
+                    {l.sample && (
+                      <span className="ml-2 inline-block rounded-[var(--eps-radius)] border border-[var(--eps-accent)] px-1.5 text-xs font-semibold" data-testid="sample-artist">
+                        {ctx.labels.sampleArtist}
+                      </span>
+                    )}
                     <span className="block text-sm text-[var(--eps-muted)]">
                       {l.starts}
                       {l.stage ? ` · ${l.stage}` : ""}
@@ -128,6 +134,15 @@ function Lineup({ s, ctx }: S<{ heading: Localized; layout: "grid" | "list" }>) 
 function TicketGrid({ s, ctx }: S<{ heading: Localized; showPerks: boolean }>) {
   const ev = eventOf(s, ctx);
   const buyLabel = ctx.mode === "published" ? ctx.labels.checkoutSoon : ctx.labels.availableAfterPublish;
+  if (ctx.mode === "published" && ev?.sale && ev.products.length > 0) {
+    // The published shop: live availability and the ticket picker (step 3).
+    return (
+      <Wrap id="tickets">
+        <Heading v={s.settings.heading} ctx={ctx} />
+        <ShopTickets event={ev} labels={ctx.labels} locale={ctx.locale} base={ctx.hrefBase} showPerks={s.settings.showPerks} />
+      </Wrap>
+    );
+  }
   return (
     <Wrap id="tickets">
       <Heading v={s.settings.heading} ctx={ctx} />
@@ -148,10 +163,7 @@ function TicketGrid({ s, ctx }: S<{ heading: Localized; showPerks: boolean }>) {
                 </ul>
               )}
               <div className="mt-auto">
-                <p className="text-2xl font-bold text-[var(--eps-primary)]" data-testid="ticket-price">
-                  {formatMoney(p.allInMinor, ev.currency, ctx.locale)}
-                </p>
-                <p className="text-xs text-[var(--eps-muted)]">{p.fanFeeMinor > 0 ? `${ctx.labels.allIn} · ${ctx.labels.includesFee}` : ctx.labels.allIn}</p>
+                <AllInPrice allInMinor={p.allInMinor} fanFeeMinor={p.fanFeeMinor} currency={ev.currency} locale={ctx.locale} labels={ctx.labels} showFee />
               </div>
               <button type="button" disabled className={`${primaryButton} cursor-not-allowed opacity-80`} data-testid="buy-disabled">
                 {buyLabel}

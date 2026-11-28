@@ -15,6 +15,8 @@ security:
 tags:
   - name: health
   - name: identity
+  - name: snapshots
+  - name: public
 paths:
   /healthz:
     get:
@@ -91,7 +93,102 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/organiser/events/{eventId}/snapshots/{version}/activate:
+    post:
+      operationId: activateSnapshot
+      summary: Make a published snapshot version the one the core serves
+      description: |
+        Called by the control plane right after a publish commits (design D3.1, D3.4). The core loads
+        the version through the published-only read, checks its hash, caches it and replies with the
+        hash. Organiser tokens only; an event of another organiser (or an unknown version) is 404.
+      tags: [snapshots]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000000
+      responses:
+        "200":
+          description: The version is live in the core.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Activation"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/events/{eventId}/pool-usage:
+    get:
+      operationId: getPoolUsage
+      summary: Units sold or held per pool instance
+      description: |
+        The publish gate (design D3.1): units sold plus held per pool instance, from the sales schema.
+        Until step 4 creates the sales tables, every instance is unused and the list is empty.
+        Only instances with usage are listed. Organiser tokens only; another organiser's event is 404.
+      tags: [snapshots]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Usage per pool instance.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PoolUsage"
+        "401":
+          $ref: "#/components/responses/Problem"
+        "403":
+          $ref: "#/components/responses/Problem"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/public/events/{eventId}/availability:
+    get:
+      operationId: getAvailability
+      summary: Public availability of an event's products
+      description: |
+        Per visible product of the live snapshot: its sale status, the current price step and its
+        all-in amount, and the remaining quantity only when at most 50 or 5% of capacity remain
+        (design D3.4), and the day and slot instances that are sold out or have few left. Cached 2
+        seconds; no token needed. 404 when the event has no live snapshot (or is off sale).
+      tags: [public]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Availability.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Availability"
+        "404":
+          $ref: "#/components/responses/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
+  parameters:
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   securitySchemes:
     bearerAuth:
       type: http
@@ -184,6 +281,98 @@ components:
         sid:
           type: string
         exp:
+          type: integer
+          format: int64
+    Activation:
+      type: object
+      required: [eventId, version, sha256]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+        sha256:
+          type: string
+    PoolUsage:
+      type: object
+      required: [eventId, instances]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        instances:
+          type: array
+          items:
+            type: object
+            required: [instanceId, used]
+            properties:
+              instanceId:
+                type: string
+                description: "`<poolId>`, `<poolId>@<date>` or `<poolId>@<date>T<HH:MM>`."
+              used:
+                type: integer
+                format: int64
+                description: Units sold plus held.
+    ProductAvailability:
+      type: object
+      required: [productId, status, priceStepIndex, allInMinor]
+      properties:
+        productId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [on_sale, not_yet, ended, sold_out]
+        opensAt:
+          type: string
+          format: date-time
+          description: When sales open (status not_yet).
+        priceStepIndex:
+          type: integer
+        allInMinor:
+          type: integer
+          format: int64
+          description: What the fan pays for one unit now, in minor units.
+        remaining:
+          type: integer
+          format: int64
+          description: Present only when few are left (at most 50, or at most 5% of capacity).
+    Availability:
+      type: object
+      required: [eventId, version, generatedAt, products, instances]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          description: The live snapshot version the answer comes from.
+        generatedAt:
+          type: string
+          format: date-time
+        products:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductAvailability"
+        instances:
+          type: array
+          description: |
+            Pool instances (an event pool, a day `<poolId>@<date>` or a slot `<poolId>@<date>T<HH:MM>`)
+            that units were taken from and that are sold out or have few left. Instances not listed
+            have room; the shop greys out sold-out days and slots and caps its picker by `remaining`.
+          items:
+            $ref: "#/components/schemas/InstanceAvailability"
+    InstanceAvailability:
+      type: object
+      required: [instanceId, status, remaining]
+      properties:
+        instanceId:
+          type: string
+        status:
+          type: string
+          enum: [on_sale, sold_out]
+        remaining:
           type: integer
           format: int64
     Problem:

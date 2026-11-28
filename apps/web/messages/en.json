@@ -779,7 +779,11 @@
       "required": "Required: {field}.",
       "event_page_needs_tickets": "This event page needs a ticket grid for its event.",
       "unknown_event": "Unknown event: {field}.",
-      "countdown_target": "The countdown needs an event or a date."
+      "countdown_target": "The countdown needs an event or a date.",
+      "event_not_ready": "{event} cannot go on sale: {reason}",
+      "capacity_below_usage": "{pool}: {used, number} sold or held, new capacity {capacity, number}",
+      "removed_with_usage": "{pool} would be removed but has {used, number} sold or held",
+      "core_unreachable": "Sales could not be checked with the on-sale engine, so nothing was published. Try again in a moment."
     },
     "history": "Versions",
     "noVersions": "Nothing published yet.",
@@ -798,7 +802,7 @@
     "revoke": "Revoke",
     "saveFirst": "Not done: the draft could not be saved first ({reason}). Fix that, then try again.",
     "revokeAll": "Revoke all links",
-    "publicShopSoon": "The public shop at this address opens with step 3; until then, share a preview link.",
+    "openShop": "Open the shop",
     "notStarted": "The shop of {brand} has not been started yet. An owner or admin opens the builder first.",
     "uploads": "Uploaded images",
     "noUploads": "No uploads yet.",
@@ -814,5 +818,11 @@
     "lead": "Tickets on EPS shops are sold by the organiser named on each shop. EPS runs the platform and shows every fee in the price.",
     "prototype": "This is a prototype: no real payments are taken and no tickets are valid for entry.",
     "privacy": "Privacy: shops built on EPS load pages, images and fonts from EPS only. They use no ads, no tracking and no third-party services; venue maps are static images saved from OpenStreetMap (© OpenStreetMap contributors), so your browser never contacts a map service."
+  },
+  "publication": {
+    "notPublished": "Not on sale yet: publish the shop that sells this event to make its sale terms live.",
+    "live": "On sale: version {version}, published {date}",
+    "changed": "Changes not published",
+    "lead": "Edits to products, pools, prices and rules change nothing on sale until the next publish."
   }
 }

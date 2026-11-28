@@ -260,6 +260,7 @@ jobs:
           kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
           kubectl -n "$NS" create secret generic eps-db --from-literal=DATABASE_URL="$url" \
             --dry-run=client -o yaml | kubectl apply -f - > /dev/null
+          deploy/scripts/runtime-secret.sh "$NS"
       - name: helm upgrade --install (atomic)
         env:
           WEB_ORIGINS: ${{ needs.web.outputs.origins }}

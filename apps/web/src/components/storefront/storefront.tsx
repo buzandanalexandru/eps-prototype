@@ -26,9 +26,13 @@ export type StorefrontViewProps = {
   /** Forces one palette in the builder ("auto" brands previewed as dark). */
   scheme?: "light" | "dark" | null;
   banner?: React.ReactNode;
+  /** Published shop: links to this page in the shop's other languages. */
+  localeLinks?: { locale: string; href: string; label: string; current: boolean }[];
+  /** Published event pages: the event's summary above its sections. */
+  intro?: React.ReactNode;
 };
 
-export function StorefrontView({ doc, page, ctx, fontClass, selectedSectionId, scheme, banner }: StorefrontViewProps) {
+export function StorefrontView({ doc, page, ctx, fontClass, selectedSectionId, scheme, banner, localeLinks, intro }: StorefrontViewProps) {
   const logo = doc.tokens.logo ? imageUrl(doc.tokens.logo, ctx.previewToken) : null;
   const nav = doc.pages.filter((p) => p.kind !== "home");
   const home = doc.pages[0];
@@ -59,9 +63,19 @@ export function StorefrontView({ doc, page, ctx, fontClass, selectedSectionId, s
               ))}
             </nav>
           )}
+          {localeLinks && localeLinks.length > 1 && (
+            <nav aria-label={ctx.labels.languages} className="flex gap-2 text-sm" data-testid="shop-languages">
+              {localeLinks.map((l) => (
+                <a key={l.locale} href={l.href} hrefLang={l.locale} lang={l.locale} aria-current={l.current ? "page" : undefined} className={l.current ? "font-semibold underline underline-offset-4" : "hover:underline"} data-testid={`shop-lang-${l.locale}`}>
+                  {l.label}
+                </a>
+              ))}
+            </nav>
+          )}
         </div>
       </header>
       <main>
+        {intro}
         {(page.sections as Section[]).map((s) => (
           <SectionView key={s.id} s={s} ctx={ctx} selected={s.id === selectedSectionId} />
         ))}
