@@ -565,10 +565,28 @@ export interface paths {
         get: operations["getSale"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete a sale moment before its pre-queue opens (owner or admin) */
+        delete: operations["deleteSale"];
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/sales/{saleId}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change the live dial, the shopping limit or pause on top of the current version (owner or admin) */
+        patch: operations["patchSaleLive"];
         trace?: never;
     };
     "/v1/organiser/sales/{saleId}/settings": {
@@ -583,7 +601,8 @@ export interface paths {
          * Save a new version of a sale's settings (owner or admin)
          * @description Live fields (admission rate, shopping limit, pause, bot defence, OTP, holds and caps) take
          *     effect within 2 seconds. Opening time, pre-queue window and queue on/off are refused with
-         *     EPS-SALE-LOCKED once the pre-queue opened.
+         *     EPS-SALE-LOCKED once the pre-queue opened. With baseVersion, a save on top of an older
+         *     version is refused with EPS-SALE-STALE (409).
          */
         put: operations["updateSaleSettings"];
         post?: never;
@@ -624,7 +643,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** A place's position, estimate and, once admitted, its pass (gateway) */
+        /**
+         * A place's position, estimate and, once admitted, its pass (gateway)
+         * @description Needs only the queue token and the session secret it is bound to (no core token).
+         */
         get: operations["queueStatus"];
         put?: never;
         post?: never;
@@ -659,6 +681,13 @@ export interface components {
             otpOn: boolean;
             /** @description Orders above this many tickets are asked for a code (1 to 20). */
             otpThreshold: number;
+            /** @description Only signed-in fans may join (guests are asked to sign in first). */
+            accountsOnly?: boolean;
+        };
+        SaleLiveChange: {
+            ratePerMinute?: number;
+            activeLimit?: number;
+            paused?: boolean;
         };
         SaleCreate: {
             name: string;
@@ -1186,6 +1215,8 @@ export interface components {
         Pass: string;
         /** @description The browser's session secret the pass is bound to. */
         Session: string;
+        /** @description The page's tab id (polling is scored per tab). */
+        Tab: string;
         SessionRequired: string;
         OrderId: string;
         OrganiserId: string;
@@ -2044,9 +2075,59 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    updateSaleSettings: {
+    deleteSale: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    patchSaleLive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaleLiveChange"];
+            };
+        };
+        responses: {
+            /** @description The sale with its new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateSaleSettings: {
+        parameters: {
+            query?: {
+                baseVersion?: number;
+            };
             header?: never;
             path: {
                 saleId: components["parameters"]["SaleId"];
@@ -2076,6 +2157,8 @@ export interface operations {
             query?: never;
             header: {
                 "X-EPS-Session": components["parameters"]["SessionRequired"];
+                /** @description The page's tab id (polling is scored per tab). */
+                "X-EPS-Tab"?: components["parameters"]["Tab"];
                 /** @description The browser's user agent, passed on by the web app. */
                 "X-EPS-Client-UA"?: string;
             };
@@ -2109,6 +2192,8 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description The page's tab id (polling is scored per tab). */
+                "X-EPS-Tab"?: components["parameters"]["Tab"];
                 "X-EPS-Session": components["parameters"]["SessionRequired"];
                 "X-EPS-Queue-Token": string;
             };

@@ -6,7 +6,7 @@ import { organiserCoreToken } from "../snapshot/studio";
 
 export type CoreAnswer<T> = { ok: true; data: T } | { ok: false; status: number; code: string; data?: Record<string, unknown> };
 
-export async function organiserCore<T>(method: "GET" | "PUT" | "POST", path: string, body?: unknown, idempotencyKey?: string): Promise<CoreAnswer<T>> {
+export async function organiserCore<T>(method: "GET" | "PUT" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown, idempotencyKey?: string): Promise<CoreAnswer<T>> {
   const base = coreBaseUrl();
   const token = await organiserCoreToken();
   if (!base || !token) return { ok: false, status: 503, code: "EPS-UNAVAILABLE" };
@@ -22,7 +22,7 @@ export async function organiserCore<T>(method: "GET" | "PUT" | "POST", path: str
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
     });
-    const json = await res.json().catch(() => null);
+    const json = res.status === 204 ? null : await res.json().catch(() => null);
     if (res.ok) return { ok: true, data: json as T };
     const data = json && typeof json.data === "object" && json.data !== null ? (json.data as Record<string, unknown>) : undefined;
     return { ok: false, status: res.status, code: (json && typeof json.code === "string" && json.code) || "EPS-UNAVAILABLE", data };

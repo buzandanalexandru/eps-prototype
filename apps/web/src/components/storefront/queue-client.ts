@@ -42,6 +42,22 @@ export function sessionSecret(): string {
   return s;
 }
 
+/** This tab's id (polling is scored per tab, so a second tab is not "fast polling"). */
+export function tabId(): string {
+  try {
+    let t = window.sessionStorage.getItem("eps-tab");
+    if (!t || !/^[0-9a-f]{8}$/.test(t)) {
+      const b = new Uint8Array(4);
+      crypto.getRandomValues(b);
+      t = hex(b);
+      window.sessionStorage.setItem("eps-tab", t);
+    }
+    return t;
+  } catch {
+    return "-";
+  }
+}
+
 export function queueToken(saleId: string): string | null {
   return get(`eps-qt:${saleId}`);
 }

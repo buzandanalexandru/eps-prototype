@@ -33,10 +33,15 @@ async function forward(req: Request, { params }: P) {
   const queue = isQueueRoute(req.method, path);
   const base = queue ? gatewayBaseUrl() : coreBaseUrl();
   if (!base) return problem(503, "EPS-UNAVAILABLE");
-  const tok = await issueCoreToken(
-    { auth: getAuth(), memberships: sharedMembershipLookup(getAppPool()), secret: authSecret(), secureCookies: webOrigin().startsWith("https://") },
-    { headers: req.headers, guest: true },
-  );
+  // A waiting-room poll carries its queue token alone (step 5 review D-i): no core token, so no
+  // session is read for the most frequent call of an on-sale.
+  const poll = queue && req.method === "GET";
+  const tok = poll
+    ? { status: 200 as const, token: "", setCookie: undefined as string | undefined }
+    : await issueCoreToken(
+        { auth: getAuth(), memberships: sharedMembershipLookup(getAppPool()), secret: authSecret(), secureCookies: webOrigin().startsWith("https://") },
+        { headers: req.headers, guest: true },
+      );
   if (tok.status !== 200) return problem(401, "unauthenticated");
   const body = req.method === "GET" || req.method === "DELETE" ? undefined : await req.text();
   if (body && body.length > 32_000) return problem(413, "invalid_request");

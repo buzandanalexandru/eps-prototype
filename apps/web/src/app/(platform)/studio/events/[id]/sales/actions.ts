@@ -36,6 +36,7 @@ function settingsFrom(fd: FormData) {
     botDefence: fd.get("botDefence") === "on",
     otpOn: fd.get("otpOn") === "on",
     otpThreshold: int(fd, "otpThreshold"),
+    accountsOnly: fd.get("accountsOnly") === "on",
   };
 }
 
@@ -68,5 +69,23 @@ export async function createSaleAction(eventId: string, fd: FormData) {
 export async function saveSaleAction(eventId: string, saleId: string, fd: FormData) {
   await requireActive();
   if (!UUID.test(eventId) || !UUID.test(saleId)) redirect("/studio/events");
-  back(eventId, await organiserCore<Saved>("PUT", `/v1/organiser/sales/${saleId}/settings`, settingsFrom(fd)), saleId);
+  // The version the form was made on: a save on top of someone else's newer save is refused.
+  const base = int(fd, "baseVersion");
+  back(eventId, await organiserCore<Saved>("PUT", `/v1/organiser/sales/${saleId}/settings${base > 0 ? `?baseVersion=${base}` : ""}`, settingsFrom(fd)), saleId);
+}
+
+/** Pause or resume at once, on top of whatever version is current (review D-l). */
+export async function pauseSaleAction(eventId: string, saleId: string, paused: boolean) {
+  await requireActive();
+  if (!UUID.test(eventId) || !UUID.test(saleId)) redirect("/studio/events");
+  back(eventId, await organiserCore<Saved>("PATCH", `/v1/organiser/sales/${saleId}/live`, { paused }), saleId);
+}
+
+/** Delete a sale moment before its pre-queue opens (review D-k). */
+export async function deleteSaleAction(eventId: string, saleId: string) {
+  await requireActive();
+  if (!UUID.test(eventId) || !UUID.test(saleId)) redirect("/studio/events");
+  const r = await organiserCore<unknown>("DELETE", `/v1/organiser/sales/${saleId}`);
+  if (r.ok) redirect(`/studio/events/${eventId}/sales?deleted=1`);
+  back(eventId, r as Fail, saleId);
 }

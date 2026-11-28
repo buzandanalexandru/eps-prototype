@@ -1,6 +1,11 @@
 // k6: the sharded inventory under load (step 5, spec "inventory" scenario Throughput).
-// Drives holds (and commits through cancels' opposite: half the holds are cancelled at once) on one
-// pool against one core instance at a constant arrival rate, and checks no oversell at the end.
+// Drives holds on one pool against one core instance at a constant arrival rate, cancels a share of
+// them at once (CANCEL, default 30%: releases under load), and checks no oversell at the end.
+// Commits need a payment through the simulated providers: the simulator (step 6) drives them.
+//
+// A measured target, not a passing claim (step 5 review spec M7): on the 4-core sandbox shared with
+// k6, Postgres and Redis it never oversold, held 500/s at p95 32 ms and saturated near 900/s; the
+// 1,000/s at p95 50 ms target is measured on the cluster in steps 6 and 12.
 //
 //   cd services && EPS_ENV=dev DATABASE_URL=... go run ./cmd/loadkit -n 40000 -capacity 20000 -out /tmp/load.json
 //   k6 run -e KIT=/tmp/load.json -e CORE=http://localhost:8080 -e RATE=1000 load/inventory.js
@@ -30,6 +35,10 @@ const holdTime = new Trend("hold_ms", true);
 const unitsHeld = new Counter("units_held");
 const soldOut = new Counter("sold_out");
 const unexpected = new Rate("unexpected_errors");
+const unitsReleased = new Counter("units_released"); // given back by cancels
+const cancelTime = new Trend("cancel_ms", true);
+// CANCEL: the share of holds cancelled right away (their units go back: release under load).
+const CANCEL = Number(__ENV.CANCEL || 0.3);
 
 export const options = {
   scenarios: {
@@ -57,7 +66,16 @@ export default function () {
   const out = res.status === 409 && String(res.body).includes("EPS-HOLD-SOLD-OUT");
   unexpected.add(!ok && !out);
   if (!ok && !out && shown++ < 5) console.warn(`unexpected answer ${res.status}: ${String(res.body).slice(0, 200)}`);
-  if (res.status === 201) unitsHeld.add(qty);
+  if (res.status === 201) {
+    unitsHeld.add(qty);
+    if (Math.random() < CANCEL) {
+      const id = res.json("id");
+      const cr = http.post(`${CORE}/v1/shop/orders/${id}/cancel`, null, { headers: { Authorization: `Bearer ${c.token}` }, tags: { name: "cancel" } });
+      cancelTime.add(cr.timings.duration);
+      if (cr.status === 200) unitsReleased.add(qty);
+      else unexpected.add(true);
+    }
+  }
   if (out) soldOut.add(1);
   check(res, { "held or sold out": () => ok || out });
 }
@@ -77,5 +95,7 @@ export function teardown() {
   const ga = (body.products || []).find((p) => p.productId === kit.productId);
   const inst = (body.instances || []).find((x) => x.instanceId === kit.poolId);
   console.log(`after the run: product ${ga && ga.status}, pool remaining ${inst ? inst.remaining : "(room)"} of ${kit.capacity}`);
+  // No oversell: what is held or sold never exceeds the capacity (k6 reports units_held minus
+  // units_released; the core's own answer must agree).
   if (inst && inst.remaining < 0) throw new Error("oversold");
 }

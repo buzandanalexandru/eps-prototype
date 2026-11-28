@@ -227,3 +227,31 @@ func TestRejoinDoesNotCountAgainstTheLimit(t *testing.T) {
 	}
 	env.Join(t, s, onsaletest.NewFan())
 }
+
+// Review D-f: a sale for signed-in fans asks guests to sign in; guest places from one address are
+// limited per minute.
+func TestAccountsOnlyAndGuestLimit(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	st := env.Open()
+	st.AccountsOnly = true
+	s := env.NewSale(t, env.Env.NewSale(t, 100, 100), st)
+	g := onsaletest.NewFan()
+	_, err := env.Engine.Join(ctx, s.ID, queue.JoinInput{Sub: "guest:" + g.Buyer.ID, Kind: "guest", Session: g.Session, IP: g.IP})
+	if code(err) != "EPS-SIGN-IN-REQUIRED" {
+		t.Fatalf("a guest joined a signed-in-only sale: %v", err)
+	}
+	env.Join(t, s, onsaletest.NewFan()) // an account joins
+	open := env.NewSale(t, env.Env.NewSale(t, 100, 100), env.Open())
+	env.Engine.NewGuestsPerMinute = 3
+	for i := 0; i < 4; i++ {
+		f := onsaletest.NewFan()
+		_, err := env.Engine.Join(ctx, open.ID, queue.JoinInput{Sub: "guest:" + f.Buyer.ID, Kind: "guest", Session: f.Session, IP: "192.0.2.200"})
+		if i < 3 && err != nil {
+			t.Fatal(err)
+		}
+		if i == 3 && !errors.Is(err, queue.ErrRateLimited) {
+			t.Fatalf("a fourth new guest from one address: %v", err)
+		}
+	}
+}

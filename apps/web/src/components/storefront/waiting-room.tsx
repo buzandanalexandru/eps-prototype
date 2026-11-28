@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import { fill, type ShopLabels } from "@/lib/storefront/labels";
 import type { Locale } from "@/lib/storefront/schema";
 import { shopApi, type Problem } from "./shop-api";
-import { browserPrint, clearPass, queueToken, savePass, saveQueueToken, sessionSecret, sha256Hex, solvePow } from "./queue-client";
+import { browserPrint, clearPass, queueToken, savePass, saveQueueToken, sessionSecret, sha256Hex, solvePow, tabId } from "./queue-client";
 import type { components } from "@/lib/core/schema";
 
 type QueueStatus = components["schemas"]["QueueStatus"];
@@ -37,6 +37,13 @@ function clock(ms: number): string {
   const m = Math.floor((s % 3600) / 60);
   const r = String(s % 60).padStart(2, "0");
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
+}
+
+/** "N fans ahead of you" with the language's plural forms (RO: 1, 2-19, from 20 "de"). */
+export function aheadText(n: number, locale: Locale, labels: ShopLabels): string {
+  const form = new Intl.PluralRules(locale === "ro" ? "ro-RO" : "en-GB").select(n);
+  const label = form === "one" ? labels.queueAheadOne : form === "few" ? labels.queueAheadFew : labels.queueAheadOther;
+  return fill(label, { n: count(n, locale) });
 }
 
 /** A whole number with the locale's thousands separator (no money here). */
@@ -90,10 +97,13 @@ export function WaitingRoom({ labels, locale, base }: Props) {
       }
     };
     const failed = (problem: Problem, status: number) => {
-      if (status === 404) {
+      if (problem.code === "EPS-SIGN-IN-REQUIRED") {
         setView({ kind: "error", problem });
         return;
       }
+      // A sale not found yet (its copy is on its way after a restart) is asked again with a growing
+      // wait (review spec M4): never a dead end for a well-formed sale id.
+      void status;
       // Unreachable or busy: try again with a growing, jittered wait (never a block).
       failures += 1;
       setView((v) => (v.kind === "status" ? v : { kind: "retrying" }));
@@ -104,7 +114,7 @@ export function WaitingRoom({ labels, locale, base }: Props) {
       const session = sessionSecret();
       await new Promise((r) => setTimeout(r, 0)); // paint first: the proof of work takes a moment
       const pow = solvePow(sale, sha256Hex(session));
-      const r = await shopApi<QueueStatus>(`queue/${sale}/join`, { method: "POST", body: { pow, print: browserPrint() }, headers: { "X-EPS-Session": session } });
+      const r = await shopApi<QueueStatus>(`queue/${sale}/join`, { method: "POST", body: { pow, print: browserPrint() }, headers: { "X-EPS-Session": session, "X-EPS-Tab": tabId() } });
       if (stopped) return;
       if (!r.ok) return failed(r.problem, r.status);
       failures = 0;
@@ -115,7 +125,7 @@ export function WaitingRoom({ labels, locale, base }: Props) {
     const poll = async (): Promise<void> => {
       const qt = queueToken(sale);
       if (!qt) return join();
-      const r = await shopApi<QueueStatus>(`queue/${sale}/status`, { headers: { "X-EPS-Queue-Token": qt, "X-EPS-Session": sessionSecret() } });
+      const r = await shopApi<QueueStatus>(`queue/${sale}/status`, { headers: { "X-EPS-Queue-Token": qt, "X-EPS-Session": sessionSecret(), "X-EPS-Tab": tabId() } });
       if (stopped) return;
       if (!r.ok) {
         if (r.status === 401) {
@@ -147,8 +157,13 @@ export function WaitingRoom({ labels, locale, base }: Props) {
       {view.kind === "error" && (
         <div className="space-y-3">
           <p role="alert" className="text-xl font-semibold" data-testid="queue-error">
-            {view.problem.code === "EPS-SALE-NOT-FOUND" ? labels.queueNoSale : labels.err_generic}
+            {view.problem.code === "EPS-SIGN-IN-REQUIRED" ? labels.queueSignIn : view.problem.code === "EPS-SALE-NOT-FOUND" ? labels.queueNoSale : labels.err_generic}
           </p>
+          {view.problem.code === "EPS-SIGN-IN-REQUIRED" && (
+            <a href={`/sign-in?next=${encodeURIComponent(typeof window !== "undefined" ? window.location.pathname + window.location.search : base)}`} className={primary} data-testid="queue-sign-in">
+              {labels.queueSignInLink}
+            </a>
+          )}
           <a href={base} className="text-sm font-semibold underline">
             {labels.backToShop}
           </a>
@@ -190,7 +205,7 @@ export function WaitingRoom({ labels, locale, base }: Props) {
           {st.state === "waiting" && (
             <div className={`${box} space-y-1`} data-testid="queue-waiting">
               <p className="text-2xl font-bold" data-testid="queue-ahead" data-ahead={st.ahead ?? 0}>
-                {fill(labels.queueAhead, { n: count(st.ahead ?? 0, locale) })}
+                {aheadText(st.ahead ?? 0, locale, labels)}
               </p>
               <p data-testid="queue-estimate">
                 {est !== null && est >= 60 ? fill(labels.queueEstimate, { time: fill(labels.queueMinutes, { n: Math.ceil(est / 60) }) }) : labels.queueEstimateSoon}

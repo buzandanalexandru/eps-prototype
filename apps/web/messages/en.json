@@ -927,6 +927,13 @@
     "historyPaused": "Paused",
     "yes": "yes",
     "no": "no",
-    "none": "No sale moments yet: sales open as the event's products say, without a waiting room."
+    "none": "No sale moments yet: sales open as the event's products say, without a waiting room.",
+    "accountsOnly": "Signed-in fans only (guests are asked to sign in)",
+    "errorStale": "Someone saved this sale meanwhile: the page shows their version now. Make your change again.",
+    "sampleShared": "This is the shared sample organiser: anyone using the demo can change these sale moments.",
+    "deleted": "The sale moment was deleted.",
+    "delete": "Delete this sale moment",
+    "pauseNow": "Pause admissions now",
+    "resume": "Resume admissions"
   }
 }

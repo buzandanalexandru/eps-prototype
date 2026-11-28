@@ -61,8 +61,8 @@ func main() {
 	life := flag.Duration("life", 5*time.Minute, "token life (at most 5 minutes)")
 	pow := flag.Bool("pow", true, "with -queue: solve each client's proof of work (about 10 ms each)")
 	flag.Parse()
-	if env := os.Getenv("EPS_ENV"); env != "" && env != "dev" {
-		log.Fatal("loadkit runs only with EPS_ENV=dev (it writes into the database directly)")
+	if os.Getenv("EPS_ENV") != "dev" {
+		log.Fatal("loadkit runs only with EPS_ENV=dev set explicitly (it writes into the database directly)")
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))

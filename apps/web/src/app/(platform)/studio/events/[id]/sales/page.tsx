@@ -14,7 +14,7 @@ import { Card, Check, Hint, Input, Label } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/studio/copy-button";
 import { RateDial } from "@/components/studio/rate-dial";
-import { createSaleAction, saveSaleAction } from "./actions";
+import { createSaleAction, deleteSaleAction, pauseSaleAction, saveSaleAction } from "./actions";
 
 export const metadata = { title: "Sale moments" };
 export const dynamic = "force-dynamic";
@@ -26,7 +26,7 @@ type Search = Promise<Record<string, string | undefined>>;
 function defaults(): Settings {
   const at = new Date(Date.now() + 24 * 3600_000);
   at.setUTCMinutes(0, 0, 0);
-  return { opensAt: at.toISOString(), prequeueMinutes: 30, queueOn: true, ratePerMinute: 2000, activeLimit: 1500, paused: false, holdMinutes: 8, capPerOrder: 4, capPerPerson: 6, botDefence: true, otpOn: false, otpThreshold: 4 };
+  return { opensAt: at.toISOString(), prequeueMinutes: 30, queueOn: true, ratePerMinute: 2000, activeLimit: 1500, paused: false, holdMinutes: 8, capPerOrder: 4, capPerPerson: 6, botDefence: true, otpOn: false, otpThreshold: 4, accountsOnly: false };
 }
 
 async function Fields({ s, tz, locked }: { s: Settings; tz: string; locked: boolean }) {
@@ -80,6 +80,7 @@ async function Fields({ s, tz, locked }: { s: Settings; tz: string; locked: bool
         {t("otpThreshold")}
         <Input type="number" name="otpThreshold" defaultValue={s.otpThreshold} data-testid="sale-otp-threshold" />
       </Label>
+      <Check name="accountsOnly" label={t("accountsOnly")} defaultChecked={!!s.accountsOnly} data-testid="sale-accounts-only" />
     </div>
   );
 }
@@ -106,12 +107,24 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
         ? t("errorLocked")
         : sp.error === "EPS-SALE-NOT-FOUND"
           ? t("notPublished")
-          : (sp.error ?? "");
+          : sp.error === "EPS-SALE-STALE"
+            ? t("errorStale")
+            : (sp.error ?? "");
   return (
     <section className="space-y-6">
       <EventNav g={g} current="sales" />
       <h2 className="text-xl font-semibold">{t("title")}</h2>
       <p className="text-sm text-muted-foreground">{t("lead")}</p>
+      {s.active.is_sample && (
+        <p role="note" className="rounded-md border border-dashed p-2 text-sm" data-testid="sale-sample-note">
+          {t("sampleShared")}
+        </p>
+      )}
+      {sp.deleted && (
+        <p role="status" className="text-sm font-semibold" data-testid="sale-deleted">
+          {t("deleted")}
+        </p>
+      )}
       {sp.saved && sp.v && (
         <p role="status" className="text-sm font-semibold" data-testid="sale-saved">
           {t("saved", { version: sp.v })}
@@ -173,12 +186,29 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
                   <CopyButton value={link} />
                 </div>
                 {admin && (
-                  <form action={saveSaleAction.bind(null, id, d.id)} className="space-y-3" data-testid="sale-form">
-                    <Fields s={d.settings} tz={tz} locked={locked} />
-                    <Button type="submit" data-testid="sale-save">
-                      {t("save")}
-                    </Button>
-                  </form>
+                  <>
+                    <div className="flex flex-wrap gap-2">
+                      <form action={pauseSaleAction.bind(null, id, d.id, !d.settings.paused)}>
+                        <Button type="submit" variant="outline" data-testid="sale-pause-toggle">
+                          {d.settings.paused ? t("resume") : t("pauseNow")}
+                        </Button>
+                      </form>
+                      {!locked && (
+                        <form action={deleteSaleAction.bind(null, id, d.id)}>
+                          <Button type="submit" variant="destructive" data-testid="sale-delete">
+                            {t("delete")}
+                          </Button>
+                        </form>
+                      )}
+                    </div>
+                    <form action={saveSaleAction.bind(null, id, d.id)} className="space-y-3" data-testid="sale-form">
+                      <input type="hidden" name="baseVersion" value={d.version} />
+                      <Fields s={d.settings} tz={tz} locked={locked} />
+                      <Button type="submit" data-testid="sale-save">
+                        {t("save")}
+                      </Button>
+                    </form>
+                  </>
                 )}
                 {d.history && d.history.length > 0 && (
                   <details>

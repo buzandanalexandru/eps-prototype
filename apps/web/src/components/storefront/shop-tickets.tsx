@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import type { ShopEvent, ShopProduct } from "@/lib/storefront/catalogue";
 import { fill, type ShopLabels } from "@/lib/storefront/labels";
 import {
+  choiceAllHeld,
   addOne,
   blockedReason,
   canContinue,
@@ -137,7 +138,7 @@ export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
                       return (
                         <option key={d} value={d} disabled={full} data-sold-out={full || undefined}>
                           {shopDate(`${d}T12:00:00Z`, locale, "UTC")}
-                          {full ? ` · ${labels.soldOut}` : ""}
+                          {full ? ` · ${choiceAllHeld(p, d, ctx) ? labels.allHeldChoice : labels.soldOut}` : ""}
                         </option>
                       );
                     })}
@@ -160,7 +161,7 @@ export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
                       return (
                         <option key={t} value={t} disabled={full} data-sold-out={full || undefined}>
                           {t}
-                          {full ? ` · ${labels.soldOut}` : ""}
+                          {full ? ` · ${q && choiceAllHeld(p, q, ctx) ? labels.allHeldChoice : labels.soldOut}` : ""}
                         </option>
                       );
                     })}

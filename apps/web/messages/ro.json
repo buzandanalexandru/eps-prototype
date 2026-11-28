@@ -927,6 +927,13 @@
     "historyPaused": "Pauză",
     "yes": "da",
     "no": "nu",
-    "none": "Niciun moment de vânzare încă: vânzarea se deschide după produsele evenimentului, fără sală de așteptare."
+    "none": "Niciun moment de vânzare încă: vânzarea se deschide după produsele evenimentului, fără sală de așteptare.",
+    "accountsOnly": "Doar fani autentificați (oaspeții sunt rugați să se autentifice)",
+    "errorStale": "Altcineva a salvat între timp: pagina arată acum versiunea lor. Fă din nou schimbarea.",
+    "sampleShared": "Acesta este organizatorul de exemplu comun: oricine folosește demo-ul poate schimba aceste momente de vânzare.",
+    "deleted": "Momentul de vânzare a fost șters.",
+    "delete": "Șterge acest moment de vânzare",
+    "pauseNow": "Pune admiterea pe pauză acum",
+    "resume": "Reia admiterea"
   }
 }

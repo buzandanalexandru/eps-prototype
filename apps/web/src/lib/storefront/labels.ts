@@ -212,6 +212,12 @@ const ro = {
   queueDrawIn: "Tragerea la sorți în {time}",
   queueShuffling: "Se trag la sorți locurile…",
   queueAhead: "{n} fani înaintea ta",
+  queueAheadOne: "Un fan înaintea ta",
+  queueAheadFew: "{n} fani înaintea ta",
+  queueAheadOther: "{n} de fani înaintea ta",
+  queueSignIn: "Această vânzare este doar pentru cei autentificați. Autentifică-te ca să intri în sala de așteptare.",
+  queueSignInLink: "Autentifică-te",
+  allHeldChoice: "biletele rămase sunt rezervate acum",
   queueEstimate: "Timp estimat: aproximativ {time}",
   queueEstimateSoon: "Mai puțin de un minut",
   queuePaused: "Pauză scurtă, locul tău este în siguranță",
@@ -247,6 +253,8 @@ const ro = {
   err_otp_resends: "Nu se mai pot trimite coduri pentru această comandă.",
   err_queue_rejoin: "Intră din nou în sala de așteptare.",
   err_sale_not_found: "Această vânzare nu există.",
+  err_sign_in_required: "Autentifică-te pentru a intra în această sală de așteptare.",
+  err_sale_stale: "Altcineva a salvat între timp. Reîncarcă pagina.",
 };
 export type ShopLabels = typeof ro;
 
@@ -455,6 +463,12 @@ const en: ShopLabels = {
   queueDrawIn: "Places are drawn in {time}",
   queueShuffling: "Drawing places…",
   queueAhead: "{n} fans ahead of you",
+  queueAheadOne: "One fan ahead of you",
+  queueAheadFew: "{n} fans ahead of you",
+  queueAheadOther: "{n} fans ahead of you",
+  queueSignIn: "This sale is for signed-in fans only. Sign in to join the waiting room.",
+  queueSignInLink: "Sign in",
+  allHeldChoice: "the remaining tickets are held right now",
   queueEstimate: "Estimated wait: about {time}",
   queueEstimateSoon: "Less than a minute",
   queuePaused: "Paused for a moment, your place is safe",
@@ -490,6 +504,8 @@ const en: ShopLabels = {
   err_otp_resends: "No more codes can be sent for this order.",
   err_queue_rejoin: "Join the waiting room again.",
   err_sale_not_found: "This sale does not exist.",
+  err_sign_in_required: "Sign in to join this waiting room.",
+  err_sale_stale: "Someone saved meanwhile. Reload the page.",
 };
 
 export const SHOP_LABELS: Record<Locale, ShopLabels> = { ro, en };

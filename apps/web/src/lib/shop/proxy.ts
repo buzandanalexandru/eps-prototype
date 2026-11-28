@@ -50,7 +50,8 @@ export function forwardQuery(search: URLSearchParams): string {
 
 /** Request headers passed on to the core. */
 export function forwardHeaders(from: Headers, token: string): Headers {
-  const h = new Headers({ Authorization: `Bearer ${token}`, Accept: "application/json" });
+  const h = new Headers({ Accept: "application/json" });
+  if (token) h.set("Authorization", `Bearer ${token}`);
   const key = from.get("idempotency-key");
   if (key && /^[A-Za-z0-9_-]{8,100}$/.test(key)) h.set("Idempotency-Key", key);
   const link = from.get("x-order-token");
@@ -64,6 +65,8 @@ export function forwardHeaders(from: Headers, token: string): Headers {
   if (qt && qt.length <= 2048 && /^v1\.[A-Za-z0-9_.-]+$/.test(qt)) h.set("X-EPS-Queue-Token", qt);
   const session = from.get("x-eps-session");
   if (session && /^[A-Za-z0-9_-]{16,200}$/.test(session)) h.set("X-EPS-Session", session);
+  const tab = from.get("x-eps-tab");
+  if (tab && /^[A-Za-z0-9_-]{1,16}$/.test(tab)) h.set("X-EPS-Tab", tab);
   const ua = from.get("user-agent");
   if (ua) h.set("X-EPS-Client-UA", ua.slice(0, 400));
   return h;
