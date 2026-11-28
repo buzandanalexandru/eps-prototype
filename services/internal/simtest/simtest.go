@@ -249,10 +249,15 @@ func (s *Stack) Context(t *testing.T) context.Context {
 
 // OrganiserToken is a core token of the organiser (role owner).
 func (s *Stack) OrganiserToken(t *testing.T, org string) string {
+	return s.OrganiserTokenFor(t, org, 5*time.Minute)
+}
+
+// OrganiserTokenFor is an organiser token that lives for life.
+func (s *Stack) OrganiserTokenFor(t *testing.T, org string, life time.Duration) string {
 	t.Helper()
 	now := time.Now()
 	c := auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Issuer: Issuer, Subject: uuid.NewString(), Audience: jwt.ClaimStrings{auth.Audience},
-		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute))}, Kind: auth.KindOrganiser, Org: org, Role: "owner", Sid: "s1"}
+		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(life))}, Kind: auth.KindOrganiser, Org: org, Role: "owner", Sid: "s1"}
 	tok := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c)
 	tok.Header["kid"] = "t1"
 	out, err := tok.SignedString(s.orgKey)

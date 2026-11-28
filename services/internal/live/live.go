@@ -19,8 +19,13 @@ import (
 // HistoryLen is how many compact points a sale keeps (15 minutes at one a second).
 const HistoryLen = 900
 
-// MaxWatched bounds the sales framed each second.
-const MaxWatched = 20
+// MaxWatched bounds the sales framed each second, MaxWatchedPerOrg one organiser's share of them,
+// WatchedScan how many watched sales a tick considers (review D-g: slots shared fairly).
+const (
+	MaxWatched       = 20
+	MaxWatchedPerOrg = 5
+	WatchedScan      = 200
+)
 
 func watchKey() string {
 	k, _ := redisx.PlatformKey("live-watch")

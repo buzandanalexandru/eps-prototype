@@ -253,6 +253,7 @@ func (s *Service) PayOrder(ctx context.Context, b checkout.Buyer, o *checkout.Or
 		err = insufficient()
 	}
 	if err == nil {
+		checkout.CountPaid(paid)
 		if cerr := s.Checkout.CommitStock(ctx, paid, "wallet"); cerr != nil {
 			var p *apperr.Problem
 			if errors.As(cerr, &p) {

@@ -3,6 +3,8 @@ package live_test
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/buzandanalexandru/eps-prototype/services/internal/live"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/simtest"
 )
 
@@ -115,5 +118,31 @@ func TestStreamOrganiserOnly(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("own organiser: %d", resp.StatusCode)
+	}
+}
+
+// Review D-g: a stream ends when its token does (the dashboard reconnects with a fresh one), and an
+// old latest frame is not sent as if it were live.
+func TestStreamEndsWithItsTokenAndSkipsOldFrames(t *testing.T) {
+	s := simtest.Start(t)
+	ev, sale := s.RealSale(t, 100, 20)
+	ctx := context.Background()
+	old, _ := json.Marshal(map[string]any{"ts": time.Now().Add(-time.Minute).UnixMilli(), "sale": sale.ID})
+	if err := live.Publish(ctx, s.Redis, sale.ID, old, live.Point{TS: time.Now().Add(-time.Minute).UnixMilli()}); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	resp, cancel := open(t, s, sale.ID, s.OrganiserTokenFor(t, ev.Org, 3*time.Second))
+	defer cancel()
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body) // returns when the server ends the stream
+	if el := time.Since(start); el > 10*time.Second {
+		t.Fatalf("the stream outlived its token: %s", el)
+	}
+	if strings.Contains(string(body), "event: frame") {
+		t.Fatalf("an old frame was sent as live: %q", body)
+	}
+	if !strings.Contains(string(body), "event: history") {
+		t.Fatalf("history missing: %q", body)
 	}
 }

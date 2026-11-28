@@ -476,23 +476,22 @@ func (s *Service) MarkPaidTx(ctx context.Context, tx pgx.Tx, orderID, reason str
 		return nil, err
 	}
 	o.State = Paid
-	CountPaid(o)
-	return o, nil
+	return o, nil // the caller counts it after its transaction committed (CountPaid)
 }
 
-var (
-	ordersPaid  = metrics.NewCounter("eps_orders_paid_total", "Orders paid.")
-	ticketsSold = metrics.NewCounter("eps_tickets_sold_total", "Tickets in paid orders.")
-)
-
-// CountPaid counts a paid order and its tickets (step 6, D-5).
+// CountPaid counts a paid order and its tickets, once its transaction committed (step 6, D-5),
+// labelled rehearsal or not (review: a rehearsal never inflates the real figures).
 func CountPaid(o *Order) {
-	ordersPaid.Inc()
+	r := "false"
+	if o.Rehearsal {
+		r = "true"
+	}
+	metrics.NewCounter("eps_orders_paid_total", "Orders paid.", "rehearsal", r).Inc()
 	n := 0
 	for _, l := range o.Lines {
 		n += l.Qty
 	}
-	ticketsSold.Add(int64(n))
+	metrics.NewCounter("eps_tickets_sold_total", "Tickets in paid orders.", "rehearsal", r).Add(int64(n))
 }
 
 // CommitStock commits a paid order's stock (after MarkPaidTx committed). The stock may be taken

@@ -108,11 +108,13 @@ return score
 `)
 
 // pollScript records one status poll of one tab at ARGV[1] (ms) and scores fast and regular
-// polling (review D-e: per tab, and a poll at or after the time the server told the page is
+// polling (negative when this poll made the place cross the suspect threshold ARGV[3], decided
+// inside the script: step 6 review) (review D-e: per tab, and a poll at or after the time the server told the page is
 // never "fast"). KEYS: the place's hash. ARGV: now ms, tab id.
 var pollScript = redis.NewScript(totalLua + `
 local now = tonumber(ARGV[1])
 local tab = ARGV[2]
+local before = tonumber(redis.call('HGET', KEYS[1], 'score') or '0')
 if redis.call('HEXISTS', KEYS[1], 'lp:' .. tab) == 0 then
   local tabs = tonumber(redis.call('HGET', KEYS[1], 'tabs') or '0')
   if tabs >= 4 then tab = 'x' else redis.call('HSET', KEYS[1], 'tabs', tabs + 1) end
@@ -144,8 +146,12 @@ if #list == 10 and not redis.call('HGET', KEYS[1], 'b:regular') then
   for _, x in ipairs(list) do var = var + (x - mean) * (x - mean) end
   if math.sqrt(var / 10) < 100 then redis.call('HSET', KEYS[1], 'b:regular', 20); changed = true end
 end
-if changed then return total() end
-return tonumber(redis.call('HGET', KEYS[1], 'score') or '0')
+if changed then
+  local sc = total()
+  if before < tonumber(ARGV[3]) and sc >= tonumber(ARGV[3]) then return -sc end
+  return sc
+end
+return before
 `)
 
 // Scorer records signals into a place's hash (the waiting room names the key).
@@ -184,12 +190,8 @@ func (s *Scorer) Raise(ctx context.Context, key string, sig Signal) (int, error)
 
 // Poll records a status poll of a tab at nowMs and returns the score.
 func (s *Scorer) Poll(ctx context.Context, key, tab string, nowMs int64) (int, error) {
-	before, _ := s.Score(ctx, key)
-	n, err := pollScript.Run(ctx, s.Redis, []string{key}, nowMs, tab).Int()
-	if err == nil && before < SuspectAt && n >= SuspectAt {
-		s.flagged(ctx, key)
-	}
-	return n, err
+	n, err := pollScript.Run(ctx, s.Redis, []string{key}, nowMs, tab, SuspectAt).Int()
+	return s.counted(ctx, key, n, err)
 }
 
 // Told records when the server told a tab to poll next (polls at or after it are never fast).

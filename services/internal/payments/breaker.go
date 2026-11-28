@@ -45,7 +45,8 @@ type Breaker struct {
 	Redis *redis.Client
 	Now   func() time.Time
 	// OnChange is told about every state change (the payment.provider_state event).
-	OnChange func(ctx context.Context, org, provider, from, to string)
+	// event is the rehearsal event of a rehearsal's breaker ("" for the organiser's own).
+	OnChange func(ctx context.Context, org, event, provider, from, to string)
 }
 
 // State is a breaker's shared state.
@@ -280,8 +281,8 @@ func (b *Breaker) Record(ctx context.Context, org, provider string, ok bool) {
 func (b *Breaker) changed(ctx context.Context, scope, provider, from, to string) {
 	countChange(provider, to)
 	if b.OnChange != nil {
-		org, _ := splitScope(scope)
-		b.OnChange(ctx, org, provider, from, to)
+		org, ev := splitScope(scope)
+		b.OnChange(ctx, org, ev, provider, from, to)
 	}
 }
 

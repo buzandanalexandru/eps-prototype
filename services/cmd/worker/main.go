@@ -106,7 +106,9 @@ func main() {
 			go every(lctx, time.Minute, func() { _, _ = salesSvc.RefreshActive(lctx) })
 			// Step 6: the live dashboard's frames (every second, watched sales only) and the clean-up
 			// of ended rehearsals' Redis data (every 30 s).
-			agg := &live.Aggregator{Redis: rdb, Pool: pool, Sales: salesSvc, Snaps: snaps, Inv: inv, Breaker: &payments.Breaker{Redis: rdb}, Log: log}
+			// Its own small pool (review): frames never take the sweepers' or the relay's connections.
+			_, aggPool := with("AGGREGATOR", 2)
+			agg := &live.Aggregator{Redis: rdb, Pool: aggPool, Sales: salesSvc, Snaps: snaps, Inv: inv, Breaker: &payments.Breaker{Redis: rdb}, Log: log, Parallel: 2}
 			if u := os.Getenv("PROMETHEUS_URL"); u != "" {
 				agg.Prom = &live.Prom{BaseURL: u}
 			}

@@ -252,10 +252,11 @@ func emitPayment(ctx context.Context, tx pgx.Tx, org, eventID, typ string, paylo
 }
 
 // ProviderStateEvent records a breaker change (payment.provider_state).
-func (s *Service) ProviderStateEvent(ctx context.Context, org, provider, from, to string) {
-	s.log().Info("payment provider breaker changed", "organiser", org, "provider", provider, "from", from, "to", to)
+func (s *Service) ProviderStateEvent(ctx context.Context, org, event, provider, from, to string) {
+	s.log().Info("payment provider breaker changed", "organiser", org, "rehearsalEvent", event, "provider", provider, "from", from, "to", to)
 	_ = db.WithTx(context.WithoutCancel(ctx), s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		return emitPayment(ctx, tx, org, "", "payment.provider_state", map[string]any{"provider": provider, "from": from, "to": to})
+		// A rehearsal's breaker names its event, so nothing reads it as the organiser's own.
+		return emitPayment(ctx, tx, org, event, "payment.provider_state", map[string]any{"provider": provider, "from": from, "to": to, "rehearsal": event != ""})
 	})
 }
 

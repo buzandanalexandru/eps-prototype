@@ -28,7 +28,17 @@ const (
 	clientBuffer      = 8
 	historyOnConnect  = HistoryLen
 	retryMilliseconds = 2000
+	// WriteTimeout bounds each write to a client; MaxFrameAge is how old a frame may be to be sent.
+	WriteTimeout = 10 * time.Second
+	MaxFrameAge  = 5 * time.Second
 )
+
+func fresh(b []byte) bool {
+	var head struct {
+		TS int64 `json:"ts"`
+	}
+	return json.Unmarshal(b, &head) == nil && time.Since(time.UnixMilli(head.TS)) <= MaxFrameAge
+}
 
 var (
 	streamsOpen = metrics.NewCounter("eps_live_streams_opened_total", "Live dashboard streams opened.")
@@ -154,7 +164,9 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	ctx := r.Context()
 	_ = Watch(ctx, h.Redis, sale.ID, watchFor)
+	// Every write has a deadline of its own (review D-g): a stuck client is dropped, never held.
 	write := func(s string) bool {
+		_ = rc.SetWriteDeadline(time.Now().Add(WriteTimeout))
 		if _, err := w.Write([]byte(s)); err != nil {
 			return false
 		}
@@ -177,9 +189,13 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request) {
 		framesSent.Inc()
 		return write("event: frame\nid: " + strconv.FormatInt(head.TS, 10) + "\ndata: " + string(b) + "\n\n")
 	}
-	if b := Latest(ctx, h.Redis, sale.ID); b != nil && !sendFrame(b) {
+	// The latest frame only if it is recent: an old one would show old numbers as live (D-g).
+	if b := Latest(ctx, h.Redis, sale.ID); b != nil && fresh(b) && !sendFrame(b) {
 		return
 	}
+	// The stream ends when the token does; the dashboard reconnects with a fresh one (D-g).
+	life := time.NewTimer(time.Until(c.ExpiresAt.Time))
+	defer life.Stop()
 	beat := time.NewTicker(Heartbeat)
 	defer beat.Stop()
 	rewatch := time.NewTicker(watchFor / 3)
@@ -187,6 +203,8 @@ func (h *Hub) serve(w http.ResponseWriter, r *http.Request) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-life.C:
 			return
 		case b := <-ch:
 			if !sendFrame(b) {

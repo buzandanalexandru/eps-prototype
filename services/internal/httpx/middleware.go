@@ -120,9 +120,11 @@ func WithWriteDeadline(d time.Duration, stream func(*http.Request) bool) func(ht
 	}
 }
 
-// IsEventStream reports whether the client asked for server-sent events.
+// IsEventStream reports a request for the live stream's server-sent events: the /v1/live/ routes
+// asked with Accept: text/event-stream (review D-g: no other route may escape the write deadline;
+// the stream sets a deadline of its own on every write).
 func IsEventStream(r *http.Request) bool {
-	return r.Header.Get("Accept") == "text/event-stream"
+	return r.Header.Get("Accept") == "text/event-stream" && strings.HasPrefix(r.URL.Path, "/v1/live/")
 }
 
 // Route folds a path into a bounded label: ids (uuids, long hex or digits) become ":id" and only

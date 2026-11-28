@@ -148,8 +148,13 @@ type Aggregator struct {
 	Log     *slog.Logger
 	Now     func() time.Time
 
-	mu    sync.Mutex
-	state map[string]*saleState
+	// Parallel is how many frames are built at once (at most the aggregator's pool size).
+	Parallel int
+
+	mu       sync.Mutex
+	state    map[string]*saleState
+	rotation int
+	warnedAt time.Time
 }
 
 type saleState struct {
@@ -161,6 +166,7 @@ type saleState struct {
 }
 
 var (
+	frameErrors = metrics.NewCounter("eps_live_frame_errors_total", "Live frames that could not be built.")
 	framesBuilt = metrics.NewCounter("eps_live_frames_total", "Live dashboard frames built.")
 	frameTime   = metrics.NewHistogram("eps_live_frame_seconds", "Time to build one tick of live frames.", metrics.DefaultLatencyBuckets)
 )
@@ -193,15 +199,20 @@ func (a *Aggregator) Tick(ctx context.Context) {
 	start := time.Now()
 	defer func() { frameTime.Observe(time.Since(start).Seconds()) }()
 	now := a.now()
-	ids, err := Watched(ctx, a.Redis, now, MaxWatched)
-	if err != nil || len(ids) == 0 {
+	all, err := Watched(ctx, a.Redis, now, WatchedScan)
+	if err != nil || len(all) == 0 {
 		return
 	}
+	ids := a.fair(ctx, all)
 	var sys *System
 	if a.Prom != nil {
 		sys = a.Prom.System(ctx)
 	}
-	sem := make(chan struct{}, 4)
+	par := a.Parallel
+	if par <= 0 {
+		par = 2
+	}
+	sem := make(chan struct{}, par)
 	var wg sync.WaitGroup
 	for _, id := range ids {
 		wg.Add(1)
@@ -213,9 +224,7 @@ func (a *Aggregator) Tick(ctx context.Context) {
 			defer cancel()
 			f, err := a.Build(cctx, id, now, sys)
 			if err != nil {
-				if a.Log != nil {
-					a.Log.Debug("live frame not built", "sale", id, "error", err.Error())
-				}
+				a.failed(id, err)
 				return
 			}
 			if f == nil {
@@ -230,6 +239,46 @@ func (a *Aggregator) Tick(ctx context.Context) {
 	}
 	wg.Wait()
 	a.forget(now)
+}
+
+// fair picks at most MaxWatched sales, at most MaxWatchedPerOrg of one organiser, starting at a
+// rotating offset so every watched sale gets its turn (review D-g).
+func (a *Aggregator) fair(ctx context.Context, all []string) []string {
+	a.mu.Lock()
+	start := a.rotation % len(all)
+	a.rotation++
+	a.mu.Unlock()
+	per := map[string]int{}
+	var out []string
+	for i := 0; i < len(all) && len(out) < MaxWatched; i++ {
+		id := all[(start+i)%len(all)]
+		org := ""
+		if a.Sales != nil {
+			if x, err := a.Sales.Lookup(ctx, id); err == nil {
+				org = x.OrganiserID
+			}
+		}
+		if per[org] >= MaxWatchedPerOrg {
+			continue
+		}
+		per[org]++
+		out = append(out, id)
+	}
+	return out
+}
+
+// failed counts a frame that could not be built and logs it at most once a minute.
+func (a *Aggregator) failed(sale string, err error) {
+	frameErrors.Inc()
+	a.mu.Lock()
+	warn := time.Since(a.warnedAt) > time.Minute
+	if warn {
+		a.warnedAt = time.Now()
+	}
+	a.mu.Unlock()
+	if warn && a.Log != nil {
+		a.Log.Warn("live frame not built", "sale", sale, "error", err.Error())
+	}
 }
 
 // forget drops the state of sales not framed for 5 minutes.
