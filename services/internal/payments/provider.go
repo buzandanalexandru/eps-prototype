@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -107,8 +108,12 @@ var SharedTransport = &http.Transport{
 
 var callLatency = map[string]*metrics.Histogram{}
 
+var latencyMu sync.Mutex
+
 func observe(provider, op string, d time.Duration) {
 	k := provider + "/" + op
+	latencyMu.Lock()
+	defer latencyMu.Unlock()
 	h, ok := callLatency[k]
 	if !ok {
 		h = metrics.NewHistogram("eps_provider_call_seconds", "Latency of calls to the payment providers.", metrics.DefaultLatencyBuckets, "provider", provider, "op", op)

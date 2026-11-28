@@ -3,6 +3,7 @@ package payments
 import (
 	"context"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -59,8 +60,12 @@ type State struct {
 
 var breakerChanges = map[string]*metrics.Counter{}
 
+var changesMu sync.Mutex
+
 func countChange(provider, to string) {
 	k := provider + "/" + to
+	changesMu.Lock()
+	defer changesMu.Unlock()
 	c, ok := breakerChanges[k]
 	if !ok {
 		c = metrics.NewCounter("eps_breaker_transitions_total", "Circuit breaker state changes.", "provider", provider, "to", to)
