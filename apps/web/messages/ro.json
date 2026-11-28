@@ -719,7 +719,7 @@
       "auto": "Automat (după dispozitivul fanului)"
     },
     "colours": {
-      "primary": "Principală (butoane, linkuri)",
+      "primary": "Principală (butoane, evidențieri)",
       "onPrimary": "Text pe culoarea principală",
       "surface": "Fundal",
       "onSurface": "Text",

@@ -719,7 +719,7 @@
       "auto": "Automatic (follows the fan's device)"
     },
     "colours": {
-      "primary": "Primary (buttons, links)",
+      "primary": "Primary (buttons, highlights)",
       "onPrimary": "Text on primary",
       "surface": "Background",
       "onSurface": "Text",

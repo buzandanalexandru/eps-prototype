@@ -9,9 +9,14 @@ test.describe("builder preview", () => {
     await signInFreshUser(page);
     await onboard(page);
     await openBuilder(page);
-    await page.getByTestId("preview-locale").selectOption("en");
+    // The preview starts in the Studio language and follows the language of the field being edited.
+    await expect(page.getByTestId("preview-locale")).toHaveValue("en");
     await page.locator("[data-testid=section-row][data-section-type=hero]").getByTestId("section-select").click();
+    await page.getByTestId("field-heading").locator("input[data-locale=ro]").focus();
+    await expect(page.getByTestId("preview-locale")).toHaveValue("ro");
     const input = page.getByTestId("field-heading").locator("input[data-locale=en]");
+    await input.focus();
+    await expect(page.getByTestId("preview-locale")).toHaveValue("en");
     await input.fill("Summer nights 2027");
     await expect(frame(page).locator("[data-eps-type=hero] h1")).toHaveText("Summer nights 2027", { timeout: 1000 });
     await expect(page.getByTestId("save-state")).toHaveText("All changes saved", { timeout: 10_000 });

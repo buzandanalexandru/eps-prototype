@@ -472,7 +472,7 @@ export function BuilderClient(props: BuilderProps) {
         ))}
       </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-[15rem_minmax(0,1fr)_19rem]">
+      <div className="grid items-start gap-3 lg:grid-cols-[16rem_minmax(0,1fr)_18rem]">
         <aside className={`min-w-0 rounded-lg border p-3 ${pane === "structure" ? "" : "hidden"} lg:block`} data-testid="pane-structure-body">
           {left}
         </aside>
