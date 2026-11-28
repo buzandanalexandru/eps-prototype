@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -45,27 +46,29 @@ const (
 
 // Attempt is one payment attempt.
 type Attempt struct {
-	ID              string    `json:"id"`
-	OrganiserID     string    `json:"-"`
-	Purpose         string    `json:"purpose"`
-	OrderID         *string   `json:"orderId,omitempty"`
-	WalletAccountID *string   `json:"-"`
-	Part            *int      `json:"instalmentPart,omitempty"`
-	BuyerID         string    `json:"-"`
-	Provider        string    `json:"provider"`
-	ProviderKey     string    `json:"-"`
-	Method          string    `json:"method"`
-	SavedMethodID   *string   `json:"-"`
-	SaveCard        bool      `json:"saveCard"`
-	AmountMinor     int64     `json:"amountMinor"`
-	Currency        string    `json:"currency"`
-	State           string    `json:"state"`
-	ChargeID        *string   `json:"-"`
-	ActionURL       *string   `json:"actionUrl,omitempty"`
-	ErrorCode       *string   `json:"errorCode,omitempty"`
-	FailoverOf      *string   `json:"failoverOf,omitempty"`
-	DeadlineAt      time.Time `json:"deadlineAt"`
-	CreatedAt       time.Time `json:"createdAt"`
+	ID              string          `json:"id"`
+	OrganiserID     string          `json:"-"`
+	Purpose         string          `json:"purpose"`
+	OrderID         *string         `json:"orderId,omitempty"`
+	WalletAccountID *string         `json:"-"`
+	Part            *int            `json:"instalmentPart,omitempty"`
+	BuyerID         string          `json:"-"`
+	Provider        string          `json:"provider"`
+	ProviderKey     string          `json:"-"`
+	Method          string          `json:"method"`
+	SavedMethodID   *string         `json:"-"`
+	SaveCard        bool            `json:"saveCard"`
+	AmountMinor     int64           `json:"amountMinor"`
+	Currency        string          `json:"currency"`
+	State           string          `json:"state"`
+	ChargeID        *string         `json:"-"`
+	ActionURL       *string         `json:"actionUrl,omitempty"`
+	ErrorCode       *string         `json:"errorCode,omitempty"`
+	FailoverOf      *string         `json:"failoverOf,omitempty"`
+	Plan            string          `json:"plan"`
+	Offer           *checkout.Offer `json:"-"`
+	DeadlineAt      time.Time       `json:"deadlineAt"`
+	CreatedAt       time.Time       `json:"createdAt"`
 }
 
 // TopupSink credits a wallet when a top-up's charge succeeds (the wallet's ledger).
@@ -89,10 +92,25 @@ type Service struct {
 }
 
 var (
-	failovers = metrics.NewCounter("eps_payment_failovers_total", "Payment attempts moved to the other provider.")
 	successes = metrics.NewCounter("eps_payments_succeeded_total", "Payment attempts that succeeded.")
 	dupes     = metrics.NewCounter("eps_payment_duplicate_success_total", "Second successes on one order (refunded).")
 )
+
+var (
+	failoverMu       sync.Mutex
+	failoverCounters = map[string]*metrics.Counter{}
+)
+
+func countFailover(from, to string) {
+	failoverMu.Lock()
+	defer failoverMu.Unlock()
+	c, ok := failoverCounters[from+to]
+	if !ok {
+		c = metrics.NewCounter("eps_payment_failovers_total", "Payment attempts moved to the other provider.", "from", from, "to", to)
+		failoverCounters[from+to] = c
+	}
+	c.Inc()
+}
 
 func (s *Service) now() time.Time {
 	if s.Now != nil {
@@ -123,14 +141,21 @@ func (s *Service) preferred() string {
 }
 
 const attemptCols = `id::text, organiser_id::text, purpose, order_id::text, wallet_account_id::text, instalment_part, buyer_id, provider, provider_key, method,
-	saved_method_id::text, save_card, amount_minor, currency, state, charge_id, action_url, error_code, failover_of::text, deadline_at, created_at`
+	saved_method_id::text, save_card, amount_minor, currency, state, charge_id, action_url, error_code, failover_of::text, deadline_at, created_at, plan, offer`
 
 func scanAttempt(row pgx.Row) (*Attempt, error) {
 	var a Attempt
+	var offer []byte
 	err := row.Scan(&a.ID, &a.OrganiserID, &a.Purpose, &a.OrderID, &a.WalletAccountID, &a.Part, &a.BuyerID, &a.Provider, &a.ProviderKey, &a.Method,
-		&a.SavedMethodID, &a.SaveCard, &a.AmountMinor, &a.Currency, &a.State, &a.ChargeID, &a.ActionURL, &a.ErrorCode, &a.FailoverOf, &a.DeadlineAt, &a.CreatedAt)
+		&a.SavedMethodID, &a.SaveCard, &a.AmountMinor, &a.Currency, &a.State, &a.ChargeID, &a.ActionURL, &a.ErrorCode, &a.FailoverOf, &a.DeadlineAt, &a.CreatedAt, &a.Plan, &offer)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoSuchCharge
+	}
+	if len(offer) > 0 {
+		var o checkout.Offer
+		if json.Unmarshal(offer, &o) == nil {
+			a.Offer = &o
+		}
 	}
 	return &a, err
 }
@@ -160,12 +185,15 @@ func (s *Service) LatestAttempt(ctx context.Context, org, orderID string) (*Atte
 	return a, err
 }
 
-func insertAttempt(ctx context.Context, tx pgx.Tx, a *Attempt) error {
+func insertAttempt(ctx context.Context, tx pgx.Tx, a *Attempt, offer []byte) error {
+	if a.Plan == "" {
+		a.Plan = "full"
+	}
 	_, err := tx.Exec(ctx, `insert into sales.payment_attempts (id, organiser_id, purpose, order_id, wallet_account_id, instalment_part, buyer_id, provider, provider_key,
-		method, saved_method_id, save_card, amount_minor, currency, state, failover_of, deadline_at, created_at)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'created', $15, $16, $17)`,
+		method, saved_method_id, save_card, amount_minor, currency, state, failover_of, deadline_at, created_at, plan, offer)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'created', $15, $16, $17, $18, $19)`,
 		a.ID, a.OrganiserID, a.Purpose, a.OrderID, a.WalletAccountID, a.Part, a.BuyerID, a.Provider, a.ProviderKey, a.Method, a.SavedMethodID, a.SaveCard,
-		a.AmountMinor, a.Currency, a.FailoverOf, a.DeadlineAt, a.CreatedAt)
+		a.AmountMinor, a.Currency, a.FailoverOf, a.DeadlineAt, a.CreatedAt, a.Plan, offer)
 	return err
 }
 
@@ -199,6 +227,8 @@ type PayRequest struct {
 	SaveCard    bool   `json:"saveCard,omitempty"`
 	Plan        string `json:"plan,omitempty"` // full | instalments
 	ReturnURL   string `json:"returnUrl,omitempty"`
+	// MerchantName is shown on the provider's page with the order number (review L7).
+	MerchantName string `json:"-"`
 }
 
 // PayResult is what the fan's screen needs next.
@@ -221,7 +251,7 @@ func busy() *apperr.Problem {
 // body returns the same attempt without a new charge; a press while an attempt is open returns
 // that attempt.
 func (s *Service) Pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, req PayRequest, key string) (*PayResult, error) {
-	scope := "pay:" + o.ID
+	scope := "pay:" + b.ID // per buyer: the same key on another order or amount is a mismatch (review L1)
 	if key == "" {
 		return nil, apperr.New(http.StatusBadRequest, apperr.IdempotencyMismatch, "Idempotency-Key is required.", false)
 	}

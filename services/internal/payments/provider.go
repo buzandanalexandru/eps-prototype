@@ -133,7 +133,9 @@ func dialFailed(err error) bool {
 
 func (p *HTTPProvider) call(ctx context.Context, method, path string, body any, out any) error {
 	start := time.Now()
-	defer func() { observe(p.ID, method+" "+strings.SplitN(strings.TrimPrefix(path, "/v1/"), "/", 2)[0], time.Since(start)) }()
+	defer func() {
+		observe(p.ID, method+" "+strings.SplitN(strings.TrimPrefix(path, "/v1/"), "/", 2)[0], time.Since(start))
+	}()
 	t := p.Timeout
 	if t <= 0 {
 		t = 3 * time.Second

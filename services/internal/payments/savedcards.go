@@ -131,7 +131,7 @@ func (s *Service) ChargePart(ctx context.Context, p *checkout.Plan, n int) error
 		if _, err := tx.Exec(ctx, `update sales.instalment_parts set state = 'charging', tries = $3, attempt_id = $4 where plan_id = $1 and n = $2`, p.ID, n, tries, a.ID); err != nil {
 			return err
 		}
-		return insertAttempt(ctx, tx, a)
+		return insertAttempt(ctx, tx, a, nil)
 	})
 	if err != nil {
 		return err
@@ -199,7 +199,7 @@ func (s *Service) StartTopup(ctx context.Context, b checkout.Buyer, org, account
 					return err
 				}
 			}
-			return insertAttempt(ctx, tx, a)
+			return insertAttempt(ctx, tx, a, nil)
 		}); err != nil {
 			return nil, err
 		}
