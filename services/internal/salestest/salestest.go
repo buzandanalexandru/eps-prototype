@@ -78,22 +78,27 @@ func str(s string) *string { return &s }
 // pools and the five sample products.
 func (e *Env) NewSale(t *testing.T, arenaCap, plusCap int64) *Sale {
 	t.Helper()
+	org, brand := uuid.NewString(), uuid.NewString()
+	slug := "t" + strings.ReplaceAll(org[:8], "-", "")
 	ctx := context.Background()
-	s := &Sale{Org: uuid.NewString(), Brand: uuid.NewString(), Event: uuid.NewString(), ArenaCap: arenaCap, PlusCap: plusCap, env: e}
-	slug := "t" + strings.ReplaceAll(s.Org[:8], "-", "")
-	for _, q := range []struct {
-		sql  string
-		args []any
-	}{
-		{"insert into control.organisers (id, slug, name) values ($1, $2, 'Org')", []any{s.Org, slug}},
-		{"insert into control.brands (id, organiser_id, slug, name) values ($1, $2, $3, 'Brand')", []any{s.Brand, s.Org, slug + "-b"}},
-		{"insert into control.events (id, organiser_id, brand_id, slug, starts_at, ends_at) values ($1, $2, $3, 'galaxia-2027', '2027-07-15T14:00Z', '2027-07-19T00:00Z')", []any{s.Event, s.Org, s.Brand}},
-	} {
-		if _, err := e.Pool.Exec(ctx, q.sql, q.args...); err != nil {
-			t.Fatalf("%s: %v", q.sql, err)
-		}
+	if _, err := e.Pool.Exec(ctx, "insert into control.organisers (id, slug, name) values ($1, $2, 'Org')", org, slug); err != nil {
+		t.Fatal(err)
 	}
-	s.Publish(t, func(doc map[string]any) {})
+	if _, err := e.Pool.Exec(ctx, "insert into control.brands (id, organiser_id, slug, name) values ($1, $2, $3, 'Brand')", brand, org, slug+"-b"); err != nil {
+		t.Fatal(err)
+	}
+	return e.NewSaleFor(t, org, brand, arenaCap, plusCap)
+}
+
+// NewSaleFor adds another published event to an existing organiser and brand.
+func (e *Env) NewSaleFor(t *testing.T, org, brand string, arenaCap, plusCap int64) *Sale {
+	t.Helper()
+	s := &Sale{Org: org, Brand: brand, Event: uuid.NewString(), ArenaCap: arenaCap, PlusCap: plusCap, env: e}
+	if _, err := e.Pool.Exec(context.Background(), "insert into control.events (id, organiser_id, brand_id, slug, starts_at, ends_at) values ($1, $2, $3, $4, '2027-07-15T14:00Z', '2027-07-19T00:00Z')",
+		s.Event, org, brand, "ev-"+strings.ReplaceAll(s.Event[:8], "-", "")); err != nil {
+		t.Fatal(err)
+	}
+	s.Publish(t, nil)
 	return s
 }
 

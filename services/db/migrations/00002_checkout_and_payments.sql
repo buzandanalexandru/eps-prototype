@@ -108,7 +108,7 @@ CREATE TABLE sales.wallet_accounts (
     expires_at    timestamptz,
     created_at    timestamptz NOT NULL DEFAULT now(),
     -- A fan can never spend more than they hold.
-    CHECK (kind NOT IN ('fan_balance', 'fan_season_credit') OR balance_minor >= 0),
+    CONSTRAINT fan_balance_not_negative CHECK (kind NOT IN ('fan_balance', 'fan_season_credit') OR balance_minor >= 0),
     UNIQUE (organiser_id, id),
     UNIQUE (organiser_id, kind, owner, currency)
 );
