@@ -14,9 +14,11 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math/rand/v2"
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -248,7 +250,7 @@ func (s *Sharded) resize(ctx context.Context, k keys, instance string, capacity 
 	}
 	defer s.Redis.Del(context.WithoutCancel(ctx), lk)
 	// No commit of this instance runs while its shards are re-split (review corr L1).
-	unlock, err := s.mutex(ctx, k.lock("inv-commit", p))
+	unlock, err := s.exclusive(ctx, k, p)
 	if err != nil {
 		return err
 	}
@@ -539,6 +541,12 @@ func (s *Sharded) Extend(ctx context.Context, org, event, holdID string, deadlin
 // racing it sees "committed"); then each shard moves the hold's units to sold. An instance whose
 // capacity was lowered below what is taken ("over") is checked against the capacity, one commit
 // at a time, so nothing ever sells above it.
+//
+// Commits of an instance that is within its capacity run side by side under a shared lock: every
+// shard keeps sold+held within its allocation and the allocations add up to the capacity, so
+// turning held units into sold ones cannot pass it. A resize takes the lock exclusively (review
+// corr L1), and only an "over" instance makes commits queue one at a time (the CI failure of
+// dbaba54: 1,000 commits serialised on one spin lock starved some past its wait).
 func (s *Sharded) Commit(ctx context.Context, org, event, holdID string, capacity map[string]int64) error {
 	k, err := s.keysFor(org, event)
 	if err != nil || !validHold(holdID) {
@@ -597,16 +605,30 @@ func (s *Sharded) Commit(ctx context.Context, org, event, holdID string, capacit
 		}
 	}()
 	for _, in := range checked {
-		u, err := s.mutex(ctx, k.lock("inv-commit", part(in)))
+		p := part(in)
+		u, err := s.shared(ctx, k, p)
 		if err != nil {
+			return err
+		}
+		m, err := s.Redis.HMGet(ctx, k.meta(p), "cap", "over").Result()
+		if err != nil {
+			u()
+			return err
+		}
+		if fmt.Sprint(m[0]) == strconv.FormatInt(capacity[in], 10) && fmt.Sprint(m[1]) != "1" {
+			unlock = append(unlock, u) // within its capacity: no check needed
+			continue
+		}
+		u()
+		if u, err = s.exclusive(ctx, k, p); err != nil {
 			return err
 		}
 		unlock = append(unlock, u)
-		sold, err := s.sum(ctx, k, part(in), "sold")
+		sold, err := s.sum(ctx, k, p, "sold")
 		if err != nil {
 			return err
 		}
-		if sold+byInst[part(in)] > capacity[in] {
+		if sold+byInst[p] > capacity[in] {
 			return &checkout.ErrShort{Instance: in}
 		}
 	}
@@ -621,31 +643,114 @@ func (s *Sharded) Commit(ctx context.Context, org, event, holdID string, capacit
 	return nil
 }
 
-// mutex takes a short Redis lock, waiting for it; the unlock removes only this caller's lock.
-func (s *Sharded) mutex(ctx context.Context, key string) (func(), error) {
-	tok := strconv.FormatInt(time.Now().UnixNano(), 36) + strconv.Itoa(int(fnvString(key)))
-	for try := 0; try < 1000; try++ {
-		ok, err := s.Redis.SetNX(ctx, key, tok, 5*time.Second).Result()
+// lockTTL bounds how long a crashed holder keeps an instance's commit lock; lockWait bounds how
+// long a caller waits for it.
+const (
+	lockTTL  = 5 * time.Second
+	lockWait = 15 * time.Second
+)
+
+var errLockWait = errors.New("inventory: lock wait too long")
+
+var lockSeq atomic.Uint64
+
+func lockToken() string {
+	return strconv.FormatInt(time.Now().UnixNano(), 36) + "." + strconv.FormatUint(lockSeq.Add(1), 36)
+}
+
+// sharedLock joins an instance's commit lock as one of many readers, unless a writer holds or
+// waits for it. Readers are a sorted set scored by their expiry, so a crashed reader lapses.
+var sharedLock = redis.NewScript(`
+local t = redis.call('TIME')
+local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', now)
+redis.call('ZADD', KEYS[2], now + tonumber(ARGV[2]), ARGV[1])
+redis.call('PEXPIRE', KEYS[2], ARGV[2])
+return 1`)
+
+// liveReaders counts the readers that have not lapsed.
+var liveReaders = redis.NewScript(`
+local t = redis.call('TIME')
+local now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000)
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', now)
+return redis.call('ZCARD', KEYS[1])`)
+
+// shared takes an instance's commit lock alongside other commits; it waits only while a resize or
+// an "over" commit holds it exclusively.
+func (s *Sharded) shared(ctx context.Context, k keys, p string) (func(), error) {
+	w, r := k.lock("inv-commit", p), k.lock("inv-commit-r", p)
+	tok := lockToken()
+	deadline := time.Now().Add(lockWait)
+	try := 0
+	for {
+		ok, err := sharedLock.Run(ctx, s.Redis, []string{w, r}, tok, lockTTL.Milliseconds()).Int()
+		if err != nil {
+			return nil, err
+		}
+		if ok == 1 {
+			return func() { _ = s.Redis.ZRem(context.WithoutCancel(ctx), r, tok).Err() }, nil
+		}
+		if err := lockPause(ctx, deadline, &try); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// exclusive takes an instance's commit lock alone: it claims the writer key (which turns new
+// readers away), then waits for the readers already in to finish.
+func (s *Sharded) exclusive(ctx context.Context, k keys, p string) (func(), error) {
+	w, r := k.lock("inv-commit", p), k.lock("inv-commit-r", p)
+	tok := lockToken()
+	deadline := time.Now().Add(lockWait)
+	try := 0
+	for {
+		ok, err := s.Redis.SetNX(ctx, w, tok, lockTTL).Result()
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			return func() {
-				_ = unlockScript.Run(context.WithoutCancel(ctx), s.Redis, []string{key}, tok).Err()
-			}, nil
+			break
 		}
-		time.Sleep(5 * time.Millisecond)
+		if err := lockPause(ctx, deadline, &try); err != nil {
+			return nil, err
+		}
 	}
-	return nil, errors.New("inventory: lock wait too long")
+	unlock := func() { _ = unlockScript.Run(context.WithoutCancel(ctx), s.Redis, []string{w}, tok).Err() }
+	for {
+		n, err := liveReaders.Run(ctx, s.Redis, []string{r}).Int()
+		if err != nil {
+			unlock()
+			return nil, err
+		}
+		if n == 0 {
+			return unlock, nil
+		}
+		if err := lockPause(ctx, deadline, &try); err != nil {
+			unlock()
+			return nil, err
+		}
+	}
+}
+
+// lockPause waits before the next try: 1 ms doubling to 32 ms, with jitter, so hundreds of waiters
+// poll Redis a few thousand times a second at most instead of saturating it.
+func lockPause(ctx context.Context, deadline time.Time, try *int) error {
+	if time.Now().After(deadline) {
+		return errLockWait
+	}
+	*try++
+	d := time.Millisecond << min(*try, 5)
+	d = d/2 + time.Duration(rand.Int64N(int64(d/2)+1))
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
 }
 
 var unlockScript = redis.NewScript(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`)
-
-func fnvString(s string) uint32 {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(s))
-	return h.Sum32()
-}
 
 // sum adds a counter field over every shard of an instance.
 func (s *Sharded) sum(ctx context.Context, k keys, p, field string) (int64, error) {
