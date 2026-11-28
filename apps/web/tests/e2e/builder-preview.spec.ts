@@ -35,7 +35,7 @@ test.describe("builder preview", () => {
     // Romanian preview with diacritics, then select a section from the preview.
     await page.getByTestId("preview-locale").selectOption("ro");
     await expect(f.getByTestId("buy-disabled").first()).toHaveText("Bilete disponibile după publicare");
-    await expect(f.getByTestId("ticket-price").first()).toContainText(/\d,\d{2} RON/);
+    await expect(f.getByTestId("ticket-price").first()).toContainText(/\d,\d{2}\sRON/);
     await f.locator("[data-eps-type=faq] h2").click();
     await showPane(page, "settings");
     await expect(page.getByTestId("section-form")).toHaveAttribute("data-section-type", "faq");

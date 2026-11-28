@@ -15,7 +15,8 @@ test.describe("builder publish", () => {
     await expect(page.getByTestId("no-problems")).toBeVisible();
     await page.getByTestId("publish").click();
     await expect(page.getByTestId("publish-message")).toHaveText("Version 1 is live.");
-    await expect(page.getByTestId("address-state")).toHaveText("Live · version 1");
+    await expect(page.getByTestId("address-state")).toHaveText("Published · version 1");
+    await expect(page.getByTestId("address-note")).toContainText("step 3");
     await expect(page.getByTestId("version")).toHaveCount(1);
     await expect(page.getByTestId("version").first()).toContainText(/v1.*\d{4}/);
     // Version 2 with a new title, then restore version 1 as version 3.
@@ -27,15 +28,17 @@ test.describe("builder publish", () => {
     await saved(page);
     await page.getByTestId("tab-publish").click();
     await page.getByTestId("publish").click();
-    await expect(page.getByTestId("address-state")).toHaveText("Live · version 2");
+    await expect(page.getByTestId("address-state")).toHaveText("Published · version 2");
     await page.locator("[data-testid=version][data-number='1']").getByTestId("restore").click();
+    await expect(page.getByRole("alertdialog")).toContainText("unpublished edits");
+    await expect(page.getByRole("alertdialog")).toContainText("prices always come from the current catalogue");
     await page.getByTestId("confirm-restore").click();
-    await expect(page.getByTestId("address-state")).toHaveText("Live · version 3");
+    await expect(page.getByTestId("address-state")).toHaveText("Published · version 3");
     await expect(page.locator("[data-testid=version][data-number='3']")).toContainText("restored from v1");
     await expect(page.getByTestId("version")).toHaveCount(3);
     await expect(frame(page).locator("[data-eps-type=hero] h1")).not.toHaveText("Version two");
     await page.reload();
-    await expect(page.getByTestId("address-state")).toHaveText("Live · version 3");
+    await expect(page.getByTestId("address-state")).toHaveText("Published · version 3");
   });
 
   test("a preview link shows the draft to a signed-out visitor with the banner and no buying; revoked it is not found", async ({ page, browser }, info) => {
@@ -59,6 +62,10 @@ test.describe("builder publish", () => {
     await expect(visitor.getByTestId("buy-disabled").first()).toHaveText("Tickets available after publishing");
     await expect(visitor.getByTestId("buy-disabled").first()).toBeDisabled();
     await expect(visitor.getByTestId("shop-sample-label")).toBeVisible();
+    await expect(visitor.getByTestId("shop-privacy")).toContainText("no outside services");
+    // The map, when shown, is an image from our own origin (never a map service).
+    for (const src of await visitor.locator("img").evaluateAll((els) => els.map((e) => (e as HTMLImageElement).src))) expect(new URL(src).origin).toBe(new URL(visitor.url()).origin);
+    expect(res?.headers()["x-frame-options"]).toBe("DENY");
     // Revoke: the link is gone.
     await page.getByTestId("link-row").first().getByTestId("revoke-link").click();
     await expect(page.getByTestId("link-row").first()).toContainText("revoked");

@@ -1,5 +1,5 @@
-// Storefront builder spec: first visit, change template, brand kit (logo, contrast), sections
-// (reorder, hide, keyboard), the locked checkout.
+// Storefront builder spec: first visit, change template (tokens, fonts and logo kept), brand kit
+// (logo, contrast), sections (reorder, hide, keyboard), two tabs editing one draft.
 import { desktopOnly, expect, expectErrorResponse, expectNoHorizontalScroll, onboard, setLocale, signInFreshUser, test } from "./fixtures";
 import { colourPng, frame, frameTypes, openBuilder, saved, sectionTypes } from "./builder-helpers";
 
@@ -17,6 +17,8 @@ test.describe("builder", () => {
     await page.getByTestId("tab-brand").click();
     await page.getByTestId("radius").selectOption("none");
     await page.getByTestId("colour-light-primary").fill("#0b5394");
+    await page.getByTestId("fontHeading").selectOption("lora");
+    await page.getByTestId("logo").locator("select").selectOption("sample:logo-sunwave");
     await saved(page);
     // Change template to resort, with confirmation.
     const revisionBefore = await page.getByTestId("builder").getAttribute("data-revision");
@@ -32,6 +34,9 @@ test.describe("builder", () => {
     await page.getByTestId("tab-brand").click();
     await expect(page.getByTestId("radius")).toHaveValue("none");
     await expect(page.getByTestId("colour-light-primary")).toHaveValue("#0b5394");
+    await expect(page.getByTestId("fontHeading")).toHaveValue("lora");
+    await expect(page.getByTestId("logo").locator("select")).toHaveValue("sample:logo-sunwave");
+    await expect(frame(page).getByTestId("shop-logo")).toHaveAttribute("src", "/samples/logo-sunwave.svg");
     await expect(frame(page).getByTestId("storefront")).toHaveAttribute("style", /--eps-l-primary:\s*#0b5394/);
     await expectNoHorizontalScroll(page);
     // Logo upload, palette proposal, refused SVG and the contrast suggestion (one sign-in: the
@@ -80,5 +85,20 @@ test.describe("builder", () => {
     await page.reload();
     expect(await sectionTypes(page)).toEqual(["gallery", "hero", "faq", "text", "footer"]);
     await expect(page.locator("[data-testid=section-row][data-section-type=gallery]")).toHaveAttribute("data-hidden", "true");
+    // Two tabs: the other tab saves first; this tab's next save is refused and offers to reload.
+    await openBuilder(page);
+    const other = await page.context().newPage();
+    await openBuilder(other);
+    await other.locator("[data-testid=section-row][data-section-type=text]").getByTestId("toggle-hidden").click();
+    await saved(other);
+    expectErrorResponse(page, 409);
+    await page.locator("[data-testid=section-row][data-section-type=faq]").getByTestId("toggle-hidden").click();
+    await expect(page.getByTestId("conflict")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("save-state")).toHaveText("Not saved: changed elsewhere");
+    await page.getByTestId("conflict-reload").click();
+    await expect(page.getByTestId("conflict")).toHaveCount(0);
+    await expect(page.locator("[data-testid=section-row][data-section-type=text]")).toHaveAttribute("data-hidden", "true");
+    await expect(page.locator("[data-testid=section-row][data-section-type=faq]")).toHaveAttribute("data-hidden", "false");
+    await other.close();
   });
 });
