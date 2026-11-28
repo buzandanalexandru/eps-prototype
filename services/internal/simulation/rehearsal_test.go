@@ -174,8 +174,21 @@ func TestResetRehearsal(t *testing.T) {
 		t.Fatal("expected the old rehearsal to have Redis keys")
 	}
 	c := &simulation.Cleaner{Pool: s.Pool, Redis: s.Redis, Sales: s.Sales, Now: time.Now}
+	// A reset rehearsal waits out its holds first (review D-e).
 	if _, err := c.RunOnce(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if left, _ := s.Redis.Keys(ctx, "eps:{"+ev.Org+":"+rh.EventID+":*").Result(); len(left) == 0 {
+		t.Fatal("cleaned before its holds could end")
+	}
+	if _, err := s.Pool.Exec(ctx, `update sales.sales set deleted_at = now() - interval '21 minutes' where id = $1`, rh.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, s, `select count(*) from sales.orders where event_id = $1 and (buyer_email is not null or buyer_name is not null)`, rh.EventID); n != 0 {
+		t.Fatalf("%d rehearsal orders keep contact details after the clean-up", n)
 	}
 	for _, pat := range []string{"eps:{" + ev.Org + ":" + rh.EventID + ":*", "eps:{" + ev.Org + "}:" + rh.EventID + ":*"} {
 		if left, _ := s.Redis.Keys(ctx, pat).Result(); len(left) != 0 {
@@ -190,5 +203,54 @@ func TestResetRehearsal(t *testing.T) {
 	b2 := newBrowser(s.SimToken(t, fresh.EventID, uuid.NewString(), "86.100.0.8"))
 	if _, out := b2.join(t, s, fresh.ID); out["state"] != "before" {
 		t.Fatalf("fresh rehearsal: %v", out["state"])
+	}
+}
+
+// Review D-a: a signed-in person on a rehearsal is offered and allowed neither the wallet, a saved
+// card, saving a card nor instalments, and no ledger line is written; the order is never issued.
+func TestRehearsalNeverTouchesRealMoney(t *testing.T) {
+	s := simtest.Start(t)
+	ev, real := s.RealSale(t, 100, 20)
+	rh := openRehearsal(t, s, real)
+	b := newBrowser(s.AccountToken(t, "192.0.2.80"))
+	b.admit(t, s, rh.ID)
+	code, o := b.hold(t, s, rh.EventID, 1, 1)
+	if code != http.StatusCreated {
+		t.Fatalf("hold: %d %v", code, o)
+	}
+	id := o["id"].(string)
+	if o["wallet"] != nil || o["instalmentOffer"] != nil || len(o["savedCards"].([]any)) != 0 {
+		t.Fatalf("a rehearsal offers wallet, cards or instalments: %v %v %v", o["wallet"], o["instalmentOffer"], o["savedCards"])
+	}
+	call(t, http.MethodPut, s.Core.URL+"/v1/shop/orders/"+id+"/details", b.shop(), map[string]any{"name": "Ana", "email": "ana@example.test"})
+	for _, body := range []map[string]any{
+		{"method": "wallet"},
+		{"method": "saved_card", "savedCardId": uuid.NewString(), "returnUrl": "http://localhost:3000/back"},
+		{"method": "hosted_card", "saveCard": true, "returnUrl": "http://localhost:3000/back"},
+		{"method": "hosted_card", "plan": "instalments", "returnUrl": "http://localhost:3000/back"},
+	} {
+		code, out := call(t, http.MethodPost, s.Core.URL+"/v1/shop/orders/"+id+"/payments", b.shop(), body)
+		if code != http.StatusUnprocessableEntity || out["code"] != "EPS-PAY-METHOD" {
+			t.Fatalf("%v: %d %v", body, code, out)
+		}
+	}
+	if n := count(t, s, `select count(*) from sales.journal_lines where organiser_id = $1`, ev.Org); n != 0 {
+		t.Fatalf("%d ledger lines for a rehearsal", n)
+	}
+	if n := count(t, s, `select count(*) from sales.payment_attempts where order_id = $1`, id); n != 0 {
+		t.Fatalf("%d attempts were made", n)
+	}
+	// Card is fine; the paid order stays paid (never issued) and the real-orders view leaves it out.
+	if final := b.buy(t, s, rh.EventID, 1, 1); final["state"] != "paid" {
+		t.Fatalf("rehearsal order: %v", final["state"])
+	}
+	if err := s.Svc.Issue(context.Background(), ev.Org, id); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, s, `select count(*) from sales.orders where id = $1 and state = 'issued'`, id); n != 0 {
+		t.Fatal("a rehearsal order was issued")
+	}
+	if n := count(t, s, `select count(*) from sales.real_orders where event_id = $1`, rh.EventID); n != 0 {
+		t.Fatalf("real_orders shows %d rehearsal orders", n)
 	}
 }

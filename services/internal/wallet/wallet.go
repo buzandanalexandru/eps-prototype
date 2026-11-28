@@ -202,6 +202,9 @@ func (s *Service) PayOrder(ctx context.Context, b checkout.Buyer, o *checkout.Or
 	if o.PayPlan == "instalments" {
 		return nil, apperr.New(http.StatusUnprocessableEntity, apperr.PayMethod, "An instalment order cannot be paid from the wallet.", false)
 	}
+	if o.Rehearsal { // step 6, review D-a: no ledger postings for a rehearsal
+		return nil, apperr.New(http.StatusUnprocessableEntity, apperr.PayMethod, "A rehearsal pays by card, Apple Pay or Google Pay only, in one payment (simulated).", false).With("rehearsal", true)
+	}
 	if err := s.Checkout.ReadyToPay(ctx, o); err != nil {
 		return nil, err
 	}

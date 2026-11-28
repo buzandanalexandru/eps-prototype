@@ -338,7 +338,23 @@ func (s *Service) result(a *Attempt) *PayResult {
 	return r
 }
 
+// RehearsalMethod refuses what a rehearsal order may not use (step 6, review D-a): the wallet, saved
+// cards, saving a card and instalments, so a rehearsal never posts to a ledger or charges a real
+// person's card. Nil when the method is allowed.
+func RehearsalMethod(method string, saveCard, instalments bool) *apperr.Problem {
+	switch {
+	case method != HostedCard && method != ApplePay && method != GooglePay, saveCard, instalments:
+		return apperr.New(http.StatusUnprocessableEntity, apperr.PayMethod, "A rehearsal pays by card, Apple Pay or Google Pay only, in one payment (simulated).", false).With("rehearsal", true)
+	}
+	return nil
+}
+
 func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, req PayRequest) (*PayResult, error) {
+	if o.Rehearsal {
+		if p := RehearsalMethod(req.Method, req.SaveCard, req.Plan == "instalments"); p != nil {
+			return nil, p
+		}
+	}
 	switch req.Method {
 	case HostedCard, ApplePay, GooglePay, SavedCard:
 	default:

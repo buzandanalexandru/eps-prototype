@@ -531,6 +531,9 @@ func (s *Service) Issue(ctx context.Context, org, orderID string) error {
 		if err != nil {
 			return err
 		}
+		if !Issuable(o) {
+			return nil // a rehearsal order stays paid: simulated fans get no tickets
+		}
 		_, moved, err := Transition(ctx, tx, orderID, Issued, "tickets issued (step 4 stub)", "")
 		if err != nil || !moved {
 			return err
@@ -626,3 +629,7 @@ func (s *Service) LiveHoldRefs(ctx context.Context, org, eventID string, refs []
 	})
 	return out, err
 }
+
+// Issuable reports whether an order gets tickets: never a rehearsal order (step 6, review D-a). Step
+// 7's real issuer must keep this rule (its tests call Issuable).
+func Issuable(o *Order) bool { return o != nil && !o.Rehearsal }

@@ -306,7 +306,7 @@ func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) O
 			if qs, err := checkout.QuestionsTx(ctx, tx, snap); err == nil {
 				v.Questions = qs
 			}
-			if v.CanPay {
+			if v.CanPay && !o.Rehearsal {
 				v.InstalmentOffer = checkout.OfferFor(snap, o, time.Now())
 			}
 		}
@@ -320,7 +320,7 @@ func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) O
 		if a, err := payments.LatestAttemptTx(ctx, tx, o.ID); err == nil && a != nil {
 			v.Payment = a
 		}
-		if account {
+		if account && !o.Rehearsal { // a rehearsal offers no wallet or saved card (review D-a)
 			if w, err := wallet.WalletTx(ctx, tx, o.OrganiserID, b.ID, o.Currency); err == nil {
 				v.Wallet = &walletOption{BalanceMinor: w.BalanceMinor, CreditMinor: w.CreditMinor}
 			}
@@ -504,6 +504,12 @@ func (s *Server) PayOrder(ctx context.Context, req api.PayOrderRequestObject) (a
 		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
 	}
 	body := req.Body
+	// Step 6 (review D-a): a rehearsal never touches real money or a person's saved cards.
+	if o.Rehearsal {
+		if p := payments.RehearsalMethod(string(body.Method), body.SaveCard != nil && *body.SaveCard, body.Plan != nil && string(*body.Plan) == "instalments"); p != nil {
+			return problemRaw(ctx, p), nil
+		}
+	}
 	// Step 5 (D-11): the order's pass from the same session, then the one-time code if it needs one.
 	if s.OnSale != nil && s.OnSale.Gate != nil {
 		if err := s.OnSale.Gate.BeforePay(ctx, o, withPass(b, req.Params.XEPSPass, req.Params.XEPSSession), access == accessLink); err != nil {

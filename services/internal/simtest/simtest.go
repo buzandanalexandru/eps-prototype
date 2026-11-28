@@ -274,6 +274,18 @@ func (s *Stack) FanToken(t *testing.T, ip string) string {
 	return out
 }
 
+// AccountToken is a web-issued token of a signed-in fan.
+func (s *Stack) AccountToken(t *testing.T, ip string) string {
+	t.Helper()
+	now := time.Now()
+	c := auth.Claims{RegisteredClaims: jwt.RegisteredClaims{Issuer: Issuer, Subject: uuid.NewString(), Audience: jwt.ClaimStrings{auth.Audience},
+		IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute))}, Kind: auth.KindFan, Sid: "s1", ClientIP: ip}
+	tok := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c)
+	tok.Header["kid"] = "t1"
+	out, _ := tok.SignedString(s.orgKey)
+	return out
+}
+
 // SimToken is a simulator token for a rehearsal event and run.
 func (s *Stack) SimToken(t *testing.T, rehearsal, run, ip string) string {
 	t.Helper()

@@ -3,6 +3,7 @@ package simulation
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/redisx"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/sales"
 )
 
@@ -59,9 +61,20 @@ func (c *Cleaner) RunOnce(ctx context.Context) (int, error) {
 	}
 	total := 0
 	for _, x := range list {
-		n, err := DeleteRehearsalKeys(ctx, c.Redis, x.org, x.event, c.MaxScanSteps)
+		n, done, err := DeleteRehearsalKeys(ctx, c.Redis, x.org, x.event, c.MaxScanSteps)
 		total += n
 		if err != nil {
+			return total, err
+		}
+		if !done {
+			continue // the scan resumes on the next tick (a bounded share of the keyspace each time)
+		}
+		// The rehearsal's orders stay as a record, without the simulated contact details (review D-a).
+		if err := db.WithTx(ctx, c.Pool, db.RoleCore, x.org, func(tx pgx.Tx) error {
+			_, err := tx.Exec(ctx, `update sales.orders set buyer_email = null, buyer_name = null, answers = '{}'::jsonb
+				where event_id = $1 and rehearsal and (buyer_email is not null or buyer_name is not null or answers <> '{}'::jsonb)`, x.event)
+			return err
+		}); err != nil {
 			return total, err
 		}
 		if err := c.Sales.MarkCleaned(ctx, x.org, x.sale); err != nil {
@@ -74,34 +87,46 @@ func (c *Cleaner) RunOnce(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// DeleteRehearsalKeys deletes every key of a rehearsal event: its hot keys (queue, stock shards,
+// DeleteRehearsalKeys deletes the keys of a rehearsal event: its hot keys (queue, stock shards,
 // holds: tag {org:event:...}) and its organiser keys (sales copy, caps, OTP, breaker:
-// eps:{org}:event:...). Only ever called with a rehearsal's own event id.
-func DeleteRehearsalKeys(ctx context.Context, rdb *redis.Client, org, event string, maxSteps int) (int, error) {
+// eps:{org}:event:...). Only ever called with a rehearsal's own event id. The scan is resumable:
+// at most maxSteps SCAN calls of 1,000 keys per call, its cursor kept in Redis, and done reports
+// whether it went through the whole keyspace (review sec L6: a bounded share per tick).
+func DeleteRehearsalKeys(ctx context.Context, rdb *redis.Client, org, event string, maxSteps int) (int, bool, error) {
 	if maxSteps <= 0 {
-		maxSteps = 5000
+		maxSteps = 50
 	}
-	n := 0
-	for _, pattern := range []string{"eps:{" + org + ":" + event + ":*", "eps:{" + org + "}:" + event + ":*"} {
-		var cursor uint64
-		for step := 0; step < maxSteps; step++ {
+	n, steps := 0, 0
+	for i, pattern := range []string{"eps:{" + org + ":" + event + ":*", "eps:{" + org + "}:" + event + ":*"} {
+		ck, _ := redisx.PlatformKey("rh-clean", event, strconv.Itoa(i))
+		if v, err := rdb.Get(ctx, ck).Result(); err == nil && v == "done" {
+			continue
+		}
+		cursor, _ := rdb.Get(ctx, ck).Uint64()
+		for {
+			if steps >= maxSteps {
+				_ = rdb.Set(ctx, ck, strconv.FormatUint(cursor, 10), 24*time.Hour).Err()
+				return n, false, nil
+			}
+			steps++
 			keys, next, err := rdb.Scan(ctx, cursor, pattern, 1000).Result()
 			if err != nil {
-				return n, err
+				return n, false, err
 			}
 			if len(keys) > 0 {
 				d, err := rdb.Unlink(ctx, keys...).Result()
 				if err != nil {
-					return n, err
+					return n, false, err
 				}
 				n += int(d)
 				keysDeleted.Add(d)
 			}
 			cursor = next
 			if cursor == 0 {
+				_ = rdb.Set(ctx, ck, "done", 24*time.Hour).Err()
 				break
 			}
 		}
 	}
-	return n, nil
+	return n, true, nil
 }

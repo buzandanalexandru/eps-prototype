@@ -23,6 +23,10 @@ ALTER TABLE sales.sales ADD COLUMN degraded_by text;
 -- Rehearsal orders and the run that made them (from the simulator's token); kept out of reports.
 ALTER TABLE sales.orders ADD COLUMN rehearsal boolean NOT NULL DEFAULT false;
 ALTER TABLE sales.orders ADD COLUMN sim_run_id uuid;
+-- Organiser-wide figures read real orders only (review D-a; step 10's reports use this view).
+CREATE VIEW sales.real_orders WITH (security_invoker = true) AS SELECT * FROM sales.orders WHERE NOT rehearsal;
+GRANT SELECT ON sales.real_orders TO eps_core;
+REVOKE ALL ON sales.real_orders FROM eps_web;
 CREATE INDEX orders_sale_state_idx ON sales.orders (organiser_id, sale_id, state) WHERE sale_id IS NOT NULL;
 -- A rehearsal's attempts pay under the rehearsal's own merchant account and breaker (D-1).
 ALTER TABLE sales.payment_attempts ADD COLUMN merchant_event uuid;
@@ -104,7 +108,8 @@ AS $fn$
     WHERE s.rehearsal_of_event IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM sales.simulation_runs r WHERE r.organiser_id = s.organiser_id AND r.sale_id = s.id
                       AND r.state IN ('pending', 'starting', 'running', 'finishing'))
-      AND ((s.deleted_at IS NOT NULL AND s.rehearsal_cleaned_at IS NULL)
+      -- A reset rehearsal waits out its holds and payment attempts (at most 15 + 5 minutes).
+      AND ((s.deleted_at IS NOT NULL AND s.deleted_at < now() - interval '20 minutes' AND s.rehearsal_cleaned_at IS NULL)
            OR (s.deleted_at IS NULL
                AND NOT EXISTS (SELECT 1 FROM sales.simulation_runs r WHERE r.organiser_id = s.organiser_id AND r.sale_id = s.id AND r.ended_at > p_before)
                AND EXISTS (SELECT 1 FROM sales.simulation_runs r WHERE r.organiser_id = s.organiser_id AND r.sale_id = s.id
