@@ -2,13 +2,16 @@ package onsale_test
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/apperr"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/salestest"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/simtest"
@@ -32,10 +35,15 @@ func TestDegradedHoldsAndPayments(t *testing.T) {
 	if _, err := s.Sales.SetDegraded(ctx, ev.Org, sale.ID, "test", true); err != nil {
 		t.Fatal(err)
 	}
-	// The hold of an admitted fan: 503 EPS-BUSY, retry in 30 s (header and body).
+	// The hold of an admitted fan: 503 EPS-BUSY, retry in 30 s (header and body), counted in
+	// eps_degrade_refused_total (scenario "Metrics present").
+	refusedBefore := refusedCount()
 	code, out := late.Hold(t, s, ev.Event, ev.Version, 1)
 	if code != http.StatusServiceUnavailable || out["code"] != apperr.Busy || out["retryable"] != true {
 		t.Fatalf("degraded hold: %d %v", code, out)
+	}
+	if got := refusedCount(); got != refusedBefore+1 {
+		t.Fatalf("eps_degrade_refused_total %v, want %v", got, refusedBefore+1)
 	}
 	if d, _ := out["data"].(map[string]any); d["retryAfter"] != 30.0 {
 		t.Fatalf("retry time: %v", out["data"])
@@ -161,4 +169,17 @@ func TestPassesOutliveADegradedWindow(t *testing.T) {
 	if code, out := fan2.Hold(t, s, ev.Event, ev.Version, 1); code != http.StatusForbidden || out["code"] != apperr.PassRequired {
 		t.Fatalf("a pass past its grace: %d %v", code, out)
 	}
+}
+
+func refusedCount() float64 {
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	b, _ := io.ReadAll(rec.Body)
+	for _, l := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(l, "eps_degrade_refused_total "); ok {
+			n, _ := strconv.ParseFloat(v, 64)
+			return n
+		}
+	}
+	return 0
 }

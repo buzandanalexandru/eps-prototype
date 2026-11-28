@@ -3,9 +3,13 @@ package simulation_test
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http/httptest"
+	"regexp"
 	"testing"
 	"time"
 
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/simtest"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/simulation"
@@ -84,6 +88,15 @@ func TestFanJourney(t *testing.T) {
 	if n := count(t, s, `select count(*) from sales.orders where event_id = $1`, ev.Event); n != 0 {
 		t.Fatalf("real event orders: %d", n)
 	}
+	// Scenario "Metrics present" (simulator and providers): the run's own series are exposed.
+	body := scrapeMetrics()
+	for _, re := range []string{`eps_sim_reports_total [1-9]`, `eps_sim_runs_total [1-9]`, `sim_requests_total\{step="join",result="ok"\} [1-9]`,
+		`sim_request_seconds_bucket\{step="hold"`, `sim_fans\{state="`, `sim_bots\{state="`, `fakepsp_charges_total\{provider="a",outcome="succeeded"\} [1-9]`,
+		`eps_orders_paid_total\{rehearsal="true"\} [1-9]`} {
+		if !regexp.MustCompile(re).MatchString(body) {
+			t.Errorf("missing %s", re)
+		}
+	}
 	// Review D-c: the rehearsal closes after its run.
 	closed, _, err := s.Sales.Get(ctx, ev.Org, r.SaleID)
 	if err != nil {
@@ -115,10 +128,20 @@ func TestOutageRunPaysAtB(t *testing.T) {
 	if atA != 0 || atB != paid || sum.Facts.PaidAtBDuringOutage != paid {
 		t.Fatalf("paid %d: at A %d, at B %d, summary %d", paid, atA, atB, sum.Facts.PaidAtBDuringOutage)
 	}
+	if !regexp.MustCompile(`fakepsp_knob_changes_total\{provider="a"\} [1-9]`).MatchString(scrapeMetrics()) {
+		t.Error("the outage's knob change is not counted")
+	}
 	// 30 places: sold out exactly when every place was paid for.
 	sold := count(t, s, `select coalesce(sum(d.value::bigint), 0) from sales.orders o, jsonb_each_text(o.draws) d
 		where o.event_id = $1 and o.state in ('paid', 'issued')`, r.EventID)
 	if (sold == 30) != (sum.SellOutSeconds != nil) {
 		t.Fatalf("sold %d of 30, sell-out %v", sold, sum.SellOutSeconds)
 	}
+}
+
+func scrapeMetrics() string {
+	rec := httptest.NewRecorder()
+	metrics.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+	b, _ := io.ReadAll(rec.Body)
+	return string(b)
 }

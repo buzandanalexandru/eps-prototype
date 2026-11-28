@@ -329,3 +329,55 @@ func TestSimulatorStopsWhenTheCoreIsGone(t *testing.T) {
 		t.Fatalf("%d requests after the simulator lost the core", after-hits)
 	}
 }
+
+// Review D-b: a run is refused after 3 runs an hour by one organiser, and while a real sale on the
+// platform has fans in its waiting room; in production the shared sample runs at the default size
+// only and its real sale cannot be degraded (its rehearsals can).
+func TestRunRefusals(t *testing.T) {
+	s := simtest.Start(t)
+	ev, real := s.RealSale(t, 100, 20)
+	ctx := context.Background()
+	rh, err := s.Sim.CreateRehearsal(ctx, ev.Org, real.ID, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < simulation.RunsPerHour; i++ {
+		r, err := s.Sim.Start(ctx, ev.Org, rh.ID, "test", simulation.Knobs{Fans: 100})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Sim.Stop(ctx, ev.Org, r.ID); err != nil {
+			t.Fatal(err)
+		}
+		rh.ID = r.SaleID // a start on a used rehearsal resets it into a fresh one
+	}
+	// The fourth start is refused before the rehearsal is reset.
+	if _, err := s.Sim.Start(ctx, ev.Org, rh.ID, "test", simulation.Knobs{Fans: 100}); problem(t, err).Code != apperr.RateLimited {
+		t.Fatalf("fourth run this hour: %v", err)
+	}
+
+	// A fan in a real sale's waiting room (another organiser's) blocks every run.
+	ev2, real2 := s.RealSale(t, 100, 20)
+	simtest.NewBrowser(s.FanToken(t, "192.0.2.90")).Admit(t, s, real.ID)
+	rh2, _ := s.Sim.CreateRehearsal(ctx, ev2.Org, real2.ID, "test")
+	_, err = s.Sim.Start(ctx, ev2.Org, rh2.ID, "test", simulation.Knobs{Fans: 100})
+	if p := problem(t, err); p.Code != apperr.SimBusy || p.Data["reason"] != "real_sale_live" {
+		t.Fatalf("run during a real sale: %s %v", p.Code, p.Data)
+	}
+
+	// The shared sample in production.
+	ev3, real3 := s.RealSale(t, 100, 20)
+	ev3.Publish(t, func(d map[string]any) { d["isSample"] = true })
+	s.Sim.Production = true
+	defer func() { s.Sim.Production = false }()
+	rh3, _ := s.Sim.CreateRehearsal(ctx, ev3.Org, real3.ID, "test")
+	if _, err := s.Sim.Start(ctx, ev3.Org, rh3.ID, "test", simulation.Knobs{Fans: 2000}); problem(t, err).Code != apperr.SimInvalid {
+		t.Fatalf("a large run on the sample: %v", err)
+	}
+	if p := s.Sim.DegradeAllowed(ctx, real3); p == nil || p.Code != apperr.Forbidden {
+		t.Fatalf("degrading the sample's real sale: %v", p)
+	}
+	if p := s.Sim.DegradeAllowed(ctx, rh3); p != nil {
+		t.Fatalf("degrading the sample's rehearsal: %v", p)
+	}
+}
