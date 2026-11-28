@@ -284,6 +284,17 @@ jobs:
           echo "::error::The preview core did not answer over HTTPS within 10 minutes (certificate or ingress)."
           kubectl -n "$NS" get pods,ingress,certificate || true
           exit 1
+      - name: The providers' payment pages answer over HTTPS
+        run: |
+          url="https://pay.$SLUG.${{ steps.vars.outputs.base }}/a/pay/ch_not_a_charge_000000000000"
+          for i in $(seq 1 60); do
+            # A provider answers 404 for an unknown charge once the certificate and route work.
+            if [[ "$(curl -sS -o /dev/null -w '%{http_code}' "$url" || true)" == "404" ]]; then echo "pay host ready"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::The payment page host did not answer over HTTPS within 10 minutes (certificate or ingress)."
+          kubectl -n "$NS" get pods,ingress,certificate || true
+          exit 1
 
   e2e:
     needs: [deploy-core, web]

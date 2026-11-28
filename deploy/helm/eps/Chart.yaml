@@ -17,9 +17,15 @@ dependencies:
   - name: worker
     version: 0.1.0
     condition: worker.enabled
+  # The simulated payment providers A and B (O4): one chart, two releases.
   - name: fakepsp
+    alias: pspA
     version: 0.1.0
-    condition: fakepsp.enabled
+    condition: pspA.enabled
+  - name: fakepsp
+    alias: pspB
+    version: 0.1.0
+    condition: pspB.enabled
   - name: simulator
     version: 0.1.0
     condition: simulator.enabled

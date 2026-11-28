@@ -4,6 +4,8 @@
 core:
   replicas: 1
   database: { enabled: true, maxConns: 3 }
+  # The deployed e2e suite holds from one runner address: previews allow far more per client.
+  holdLimits: { perMinute: 2000, live: 1000 }
 gateway:
   replicas: 1
 worker:

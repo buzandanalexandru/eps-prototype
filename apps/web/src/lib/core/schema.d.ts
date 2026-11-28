@@ -148,6 +148,355 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shop/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's orders across organisers, newest first */
+        get: operations["listMyOrders"];
+        put?: never;
+        /**
+         * Hold tickets and create an order
+         * @description Holds the requested quantities from every pool the products draw on, all or nothing, for the
+         *     sale's hold length (design D-7), prices them from snapshot `version` and records the order in
+         *     state `held`. A buyer with a live order for the sale gets that order back (200) and nothing
+         *     more is taken. A repeat with the same Idempotency-Key and body returns the same order.
+         */
+        post: operations["createOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/orders/{orderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An order's true state
+         * @description For the order's buyer, or with a valid order link (`X-Order-Token`: a resume token until the
+         *     hold deadline, or a guest's 30-day view token). Paid is shown only after the provider confirmed.
+         */
+        get: operations["getOrder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/orders/{orderId}/details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Contact details and answers to the checkout questions */
+        put: operations["setOrderDetails"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/orders/{orderId}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pay an order (one Pay press)
+         * @description Starts a payment attempt through the simulated providers (card on the provider's hosted page,
+         *     Apple Pay or Google Pay sheet, saved card) or pays from the EPS Wallet in one step. The
+         *     Idempotency-Key is created when the fan presses Pay and reused on retry and double click: a
+         *     repeat returns the same attempt, never a second charge (D-3).
+         */
+        post: operations["payOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/orders/{orderId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a held or payment-failed order (stock is freed at once) */
+        post: operations["cancelOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/orders/{orderId}/instalments/simulate-next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Demo action - move the plan's clock to its next due date */
+        post: operations["simulateNextInstalment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/orders/{orderId}/instalments/pay-overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pay an overdue instalment now with the plan's saved card */
+        post: operations["payOverdueInstalment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add guest orders placed with the caller's verified email to the account */
+        post: operations["claimOrders"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/saved-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's provider-saved cards for one organiser */
+        get: operations["listSavedCards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/saved-cards/{cardId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a saved card and revoke its provider token */
+        delete: operations["deleteSavedCard"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/wallets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's EPS Wallet balances, one per organiser (simulated money) */
+        get: operations["listWallets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/wallets/{organiserId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's wallet at one organiser, with its history */
+        get: operations["getWallet"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/wallets/{organiserId}/topups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Top up the wallet through the simulated providers
+         * @description The balance rises only when the provider confirms; the same Idempotency-Key credits once.
+         */
+        post: operations["topUpWallet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/wallets/{organiserId}/topups/{attemptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A top-up's state */
+        get: operations["getTopup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/payments/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The organiser's simulated providers - breaker state and live knobs */
+        get: operations["getPaymentProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/payments/providers/{provider}/knobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change a simulated provider's knobs for this organiser (owner or admin) */
+        put: operations["setProviderKnobs"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/wallets/{organiserId}/pay-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A 6-digit code for one stand payment within 2 minutes
+         * @description The fan shows the wallet code and this pay code at a stand; the code works once.
+         */
+        post: operations["createPayCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/wallet/stand-payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Charge a fan's wallet at a stand (simulated)
+         * @description Needs the fan's wallet code and current pay code; the same Idempotency-Key charges once.
+         */
+        post: operations["standPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/wallet/season-close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move every fan's unspent balance to next-season credit (owner or admin) */
+        post: operations["closeSeason"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -272,9 +621,313 @@ export interface components {
             status: number;
             detail?: string;
             instance?: string;
-            /** @description Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`. */
+            /** @description Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`, or a quotable checkout code such as `EPS-HOLD-SOLD-OUT` (design D-14). */
             code: string;
             requestId: string;
+            /** @description The shop label of a checkout code (EPS-PAY-DECLINED → err_pay_declined). */
+            messageKey?: string;
+            /** @description Whether trying again can help. */
+            retryable?: boolean;
+            /** @description Facts the screen needs (the product that sold out, the missing answers, ...). */
+            data?: {
+                [key: string]: unknown;
+            };
+        };
+        CreateOrderRequest: {
+            /** Format: uuid */
+            eventId: string;
+            /** @description The snapshot version the shop page showed; the order is priced from it. */
+            version: number;
+            /** @enum {string} */
+            locale?: "ro" | "en";
+            items: {
+                /** Format: uuid */
+                productId: string;
+                qty: number;
+                /** @description The day (YYYY-MM-DD) or slot start (YYYY-MM-DDTHH:MM) for day and slot products. */
+                instance?: string;
+            }[];
+        };
+        OrderDetails: {
+            name: string;
+            email: string;
+            /** @description Answers by question id (text, the option index, or true for a consent). */
+            answers?: {
+                [key: string]: unknown;
+            };
+        };
+        PayRequest: {
+            /** @enum {string} */
+            method: "hosted_card" | "apple_pay" | "google_pay" | "saved_card" | "wallet";
+            savedCardId?: string;
+            saveCard?: boolean;
+            /** @enum {string} */
+            plan?: "full" | "instalments";
+            /** @description Where the provider page sends the fan back (an origin the core allows). */
+            returnUrl?: string;
+        };
+        ClaimRequest: {
+            /** Format: uuid */
+            orderId?: string;
+        };
+        ClaimResult: {
+            claimed: string[];
+        };
+        TopupRequest: {
+            /** Format: int64 */
+            amountMinor: number;
+            /** @enum {string} */
+            currency: "RON" | "EUR";
+            /** @enum {string} */
+            method: "hosted_card" | "apple_pay" | "google_pay";
+            returnUrl?: string;
+            /** @enum {string} */
+            locale?: "ro" | "en";
+        };
+        PayCode: {
+            walletCode: string;
+            payCode: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        StandPaymentRequest: {
+            /** @description The wallet code the fan shows at the stand. */
+            code: string;
+            /** @description The fan's current pay code (2 minutes, single use). */
+            payCode: string;
+            /** Format: int64 */
+            amountMinor: number;
+            label?: string;
+        };
+        SeasonCloseRequest: {
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        SeasonCloseResult: {
+            fans: number;
+            /** Format: int64 */
+            totalMinor: number;
+        };
+        ProviderKnobs: {
+            failure_rate?: number;
+            decline_rate?: number;
+            latency_ms?: number;
+            latency_jitter_ms?: number;
+            outage?: boolean;
+            /** @enum {string} */
+            outage_mode?: "hang" | "503";
+            timeout_rate?: number;
+            webhook_delay_ms?: number;
+            webhook_drop_rate?: number;
+            challenge_rate?: number;
+            /**
+             * Format: date-time
+             * @description When changed knobs go back to normal by themselves (15 minutes after the last change).
+             */
+            readonly resets_at?: string;
+        };
+        ProviderList: {
+            /** @enum {string} */
+            preferred: "a" | "b";
+            providers: {
+                /** @enum {string} */
+                provider: "a" | "b";
+                /** @enum {string} */
+                state: "closed" | "open" | "half_open";
+                calls?: number;
+                failures?: number;
+                consecutiveFailures?: number;
+                /** Format: date-time */
+                openedAt?: string;
+                knobs?: components["schemas"]["ProviderKnobs"];
+                reachable?: boolean;
+            }[];
+        };
+        /**
+         * Format: int64
+         * @description An amount in minor units (bani, cents).
+         */
+        Money: number;
+        OrderLine: {
+            lineNo: number;
+            productId: string;
+            name: components["schemas"]["L10n"];
+            qty: number;
+            instance?: string;
+            priceStepIndex?: number;
+            unitAllInMinor: components["schemas"]["Money"];
+            unitFaceMinor?: components["schemas"]["Money"];
+            unitFanFeeMinor?: components["schemas"]["Money"];
+        };
+        L10n: {
+            ro: string;
+            en: string;
+        };
+        Question: {
+            id: string;
+            /** @enum {string} */
+            slot: "afterContact" | "consents";
+            /** @enum {string} */
+            kind: "text" | "choice" | "consent";
+            label: components["schemas"]["L10n"];
+            options: components["schemas"]["L10n"][];
+            required: boolean;
+        };
+        InstalmentPayment: {
+            n: number;
+            /** Format: date */
+            dueOn: string;
+            amountMinor: components["schemas"]["Money"];
+            /** @enum {string} */
+            state?: "scheduled" | "charging" | "paid" | "overdue" | "cancelled";
+            /** Format: date */
+            graceUntil?: string;
+        };
+        InstalmentOffer: {
+            depositMinor: components["schemas"]["Money"];
+            totalMinor: components["schemas"]["Money"];
+            payments: components["schemas"]["InstalmentPayment"][];
+        };
+        InstalmentPlan: {
+            id: string;
+            /** @enum {string} */
+            state: "pending" | "active" | "completed" | "cancelled";
+            depositMinor: components["schemas"]["Money"];
+            totalMinor: components["schemas"]["Money"];
+            clockOffsetDays?: number;
+            savedCardLabel?: string;
+            parts: components["schemas"]["InstalmentPayment"][];
+        };
+        PaymentAttempt: {
+            id: string;
+            /** @enum {string} */
+            state: "created" | "submitted" | "challenge_required" | "succeeded" | "declined" | "failed" | "unknown" | "refund_pending" | "refunded";
+            method: string;
+            /** @enum {string} */
+            provider: "a" | "b";
+            amountMinor: components["schemas"]["Money"];
+            errorCode?: string;
+            actionUrl?: string;
+            /** @enum {string} */
+            purpose?: "order" | "topup" | "instalment";
+        };
+        SavedCard: {
+            id: string;
+            provider: string;
+            label: string;
+            brand: string;
+            /** Format: date-time */
+            createdAt?: string;
+        };
+        SavedCardList: {
+            cards: components["schemas"]["SavedCard"][];
+        };
+        WalletMovement: {
+            /** @enum {string} */
+            kind: "topup" | "order_payment" | "stand_payment" | "season_close" | "reversal";
+            /** @enum {string} */
+            account: "fan_balance" | "fan_season_credit";
+            amountMinor: components["schemas"]["Money"];
+            memo?: string;
+            /** Format: date-time */
+            at: string;
+        };
+        Wallet: {
+            organiserId: string;
+            organiserName?: string;
+            currency: string;
+            balanceMinor: components["schemas"]["Money"];
+            creditMinor: components["schemas"]["Money"];
+            /** Format: date-time */
+            creditExpiresAt?: string;
+            /** @description The wallet code a stand types in. */
+            code: string;
+            history: components["schemas"]["WalletMovement"][];
+        };
+        WalletList: {
+            wallets: components["schemas"]["Wallet"][];
+        };
+        TopupResult: {
+            attempt: components["schemas"]["PaymentAttempt"];
+            actionUrl?: string;
+            wallet?: components["schemas"]["Wallet"];
+        };
+        PaymentResult: {
+            order: components["schemas"]["OrderView"];
+            /** @description The provider page to open (hosted card, wallet sheet or bank challenge). */
+            actionUrl?: string;
+        };
+        OrderList: {
+            orders: components["schemas"]["OrderView"][];
+        };
+        OrderView: {
+            /** Format: uuid */
+            id: string;
+            organiserId: string;
+            eventId: string;
+            snapshotVersion: number;
+            /** @enum {string} */
+            buyerKind: "account" | "guest";
+            buyerEmail?: string;
+            buyerName?: string;
+            locale?: string;
+            /** @enum {string} */
+            currency: "RON" | "EUR";
+            /** @enum {string} */
+            state: "held" | "paying" | "payment_failed" | "paid" | "issued" | "expired" | "cancelled" | "refunded";
+            totalMinor: components["schemas"]["Money"];
+            faceMinor?: components["schemas"]["Money"];
+            fanFeeMinor?: components["schemas"]["Money"];
+            /** Format: date-time */
+            holdExpiresAt: string;
+            /**
+             * Format: date-time
+             * @description The core's clock, so the timer counts down from the server deadline.
+             */
+            serverTime: string;
+            /** @enum {string} */
+            payPlan: "full" | "instalments";
+            answers: {
+                [key: string]: unknown;
+            };
+            detailsGiven: boolean;
+            lastErrorCode?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            paidAt?: string;
+            lines: components["schemas"]["OrderLine"][];
+            history: {
+                from?: string;
+                to: string;
+                reason?: string;
+                /** Format: date-time */
+                at: string;
+            }[];
+            eventName?: components["schemas"]["L10n"];
+            questions: components["schemas"]["Question"][];
+            instalmentOffer?: components["schemas"]["InstalmentOffer"];
+            plan?: components["schemas"]["InstalmentPlan"];
+            payment?: components["schemas"]["PaymentAttempt"];
+            /** @description The caller may pay now (held or payment failed, the hold live, buyer or a live resume link). */
+            canPay: boolean;
+            /**
+             * @description buyer: the order's own buyer; link: a live resume link (may pay by card, Apple Pay or
+             *     Google Pay only); view_link: a guest's order link; expired_link: a resume link after the
+             *     hold ended (state only, no personal details).
+             * @enum {string}
+             */
+            access: "buyer" | "link" | "view_link" | "expired_link";
+            /** @description The signed resume link token, until the hold deadline (live orders only). */
+            resumeToken?: string;
+            /** @description A guest's order-link token (30 days). */
+            viewToken?: string;
+            /** @description The caller's wallet at this organiser (accounts only). */
+            wallet?: {
+                balanceMinor: components["schemas"]["Money"];
+                creditMinor: components["schemas"]["Money"];
+            };
+            savedCards: components["schemas"]["SavedCard"][];
         };
     };
     responses: {
@@ -289,6 +942,14 @@ export interface components {
         };
     };
     parameters: {
+        OrderId: string;
+        OrganiserId: string;
+        OrganiserQuery: string;
+        /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+        OrderToken: string;
+        IdempotencyKey: string;
+        /** @description Created when the fan presses the button; reused on retry and double click. */
+        IdempotencyKeyRequired: string;
         EventId: string;
     };
     requestBodies: never;
@@ -468,6 +1129,526 @@ export interface operations {
                 };
             };
             404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    listMyOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Orders. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createOrder: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description The buyer's existing live order for this sale (or the replayed answer). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            /** @description The order, held. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getOrder: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    setOrderDetails: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderDetails"];
+            };
+        };
+        responses: {
+            /** @description The order with its details. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    payOrder: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+                /** @description Created when the fan presses the button; reused on retry and double click. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayRequest"];
+            };
+        };
+        responses: {
+            /** @description The order and, for provider payments, the page to open. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelOrder: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The cancelled order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    simulateNextInstalment: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order and its plan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    payOverdueInstalment: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order and its plan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    claimOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description The claimed orders. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaimResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listSavedCards: {
+        parameters: {
+            query: {
+                organiserId: components["parameters"]["OrganiserQuery"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved cards (provider, label; never a card number). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedCardList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteSavedCard: {
+        parameters: {
+            query: {
+                organiserId: components["parameters"]["OrganiserQuery"];
+            };
+            header?: never;
+            path: {
+                cardId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listWallets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Wallets. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WalletList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getWallet: {
+        parameters: {
+            query?: {
+                currency?: "RON" | "EUR";
+            };
+            header?: never;
+            path: {
+                organiserId: components["parameters"]["OrganiserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The wallet. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Wallet"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    topUpWallet: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Created when the fan presses the button; reused on retry and double click. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                organiserId: components["parameters"]["OrganiserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TopupRequest"];
+            };
+        };
+        responses: {
+            /** @description The top-up's attempt and the provider page to open. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopupResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getTopup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organiserId: components["parameters"]["OrganiserId"];
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The top-up. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopupResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPaymentProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Both providers. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    setProviderKnobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "a" | "b";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderKnobs"];
+            };
+        };
+        responses: {
+            /** @description Both providers after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createPayCode: {
+        parameters: {
+            query?: {
+                currency?: "RON" | "EUR";
+            };
+            header?: never;
+            path: {
+                organiserId: components["parameters"]["OrganiserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The codes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayCode"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    standPayment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Created when the fan presses the button; reused on retry and double click. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StandPaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description The fan's wallet after the charge. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Wallet"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    closeSeason: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeasonCloseRequest"];
+            };
+        };
+        responses: {
+            /** @description What moved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeasonCloseResult"];
+                };
+            };
             default: components["responses"]["Problem"];
         };
     };

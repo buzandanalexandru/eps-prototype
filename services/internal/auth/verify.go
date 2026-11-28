@@ -33,6 +33,12 @@ type Claims struct {
 	Org  string `json:"org,omitempty"`
 	Role string `json:"role,omitempty"`
 	Sid  string `json:"sid"`
+	// Email is the account's email, present only when it is verified (fan and organiser tokens;
+	// step 4's guest-order claim relies on it).
+	Email string `json:"email,omitempty"`
+	// ClientIP is the address of the browser the web app minted the token for (step 4 review:
+	// hold creation is rate limited per client).
+	ClientIP string `json:"cip,omitempty"`
 }
 
 // ErrInvalidToken is returned for every rejected token; the reason is only in the wrapped error,
@@ -264,6 +270,9 @@ func checkKind(c *Claims) error {
 		}
 		if !isGuestSub || len(c.Subject) <= len("guest:") {
 			return errors.New("guest kind without guest subject")
+		}
+		if c.Email != "" {
+			return errors.New("guest token with an email")
 		}
 	default:
 		return fmt.Errorf("unknown kind %q", c.Kind)

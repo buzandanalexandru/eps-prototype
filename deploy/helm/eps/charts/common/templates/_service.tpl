@@ -14,7 +14,7 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
 {{- end -}}
 
 {{- define "eps.image" -}}
-{{ printf "%s/eps-%s:%s" .ctx.Values.global.image.registry .name (.ctx.Values.global.image.tag | toString) }}
+{{ printf "%s/eps-%s:%s" .ctx.Values.global.image.registry (.image | default .name) (.ctx.Values.global.image.tag | toString) }}
 {{- end -}}
 
 {{- define "eps.env" -}}
@@ -61,6 +61,42 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
   value: {{ .ctx.Values.global.corsAllowedOrigins | quote }}
 - name: EPS_ENV
   value: {{ .ctx.Values.global.env | quote }}
+{{- with .ctx.Values.paymentSecrets }}
+# Step 4, only the keys this service needs: order links (ORDER_LINK_KEY), the core's key at the
+# simulated providers (PSP_API_KEY), their knobs (PSP_ADMIN_TOKEN) and webhook keys
+# (PSP_WEBHOOK_SECRET_A/B), from eps-runtime.
+{{- range $k := . }}
+- name: {{ $k }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $.ctx.Values.global.runtimeSecret }}
+      key: {{ $k }}
+      # Required (review sec L6): CI creates every key before the release rolls out.
+      optional: false
+{{- end }}
+{{- end }}
+{{- if .ctx.Values.paymentSecrets }}
+- name: PSP_A_URL
+  value: {{ printf "http://%s-psp-a" .ctx.Release.Name | quote }}
+- name: PSP_B_URL
+  value: {{ printf "http://%s-psp-b" .ctx.Release.Name | quote }}
+- name: CORE_INTERNAL_URL
+  value: {{ printf "http://%s-core" .ctx.Release.Name | quote }}
+- name: RETURN_URL_ORIGINS
+  value: {{ .ctx.Values.global.corsAllowedOrigins | quote }}
+{{- with .ctx.Values.holdLimits }}
+- name: HOLD_RATE_PER_MINUTE
+  value: {{ .perMinute | quote }}
+- name: HOLD_LIVE_PER_CLIENT
+  value: {{ .live | quote }}
+{{- end }}
+{{- end }}
+{{- with .ctx.Values.providerId }}
+- name: PROVIDER_ID
+  value: {{ . | quote }}
+- name: PSP_PUBLIC_URL
+  value: {{ printf "https://pay.%s.%s/%s" $.ctx.Values.global.env $.ctx.Values.global.baseDomain . | quote }}
+{{- end }}
 {{- end -}}
 
 {{- define "eps.podSecurity" -}}

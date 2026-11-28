@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { getBrand } from "@/lib/organisers/domain";
@@ -30,6 +31,9 @@ export default async function BrandPage({ params, searchParams }: { params: Prom
         <p className="text-sm text-muted-foreground">
           {t("address")}: <span data-testid="brand-address">/s/{brand.slug}</span> · {t("template")}: <span data-testid="brand-template">{t(`templates.${brand.template}.name`)}</span>
         </p>
+        <Link href={`/studio/brands/${brand.id}/questions`} className="text-sm text-primary hover:underline" data-testid="questions-link">
+          {(await getTranslations("payments"))("questionsLink")}
+        </Link>
       </div>
       <Card>
         <h2 className="font-semibold">{t("settings")}</h2>

@@ -82,7 +82,10 @@ docs/                planning, research, deliverables
   - Entry route `/s/<brand>/<locale>/checkout?event=&v=&items=productId:qty[:instance]`.
   - Every order records the snapshot `(event, version)`.
   - Default hold is 8 minutes, configurable from 5 to 15.
-  - Checkout slots are `checkout.slots.afterContact` and `checkout.slots.consents`.
+  - Checkout slots are `checkout.slots.afterContact` and `checkout.slots.consents`; they hold ids of immutable `control.checkout_questions` rows (step 4).
+  - The order page is the same static checkout page: `?order=<id>`, plus `&t=<token>` for a resume link (until the hold deadline) or a guest's 30-day order link.
+  - The browser reaches the core's `/v1/shop/...` only through `/api/shop/...` on our own origin (an allowlist; answers are HTTP 200 with `{status, body}`).
+  - Simulated providers: knobs and circuit breakers are per organiser (merchant) and provider; hosted pages at `pay.<env>.<baseDomain>/<a|b>/pay/...`.
 - **Sale settings** live in the sales schema (owned by Go) and are edited from Studio through the OpenAPI contract, so the admission rate changes live.
 - **Holds:** step 4 uses one counter per pool; step 5 swaps in sharded counters behind the same interface and re-runs step 4's hold tests.
 - **Issuing:** step 4 marks orders issued with a stub driven by `order.paid`; step 7 replaces it with real ticket issuing.

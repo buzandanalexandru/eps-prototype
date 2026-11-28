@@ -14,7 +14,7 @@ export const LIMITS = { bytes: 512 * 1024, pages: 30, sectionsPerPage: 40, block
  * /s/<brand>/<locale>/e/<event slug> (by the EVENT's slug; event pages store no slug) and an info
  * page is /s/<brand>/<locale>/<page slug>. These slugs would collide with platform routes.
  */
-export const RESERVED_PAGE_SLUGS = ["checkout", "e", "p", "assets", "api", "s"] as const;
+export const RESERVED_PAGE_SLUGS = ["checkout", "wallet", "e", "p", "assets", "api", "s"] as const;
 export const LOCALES = ["ro", "en"] as const;
 export type Locale = (typeof LOCALES)[number];
 

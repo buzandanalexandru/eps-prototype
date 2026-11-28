@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -40,19 +41,19 @@ func (e HealthStatus) Valid() bool {
 
 // Defines values for IdentityKind.
 const (
-	Fan       IdentityKind = "fan"
-	Guest     IdentityKind = "guest"
-	Organiser IdentityKind = "organiser"
+	IdentityKindFan       IdentityKind = "fan"
+	IdentityKindGuest     IdentityKind = "guest"
+	IdentityKindOrganiser IdentityKind = "organiser"
 )
 
 // Valid indicates whether the value is a known member of the IdentityKind enum.
 func (e IdentityKind) Valid() bool {
 	switch e {
-	case Fan:
+	case IdentityKindFan:
 		return true
-	case Guest:
+	case IdentityKindGuest:
 		return true
-	case Organiser:
+	case IdentityKindOrganiser:
 		return true
 	default:
 		return false
@@ -86,6 +87,57 @@ func (e IdentityRole) Valid() bool {
 	}
 }
 
+// Defines values for InstalmentPaymentState.
+const (
+	InstalmentPaymentStateCancelled InstalmentPaymentState = "cancelled"
+	InstalmentPaymentStateCharging  InstalmentPaymentState = "charging"
+	InstalmentPaymentStateOverdue   InstalmentPaymentState = "overdue"
+	InstalmentPaymentStatePaid      InstalmentPaymentState = "paid"
+	InstalmentPaymentStateScheduled InstalmentPaymentState = "scheduled"
+)
+
+// Valid indicates whether the value is a known member of the InstalmentPaymentState enum.
+func (e InstalmentPaymentState) Valid() bool {
+	switch e {
+	case InstalmentPaymentStateCancelled:
+		return true
+	case InstalmentPaymentStateCharging:
+		return true
+	case InstalmentPaymentStateOverdue:
+		return true
+	case InstalmentPaymentStatePaid:
+		return true
+	case InstalmentPaymentStateScheduled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for InstalmentPlanState.
+const (
+	InstalmentPlanStateActive    InstalmentPlanState = "active"
+	InstalmentPlanStateCancelled InstalmentPlanState = "cancelled"
+	InstalmentPlanStateCompleted InstalmentPlanState = "completed"
+	InstalmentPlanStatePending   InstalmentPlanState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the InstalmentPlanState enum.
+func (e InstalmentPlanState) Valid() bool {
+	switch e {
+	case InstalmentPlanStateActive:
+		return true
+	case InstalmentPlanStateCancelled:
+		return true
+	case InstalmentPlanStateCompleted:
+		return true
+	case InstalmentPlanStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for InstanceAvailabilityStatus.
 const (
 	InstanceAvailabilityStatusOnSale  InstanceAvailabilityStatus = "on_sale"
@@ -98,6 +150,243 @@ func (e InstanceAvailabilityStatus) Valid() bool {
 	case InstanceAvailabilityStatusOnSale:
 		return true
 	case InstanceAvailabilityStatusSoldOut:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderViewAccess.
+const (
+	Buyer       OrderViewAccess = "buyer"
+	ExpiredLink OrderViewAccess = "expired_link"
+	Link        OrderViewAccess = "link"
+	ViewLink    OrderViewAccess = "view_link"
+)
+
+// Valid indicates whether the value is a known member of the OrderViewAccess enum.
+func (e OrderViewAccess) Valid() bool {
+	switch e {
+	case Buyer:
+		return true
+	case ExpiredLink:
+		return true
+	case Link:
+		return true
+	case ViewLink:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderViewBuyerKind.
+const (
+	OrderViewBuyerKindAccount OrderViewBuyerKind = "account"
+	OrderViewBuyerKindGuest   OrderViewBuyerKind = "guest"
+)
+
+// Valid indicates whether the value is a known member of the OrderViewBuyerKind enum.
+func (e OrderViewBuyerKind) Valid() bool {
+	switch e {
+	case OrderViewBuyerKindAccount:
+		return true
+	case OrderViewBuyerKindGuest:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderViewCurrency.
+const (
+	OrderViewCurrencyEUR OrderViewCurrency = "EUR"
+	OrderViewCurrencyRON OrderViewCurrency = "RON"
+)
+
+// Valid indicates whether the value is a known member of the OrderViewCurrency enum.
+func (e OrderViewCurrency) Valid() bool {
+	switch e {
+	case OrderViewCurrencyEUR:
+		return true
+	case OrderViewCurrencyRON:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderViewPayPlan.
+const (
+	OrderViewPayPlanFull        OrderViewPayPlan = "full"
+	OrderViewPayPlanInstalments OrderViewPayPlan = "instalments"
+)
+
+// Valid indicates whether the value is a known member of the OrderViewPayPlan enum.
+func (e OrderViewPayPlan) Valid() bool {
+	switch e {
+	case OrderViewPayPlanFull:
+		return true
+	case OrderViewPayPlanInstalments:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderViewState.
+const (
+	OrderViewStateCancelled     OrderViewState = "cancelled"
+	OrderViewStateExpired       OrderViewState = "expired"
+	OrderViewStateHeld          OrderViewState = "held"
+	OrderViewStateIssued        OrderViewState = "issued"
+	OrderViewStatePaid          OrderViewState = "paid"
+	OrderViewStatePaying        OrderViewState = "paying"
+	OrderViewStatePaymentFailed OrderViewState = "payment_failed"
+	OrderViewStateRefunded      OrderViewState = "refunded"
+)
+
+// Valid indicates whether the value is a known member of the OrderViewState enum.
+func (e OrderViewState) Valid() bool {
+	switch e {
+	case OrderViewStateCancelled:
+		return true
+	case OrderViewStateExpired:
+		return true
+	case OrderViewStateHeld:
+		return true
+	case OrderViewStateIssued:
+		return true
+	case OrderViewStatePaid:
+		return true
+	case OrderViewStatePaying:
+		return true
+	case OrderViewStatePaymentFailed:
+		return true
+	case OrderViewStateRefunded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PayRequestMethod.
+const (
+	PayRequestMethodApplePay   PayRequestMethod = "apple_pay"
+	PayRequestMethodGooglePay  PayRequestMethod = "google_pay"
+	PayRequestMethodHostedCard PayRequestMethod = "hosted_card"
+	PayRequestMethodSavedCard  PayRequestMethod = "saved_card"
+	PayRequestMethodWallet     PayRequestMethod = "wallet"
+)
+
+// Valid indicates whether the value is a known member of the PayRequestMethod enum.
+func (e PayRequestMethod) Valid() bool {
+	switch e {
+	case PayRequestMethodApplePay:
+		return true
+	case PayRequestMethodGooglePay:
+		return true
+	case PayRequestMethodHostedCard:
+		return true
+	case PayRequestMethodSavedCard:
+		return true
+	case PayRequestMethodWallet:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PayRequestPlan.
+const (
+	PayRequestPlanFull        PayRequestPlan = "full"
+	PayRequestPlanInstalments PayRequestPlan = "instalments"
+)
+
+// Valid indicates whether the value is a known member of the PayRequestPlan enum.
+func (e PayRequestPlan) Valid() bool {
+	switch e {
+	case PayRequestPlanFull:
+		return true
+	case PayRequestPlanInstalments:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PaymentAttemptProvider.
+const (
+	PaymentAttemptProviderA PaymentAttemptProvider = "a"
+	PaymentAttemptProviderB PaymentAttemptProvider = "b"
+)
+
+// Valid indicates whether the value is a known member of the PaymentAttemptProvider enum.
+func (e PaymentAttemptProvider) Valid() bool {
+	switch e {
+	case PaymentAttemptProviderA:
+		return true
+	case PaymentAttemptProviderB:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PaymentAttemptPurpose.
+const (
+	PaymentAttemptPurposeInstalment PaymentAttemptPurpose = "instalment"
+	PaymentAttemptPurposeOrder      PaymentAttemptPurpose = "order"
+	PaymentAttemptPurposeTopup      PaymentAttemptPurpose = "topup"
+)
+
+// Valid indicates whether the value is a known member of the PaymentAttemptPurpose enum.
+func (e PaymentAttemptPurpose) Valid() bool {
+	switch e {
+	case PaymentAttemptPurposeInstalment:
+		return true
+	case PaymentAttemptPurposeOrder:
+		return true
+	case PaymentAttemptPurposeTopup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PaymentAttemptState.
+const (
+	PaymentAttemptStateChallengeRequired PaymentAttemptState = "challenge_required"
+	PaymentAttemptStateCreated           PaymentAttemptState = "created"
+	PaymentAttemptStateDeclined          PaymentAttemptState = "declined"
+	PaymentAttemptStateFailed            PaymentAttemptState = "failed"
+	PaymentAttemptStateRefundPending     PaymentAttemptState = "refund_pending"
+	PaymentAttemptStateRefunded          PaymentAttemptState = "refunded"
+	PaymentAttemptStateSubmitted         PaymentAttemptState = "submitted"
+	PaymentAttemptStateSucceeded         PaymentAttemptState = "succeeded"
+	PaymentAttemptStateUnknown           PaymentAttemptState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the PaymentAttemptState enum.
+func (e PaymentAttemptState) Valid() bool {
+	switch e {
+	case PaymentAttemptStateChallengeRequired:
+		return true
+	case PaymentAttemptStateCreated:
+		return true
+	case PaymentAttemptStateDeclined:
+		return true
+	case PaymentAttemptStateFailed:
+		return true
+	case PaymentAttemptStateRefundPending:
+		return true
+	case PaymentAttemptStateRefunded:
+		return true
+	case PaymentAttemptStateSubmitted:
+		return true
+	case PaymentAttemptStateSucceeded:
+		return true
+	case PaymentAttemptStateUnknown:
 		return true
 	default:
 		return false
@@ -128,6 +417,120 @@ func (e ProductAvailabilityStatus) Valid() bool {
 	}
 }
 
+// Defines values for ProviderKnobsOutageMode.
+const (
+	Hang ProviderKnobsOutageMode = "hang"
+	N503 ProviderKnobsOutageMode = "503"
+)
+
+// Valid indicates whether the value is a known member of the ProviderKnobsOutageMode enum.
+func (e ProviderKnobsOutageMode) Valid() bool {
+	switch e {
+	case Hang:
+		return true
+	case N503:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderListPreferred.
+const (
+	ProviderListPreferredA ProviderListPreferred = "a"
+	ProviderListPreferredB ProviderListPreferred = "b"
+)
+
+// Valid indicates whether the value is a known member of the ProviderListPreferred enum.
+func (e ProviderListPreferred) Valid() bool {
+	switch e {
+	case ProviderListPreferredA:
+		return true
+	case ProviderListPreferredB:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderListProvidersProvider.
+const (
+	ProviderListProvidersProviderA ProviderListProvidersProvider = "a"
+	ProviderListProvidersProviderB ProviderListProvidersProvider = "b"
+)
+
+// Valid indicates whether the value is a known member of the ProviderListProvidersProvider enum.
+func (e ProviderListProvidersProvider) Valid() bool {
+	switch e {
+	case ProviderListProvidersProviderA:
+		return true
+	case ProviderListProvidersProviderB:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderListProvidersState.
+const (
+	Closed   ProviderListProvidersState = "closed"
+	HalfOpen ProviderListProvidersState = "half_open"
+	Open     ProviderListProvidersState = "open"
+)
+
+// Valid indicates whether the value is a known member of the ProviderListProvidersState enum.
+func (e ProviderListProvidersState) Valid() bool {
+	switch e {
+	case Closed:
+		return true
+	case HalfOpen:
+		return true
+	case Open:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuestionKind.
+const (
+	Choice  QuestionKind = "choice"
+	Consent QuestionKind = "consent"
+	Text    QuestionKind = "text"
+)
+
+// Valid indicates whether the value is a known member of the QuestionKind enum.
+func (e QuestionKind) Valid() bool {
+	switch e {
+	case Choice:
+		return true
+	case Consent:
+		return true
+	case Text:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for QuestionSlot.
+const (
+	AfterContact QuestionSlot = "afterContact"
+	Consents     QuestionSlot = "consents"
+)
+
+// Valid indicates whether the value is a known member of the QuestionSlot enum.
+func (e QuestionSlot) Valid() bool {
+	switch e {
+	case AfterContact:
+		return true
+	case Consents:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessStatus.
 const (
 	NotReady ReadinessStatus = "not_ready"
@@ -140,6 +543,162 @@ func (e ReadinessStatus) Valid() bool {
 	case NotReady:
 		return true
 	case Ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TopupRequestCurrency.
+const (
+	TopupRequestCurrencyEUR TopupRequestCurrency = "EUR"
+	TopupRequestCurrencyRON TopupRequestCurrency = "RON"
+)
+
+// Valid indicates whether the value is a known member of the TopupRequestCurrency enum.
+func (e TopupRequestCurrency) Valid() bool {
+	switch e {
+	case TopupRequestCurrencyEUR:
+		return true
+	case TopupRequestCurrencyRON:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TopupRequestLocale.
+const (
+	En TopupRequestLocale = "en"
+	Ro TopupRequestLocale = "ro"
+)
+
+// Valid indicates whether the value is a known member of the TopupRequestLocale enum.
+func (e TopupRequestLocale) Valid() bool {
+	switch e {
+	case En:
+		return true
+	case Ro:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TopupRequestMethod.
+const (
+	TopupRequestMethodApplePay   TopupRequestMethod = "apple_pay"
+	TopupRequestMethodGooglePay  TopupRequestMethod = "google_pay"
+	TopupRequestMethodHostedCard TopupRequestMethod = "hosted_card"
+)
+
+// Valid indicates whether the value is a known member of the TopupRequestMethod enum.
+func (e TopupRequestMethod) Valid() bool {
+	switch e {
+	case TopupRequestMethodApplePay:
+		return true
+	case TopupRequestMethodGooglePay:
+		return true
+	case TopupRequestMethodHostedCard:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WalletMovementAccount.
+const (
+	FanBalance      WalletMovementAccount = "fan_balance"
+	FanSeasonCredit WalletMovementAccount = "fan_season_credit"
+)
+
+// Valid indicates whether the value is a known member of the WalletMovementAccount enum.
+func (e WalletMovementAccount) Valid() bool {
+	switch e {
+	case FanBalance:
+		return true
+	case FanSeasonCredit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WalletMovementKind.
+const (
+	WalletMovementKindOrderPayment WalletMovementKind = "order_payment"
+	WalletMovementKindReversal     WalletMovementKind = "reversal"
+	WalletMovementKindSeasonClose  WalletMovementKind = "season_close"
+	WalletMovementKindStandPayment WalletMovementKind = "stand_payment"
+	WalletMovementKindTopup        WalletMovementKind = "topup"
+)
+
+// Valid indicates whether the value is a known member of the WalletMovementKind enum.
+func (e WalletMovementKind) Valid() bool {
+	switch e {
+	case WalletMovementKindOrderPayment:
+		return true
+	case WalletMovementKindReversal:
+		return true
+	case WalletMovementKindSeasonClose:
+		return true
+	case WalletMovementKindStandPayment:
+		return true
+	case WalletMovementKindTopup:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetProviderKnobsParamsProvider.
+const (
+	SetProviderKnobsParamsProviderA SetProviderKnobsParamsProvider = "a"
+	SetProviderKnobsParamsProviderB SetProviderKnobsParamsProvider = "b"
+)
+
+// Valid indicates whether the value is a known member of the SetProviderKnobsParamsProvider enum.
+func (e SetProviderKnobsParamsProvider) Valid() bool {
+	switch e {
+	case SetProviderKnobsParamsProviderA:
+		return true
+	case SetProviderKnobsParamsProviderB:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetWalletParamsCurrency.
+const (
+	GetWalletParamsCurrencyEUR GetWalletParamsCurrency = "EUR"
+	GetWalletParamsCurrencyRON GetWalletParamsCurrency = "RON"
+)
+
+// Valid indicates whether the value is a known member of the GetWalletParamsCurrency enum.
+func (e GetWalletParamsCurrency) Valid() bool {
+	switch e {
+	case GetWalletParamsCurrencyEUR:
+		return true
+	case GetWalletParamsCurrencyRON:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreatePayCodeParamsCurrency.
+const (
+	CreatePayCodeParamsCurrencyEUR CreatePayCodeParamsCurrency = "EUR"
+	CreatePayCodeParamsCurrencyRON CreatePayCodeParamsCurrency = "RON"
+)
+
+// Valid indicates whether the value is a known member of the CreatePayCodeParamsCurrency enum.
+func (e CreatePayCodeParamsCurrency) Valid() bool {
+	switch e {
+	case CreatePayCodeParamsCurrencyEUR:
+		return true
+	case CreatePayCodeParamsCurrencyRON:
 		return true
 	default:
 		return false
@@ -181,6 +740,19 @@ type Check struct {
 	Ok   bool   `json:"ok"`
 }
 
+// ClaimRequest defines model for ClaimRequest.
+type ClaimRequest struct {
+	OrderId *openapi_types.UUID `json:"orderId,omitempty"`
+}
+
+// ClaimResult defines model for ClaimResult.
+type ClaimResult struct {
+	Claimed []openapi_types.UUID `json:"claimed"`
+}
+
+// CreateOrderRequest defines model for CreateOrderRequest.
+type CreateOrderRequest = checkout.CreateRequest
+
 // Health defines model for Health.
 type Health struct {
 	Status HealthStatus `json:"status"`
@@ -211,6 +783,47 @@ type IdentityKind string
 // IdentityRole The exact membership role (organiser tokens only).
 type IdentityRole string
 
+// InstalmentOffer defines model for InstalmentOffer.
+type InstalmentOffer struct {
+	// DepositMinor An amount in minor units (bani, cents).
+	DepositMinor Money               `json:"depositMinor"`
+	Payments     []InstalmentPayment `json:"payments"`
+
+	// TotalMinor An amount in minor units (bani, cents).
+	TotalMinor Money `json:"totalMinor"`
+}
+
+// InstalmentPayment defines model for InstalmentPayment.
+type InstalmentPayment struct {
+	// AmountMinor An amount in minor units (bani, cents).
+	AmountMinor Money                   `json:"amountMinor"`
+	DueOn       openapi_types.Date      `json:"dueOn"`
+	GraceUntil  *openapi_types.Date     `json:"graceUntil,omitempty"`
+	N           int                     `json:"n"`
+	State       *InstalmentPaymentState `json:"state,omitempty"`
+}
+
+// InstalmentPaymentState defines model for InstalmentPayment.State.
+type InstalmentPaymentState string
+
+// InstalmentPlan defines model for InstalmentPlan.
+type InstalmentPlan struct {
+	ClockOffsetDays *int `json:"clockOffsetDays,omitempty"`
+
+	// DepositMinor An amount in minor units (bani, cents).
+	DepositMinor   Money               `json:"depositMinor"`
+	Id             string              `json:"id"`
+	Parts          []InstalmentPayment `json:"parts"`
+	SavedCardLabel *string             `json:"savedCardLabel,omitempty"`
+	State          InstalmentPlanState `json:"state"`
+
+	// TotalMinor An amount in minor units (bani, cents).
+	TotalMinor Money `json:"totalMinor"`
+}
+
+// InstalmentPlanState defines model for InstalmentPlan.State.
+type InstalmentPlanState string
+
 // InstanceAvailability defines model for InstanceAvailability.
 type InstanceAvailability struct {
 	InstanceId string                     `json:"instanceId"`
@@ -220,6 +833,181 @@ type InstanceAvailability struct {
 
 // InstanceAvailabilityStatus defines model for InstanceAvailability.Status.
 type InstanceAvailabilityStatus string
+
+// L10n defines model for L10n.
+type L10n struct {
+	En string `json:"en"`
+	Ro string `json:"ro"`
+}
+
+// Money An amount in minor units (bani, cents).
+type Money = int64
+
+// OrderDetails defines model for OrderDetails.
+type OrderDetails = checkout.Details
+
+// OrderLine defines model for OrderLine.
+type OrderLine struct {
+	Instance       *string `json:"instance,omitempty"`
+	LineNo         int     `json:"lineNo"`
+	Name           L10n    `json:"name"`
+	PriceStepIndex *int    `json:"priceStepIndex,omitempty"`
+	ProductId      string  `json:"productId"`
+	Qty            int     `json:"qty"`
+
+	// UnitAllInMinor An amount in minor units (bani, cents).
+	UnitAllInMinor Money `json:"unitAllInMinor"`
+
+	// UnitFaceMinor An amount in minor units (bani, cents).
+	UnitFaceMinor *Money `json:"unitFaceMinor,omitempty"`
+
+	// UnitFanFeeMinor An amount in minor units (bani, cents).
+	UnitFanFeeMinor *Money `json:"unitFanFeeMinor,omitempty"`
+}
+
+// OrderList defines model for OrderList.
+type OrderList struct {
+	Orders []OrderView `json:"orders"`
+}
+
+// OrderView defines model for OrderView.
+type OrderView struct {
+	// Access buyer: the order's own buyer; link: a live resume link (may pay by card, Apple Pay or
+	// Google Pay only); view_link: a guest's order link; expired_link: a resume link after the
+	// hold ended (state only, no personal details).
+	Access     OrderViewAccess    `json:"access"`
+	Answers    map[string]any     `json:"answers"`
+	BuyerEmail *string            `json:"buyerEmail,omitempty"`
+	BuyerKind  OrderViewBuyerKind `json:"buyerKind"`
+	BuyerName  *string            `json:"buyerName,omitempty"`
+
+	// CanPay The caller may pay now (held or payment failed, the hold live, buyer or a live resume link).
+	CanPay       bool              `json:"canPay"`
+	CreatedAt    *time.Time        `json:"createdAt,omitempty"`
+	Currency     OrderViewCurrency `json:"currency"`
+	DetailsGiven bool              `json:"detailsGiven"`
+	EventId      string            `json:"eventId"`
+	EventName    *L10n             `json:"eventName,omitempty"`
+
+	// FaceMinor An amount in minor units (bani, cents).
+	FaceMinor *Money `json:"faceMinor,omitempty"`
+
+	// FanFeeMinor An amount in minor units (bani, cents).
+	FanFeeMinor *Money `json:"fanFeeMinor,omitempty"`
+	History     []struct {
+		At     time.Time `json:"at"`
+		From   *string   `json:"from,omitempty"`
+		Reason *string   `json:"reason,omitempty"`
+		To     string    `json:"to"`
+	} `json:"history"`
+	HoldExpiresAt   time.Time          `json:"holdExpiresAt"`
+	Id              openapi_types.UUID `json:"id"`
+	InstalmentOffer *InstalmentOffer   `json:"instalmentOffer,omitempty"`
+	LastErrorCode   *string            `json:"lastErrorCode,omitempty"`
+	Lines           []OrderLine        `json:"lines"`
+	Locale          *string            `json:"locale,omitempty"`
+	OrganiserId     string             `json:"organiserId"`
+	PaidAt          *time.Time         `json:"paidAt,omitempty"`
+	PayPlan         OrderViewPayPlan   `json:"payPlan"`
+	Payment         *PaymentAttempt    `json:"payment,omitempty"`
+	Plan            *InstalmentPlan    `json:"plan,omitempty"`
+	Questions       []Question         `json:"questions"`
+
+	// ResumeToken The signed resume link token, until the hold deadline (live orders only).
+	ResumeToken *string     `json:"resumeToken,omitempty"`
+	SavedCards  []SavedCard `json:"savedCards"`
+
+	// ServerTime The core's clock, so the timer counts down from the server deadline.
+	ServerTime      time.Time      `json:"serverTime"`
+	SnapshotVersion int            `json:"snapshotVersion"`
+	State           OrderViewState `json:"state"`
+
+	// TotalMinor An amount in minor units (bani, cents).
+	TotalMinor Money `json:"totalMinor"`
+
+	// ViewToken A guest's order-link token (30 days).
+	ViewToken *string `json:"viewToken,omitempty"`
+
+	// Wallet The caller's wallet at this organiser (accounts only).
+	Wallet *struct {
+		// BalanceMinor An amount in minor units (bani, cents).
+		BalanceMinor Money `json:"balanceMinor"`
+
+		// CreditMinor An amount in minor units (bani, cents).
+		CreditMinor Money `json:"creditMinor"`
+	} `json:"wallet,omitempty"`
+}
+
+// OrderViewAccess buyer: the order's own buyer; link: a live resume link (may pay by card, Apple Pay or
+// Google Pay only); view_link: a guest's order link; expired_link: a resume link after the
+// hold ended (state only, no personal details).
+type OrderViewAccess string
+
+// OrderViewBuyerKind defines model for OrderView.BuyerKind.
+type OrderViewBuyerKind string
+
+// OrderViewCurrency defines model for OrderView.Currency.
+type OrderViewCurrency string
+
+// OrderViewPayPlan defines model for OrderView.PayPlan.
+type OrderViewPayPlan string
+
+// OrderViewState defines model for OrderView.State.
+type OrderViewState string
+
+// PayCode defines model for PayCode.
+type PayCode struct {
+	ExpiresAt  time.Time `json:"expiresAt"`
+	PayCode    string    `json:"payCode"`
+	WalletCode string    `json:"walletCode"`
+}
+
+// PayRequest defines model for PayRequest.
+type PayRequest struct {
+	Method PayRequestMethod `json:"method"`
+	Plan   *PayRequestPlan  `json:"plan,omitempty"`
+
+	// ReturnUrl Where the provider page sends the fan back (an origin the core allows).
+	ReturnUrl   *string `json:"returnUrl,omitempty"`
+	SaveCard    *bool   `json:"saveCard,omitempty"`
+	SavedCardId *string `json:"savedCardId,omitempty"`
+}
+
+// PayRequestMethod defines model for PayRequest.Method.
+type PayRequestMethod string
+
+// PayRequestPlan defines model for PayRequest.Plan.
+type PayRequestPlan string
+
+// PaymentAttempt defines model for PaymentAttempt.
+type PaymentAttempt struct {
+	ActionUrl *string `json:"actionUrl,omitempty"`
+
+	// AmountMinor An amount in minor units (bani, cents).
+	AmountMinor Money                  `json:"amountMinor"`
+	ErrorCode   *string                `json:"errorCode,omitempty"`
+	Id          string                 `json:"id"`
+	Method      string                 `json:"method"`
+	Provider    PaymentAttemptProvider `json:"provider"`
+	Purpose     *PaymentAttemptPurpose `json:"purpose,omitempty"`
+	State       PaymentAttemptState    `json:"state"`
+}
+
+// PaymentAttemptProvider defines model for PaymentAttempt.Provider.
+type PaymentAttemptProvider string
+
+// PaymentAttemptPurpose defines model for PaymentAttempt.Purpose.
+type PaymentAttemptPurpose string
+
+// PaymentAttemptState defines model for PaymentAttempt.State.
+type PaymentAttemptState string
+
+// PaymentResult defines model for PaymentResult.
+type PaymentResult struct {
+	// ActionUrl The provider page to open (hosted card, wallet sheet or bank challenge).
+	ActionUrl *string   `json:"actionUrl,omitempty"`
+	Order     OrderView `json:"order"`
+}
 
 // PoolUsage defines model for PoolUsage.
 type PoolUsage struct {
@@ -235,13 +1023,22 @@ type PoolUsage struct {
 
 // Problem defines model for Problem.
 type Problem struct {
-	// Code Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`.
-	Code      string  `json:"code"`
-	Detail    *string `json:"detail,omitempty"`
-	Instance  *string `json:"instance,omitempty"`
-	RequestId string  `json:"requestId"`
-	Status    int     `json:"status"`
-	Title     string  `json:"title"`
+	// Code Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`, or a quotable checkout code such as `EPS-HOLD-SOLD-OUT` (design D-14).
+	Code string `json:"code"`
+
+	// Data Facts the screen needs (the product that sold out, the missing answers, ...).
+	Data     *map[string]any `json:"data,omitempty"`
+	Detail   *string         `json:"detail,omitempty"`
+	Instance *string         `json:"instance,omitempty"`
+
+	// MessageKey The shop label of a checkout code (EPS-PAY-DECLINED → err_pay_declined).
+	MessageKey *string `json:"messageKey,omitempty"`
+	RequestId  string  `json:"requestId"`
+
+	// Retryable Whether trying again can help.
+	Retryable *bool  `json:"retryable,omitempty"`
+	Status    int    `json:"status"`
+	Title     string `json:"title"`
 
 	// Type A URI reference identifying the problem type.
 	Type string `json:"type"`
@@ -265,6 +1062,66 @@ type ProductAvailability struct {
 // ProductAvailabilityStatus defines model for ProductAvailability.Status.
 type ProductAvailabilityStatus string
 
+// ProviderKnobs defines model for ProviderKnobs.
+type ProviderKnobs struct {
+	ChallengeRate   *float32                 `json:"challenge_rate,omitempty"`
+	DeclineRate     *float32                 `json:"decline_rate,omitempty"`
+	FailureRate     *float32                 `json:"failure_rate,omitempty"`
+	LatencyJitterMs *int                     `json:"latency_jitter_ms,omitempty"`
+	LatencyMs       *int                     `json:"latency_ms,omitempty"`
+	Outage          *bool                    `json:"outage,omitempty"`
+	OutageMode      *ProviderKnobsOutageMode `json:"outage_mode,omitempty"`
+
+	// ResetsAt When changed knobs go back to normal by themselves (15 minutes after the last change).
+	ResetsAt        *time.Time `json:"resets_at,omitempty"`
+	TimeoutRate     *float32   `json:"timeout_rate,omitempty"`
+	WebhookDelayMs  *int       `json:"webhook_delay_ms,omitempty"`
+	WebhookDropRate *float32   `json:"webhook_drop_rate,omitempty"`
+}
+
+// ProviderKnobsOutageMode defines model for ProviderKnobs.OutageMode.
+type ProviderKnobsOutageMode string
+
+// ProviderList defines model for ProviderList.
+type ProviderList struct {
+	Preferred ProviderListPreferred `json:"preferred"`
+	Providers []struct {
+		Calls               *int                          `json:"calls,omitempty"`
+		ConsecutiveFailures *int                          `json:"consecutiveFailures,omitempty"`
+		Failures            *int                          `json:"failures,omitempty"`
+		Knobs               *ProviderKnobs                `json:"knobs,omitempty"`
+		OpenedAt            *time.Time                    `json:"openedAt,omitempty"`
+		Provider            ProviderListProvidersProvider `json:"provider"`
+		Reachable           *bool                         `json:"reachable,omitempty"`
+		State               ProviderListProvidersState    `json:"state"`
+	} `json:"providers"`
+}
+
+// ProviderListPreferred defines model for ProviderList.Preferred.
+type ProviderListPreferred string
+
+// ProviderListProvidersProvider defines model for ProviderList.Providers.Provider.
+type ProviderListProvidersProvider string
+
+// ProviderListProvidersState defines model for ProviderList.Providers.State.
+type ProviderListProvidersState string
+
+// Question defines model for Question.
+type Question struct {
+	Id       string       `json:"id"`
+	Kind     QuestionKind `json:"kind"`
+	Label    L10n         `json:"label"`
+	Options  []L10n       `json:"options"`
+	Required bool         `json:"required"`
+	Slot     QuestionSlot `json:"slot"`
+}
+
+// QuestionKind defines model for Question.Kind.
+type QuestionKind string
+
+// QuestionSlot defines model for Question.Slot.
+type QuestionSlot string
+
 // Readiness defines model for Readiness.
 type Readiness struct {
 	Checks []Check         `json:"checks"`
@@ -273,6 +1130,68 @@ type Readiness struct {
 
 // ReadinessStatus defines model for Readiness.Status.
 type ReadinessStatus string
+
+// SavedCard defines model for SavedCard.
+type SavedCard struct {
+	Brand     string     `json:"brand"`
+	CreatedAt *time.Time `json:"createdAt,omitempty"`
+	Id        string     `json:"id"`
+	Label     string     `json:"label"`
+	Provider  string     `json:"provider"`
+}
+
+// SavedCardList defines model for SavedCardList.
+type SavedCardList struct {
+	Cards []SavedCard `json:"cards"`
+}
+
+// SeasonCloseRequest defines model for SeasonCloseRequest.
+type SeasonCloseRequest struct {
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// SeasonCloseResult defines model for SeasonCloseResult.
+type SeasonCloseResult struct {
+	Fans       int   `json:"fans"`
+	TotalMinor int64 `json:"totalMinor"`
+}
+
+// StandPaymentRequest defines model for StandPaymentRequest.
+type StandPaymentRequest struct {
+	AmountMinor int64 `json:"amountMinor"`
+
+	// Code The wallet code the fan shows at the stand.
+	Code  string  `json:"code"`
+	Label *string `json:"label,omitempty"`
+
+	// PayCode The fan's current pay code (2 minutes, single use).
+	PayCode string `json:"payCode"`
+}
+
+// TopupRequest defines model for TopupRequest.
+type TopupRequest struct {
+	AmountMinor int64                `json:"amountMinor"`
+	Currency    TopupRequestCurrency `json:"currency"`
+	Locale      *TopupRequestLocale  `json:"locale,omitempty"`
+	Method      TopupRequestMethod   `json:"method"`
+	ReturnUrl   *string              `json:"returnUrl,omitempty"`
+}
+
+// TopupRequestCurrency defines model for TopupRequest.Currency.
+type TopupRequestCurrency string
+
+// TopupRequestLocale defines model for TopupRequest.Locale.
+type TopupRequestLocale string
+
+// TopupRequestMethod defines model for TopupRequest.Method.
+type TopupRequestMethod string
+
+// TopupResult defines model for TopupResult.
+type TopupResult struct {
+	ActionUrl *string        `json:"actionUrl,omitempty"`
+	Attempt   PaymentAttempt `json:"attempt"`
+	Wallet    *Wallet        `json:"wallet,omitempty"`
+}
 
 // Version defines model for Version.
 type Version struct {
@@ -291,14 +1210,180 @@ type Version struct {
 	Service string `json:"service"`
 }
 
+// Wallet defines model for Wallet.
+type Wallet struct {
+	// BalanceMinor An amount in minor units (bani, cents).
+	BalanceMinor Money `json:"balanceMinor"`
+
+	// Code The wallet code a stand types in.
+	Code            string     `json:"code"`
+	CreditExpiresAt *time.Time `json:"creditExpiresAt,omitempty"`
+
+	// CreditMinor An amount in minor units (bani, cents).
+	CreditMinor   Money            `json:"creditMinor"`
+	Currency      string           `json:"currency"`
+	History       []WalletMovement `json:"history"`
+	OrganiserId   string           `json:"organiserId"`
+	OrganiserName *string          `json:"organiserName,omitempty"`
+}
+
+// WalletList defines model for WalletList.
+type WalletList struct {
+	Wallets []Wallet `json:"wallets"`
+}
+
+// WalletMovement defines model for WalletMovement.
+type WalletMovement struct {
+	Account WalletMovementAccount `json:"account"`
+
+	// AmountMinor An amount in minor units (bani, cents).
+	AmountMinor Money              `json:"amountMinor"`
+	At          time.Time          `json:"at"`
+	Kind        WalletMovementKind `json:"kind"`
+	Memo        *string            `json:"memo,omitempty"`
+}
+
+// WalletMovementAccount defines model for WalletMovement.Account.
+type WalletMovementAccount string
+
+// WalletMovementKind defines model for WalletMovement.Kind.
+type WalletMovementKind string
+
 // EventId defines model for EventId.
 type EventId = openapi_types.UUID
+
+// IdempotencyKey defines model for IdempotencyKey.
+type IdempotencyKey = string
+
+// IdempotencyKeyRequired defines model for IdempotencyKeyRequired.
+type IdempotencyKeyRequired = string
+
+// OrderId defines model for OrderId.
+type OrderId = openapi_types.UUID
+
+// OrderToken defines model for OrderToken.
+type OrderToken = string
+
+// OrganiserId defines model for OrganiserId.
+type OrganiserId = openapi_types.UUID
+
+// OrganiserQuery defines model for OrganiserQuery.
+type OrganiserQuery = openapi_types.UUID
 
 // GetReadyzParams defines parameters for GetReadyz.
 type GetReadyzParams struct {
 	// Verbose Include every check, not only the failing ones.
 	Verbose *bool `form:"verbose,omitempty" json:"verbose,omitempty"`
 }
+
+// SetProviderKnobsParamsProvider defines parameters for SetProviderKnobs.
+type SetProviderKnobsParamsProvider string
+
+// StandPaymentParams defines parameters for StandPayment.
+type StandPaymentParams struct {
+	// IdempotencyKey Created when the fan presses the button; reused on retry and double click.
+	IdempotencyKey IdempotencyKeyRequired `json:"Idempotency-Key"`
+}
+
+// CreateOrderParams defines parameters for CreateOrder.
+type CreateOrderParams struct {
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// GetOrderParams defines parameters for GetOrder.
+type GetOrderParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+}
+
+// CancelOrderParams defines parameters for CancelOrder.
+type CancelOrderParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+}
+
+// SetOrderDetailsParams defines parameters for SetOrderDetails.
+type SetOrderDetailsParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+}
+
+// PayOverdueInstalmentParams defines parameters for PayOverdueInstalment.
+type PayOverdueInstalmentParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+}
+
+// SimulateNextInstalmentParams defines parameters for SimulateNextInstalment.
+type SimulateNextInstalmentParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+}
+
+// PayOrderParams defines parameters for PayOrder.
+type PayOrderParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+
+	// IdempotencyKey Created when the fan presses the button; reused on retry and double click.
+	IdempotencyKey IdempotencyKeyRequired `json:"Idempotency-Key"`
+}
+
+// ListSavedCardsParams defines parameters for ListSavedCards.
+type ListSavedCardsParams struct {
+	OrganiserId OrganiserQuery `form:"organiserId" json:"organiserId"`
+}
+
+// DeleteSavedCardParams defines parameters for DeleteSavedCard.
+type DeleteSavedCardParams struct {
+	OrganiserId OrganiserQuery `form:"organiserId" json:"organiserId"`
+}
+
+// GetWalletParams defines parameters for GetWallet.
+type GetWalletParams struct {
+	Currency *GetWalletParamsCurrency `form:"currency,omitempty" json:"currency,omitempty"`
+}
+
+// GetWalletParamsCurrency defines parameters for GetWallet.
+type GetWalletParamsCurrency string
+
+// CreatePayCodeParams defines parameters for CreatePayCode.
+type CreatePayCodeParams struct {
+	Currency *CreatePayCodeParamsCurrency `form:"currency,omitempty" json:"currency,omitempty"`
+}
+
+// CreatePayCodeParamsCurrency defines parameters for CreatePayCode.
+type CreatePayCodeParamsCurrency string
+
+// TopUpWalletParams defines parameters for TopUpWallet.
+type TopUpWalletParams struct {
+	// IdempotencyKey Created when the fan presses the button; reused on retry and double click.
+	IdempotencyKey IdempotencyKeyRequired `json:"Idempotency-Key"`
+}
+
+// SetProviderKnobsJSONRequestBody defines body for SetProviderKnobs for application/json ContentType.
+type SetProviderKnobsJSONRequestBody = ProviderKnobs
+
+// CloseSeasonJSONRequestBody defines body for CloseSeason for application/json ContentType.
+type CloseSeasonJSONRequestBody = SeasonCloseRequest
+
+// StandPaymentJSONRequestBody defines body for StandPayment for application/json ContentType.
+type StandPaymentJSONRequestBody = StandPaymentRequest
+
+// ClaimOrdersJSONRequestBody defines body for ClaimOrders for application/json ContentType.
+type ClaimOrdersJSONRequestBody = ClaimRequest
+
+// CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
+type CreateOrderJSONRequestBody = CreateOrderRequest
+
+// SetOrderDetailsJSONRequestBody defines body for SetOrderDetails for application/json ContentType.
+type SetOrderDetailsJSONRequestBody = OrderDetails
+
+// PayOrderJSONRequestBody defines body for PayOrder for application/json ContentType.
+type PayOrderJSONRequestBody = PayRequest
+
+// TopUpWalletJSONRequestBody defines body for TopUpWallet for application/json ContentType.
+type TopUpWalletJSONRequestBody = TopupRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -314,9 +1399,69 @@ type ServerInterface interface {
 	// ActivateSnapshot Make a published snapshot version the one the core serves
 	// (POST /v1/organiser/events/{eventId}/snapshots/{version}/activate)
 	ActivateSnapshot(w http.ResponseWriter, r *http.Request, eventId EventId, version int)
+	// GetPaymentProviders The organiser's simulated providers - breaker state and live knobs
+	// (GET /v1/organiser/payments/providers)
+	GetPaymentProviders(w http.ResponseWriter, r *http.Request)
+	// SetProviderKnobs Change a simulated provider's knobs for this organiser (owner or admin)
+	// (PUT /v1/organiser/payments/providers/{provider}/knobs)
+	SetProviderKnobs(w http.ResponseWriter, r *http.Request, provider SetProviderKnobsParamsProvider)
+	// CloseSeason Move every fan's unspent balance to next-season credit (owner or admin)
+	// (POST /v1/organiser/wallet/season-close)
+	CloseSeason(w http.ResponseWriter, r *http.Request)
+	// StandPayment Charge a fan's wallet at a stand (simulated)
+	// (POST /v1/organiser/wallet/stand-payments)
+	StandPayment(w http.ResponseWriter, r *http.Request, params StandPaymentParams)
 	// GetAvailability Public availability of an event's products
 	// (GET /v1/public/events/{eventId}/availability)
 	GetAvailability(w http.ResponseWriter, r *http.Request, eventId EventId)
+	// ClaimOrders Add guest orders placed with the caller's verified email to the account
+	// (POST /v1/shop/claims)
+	ClaimOrders(w http.ResponseWriter, r *http.Request)
+	// ListMyOrders The caller's orders across organisers, newest first
+	// (GET /v1/shop/orders)
+	ListMyOrders(w http.ResponseWriter, r *http.Request)
+	// CreateOrder Hold tickets and create an order
+	// (POST /v1/shop/orders)
+	CreateOrder(w http.ResponseWriter, r *http.Request, params CreateOrderParams)
+	// GetOrder An order's true state
+	// (GET /v1/shop/orders/{orderId})
+	GetOrder(w http.ResponseWriter, r *http.Request, orderId OrderId, params GetOrderParams)
+	// CancelOrder Cancel a held or payment-failed order (stock is freed at once)
+	// (POST /v1/shop/orders/{orderId}/cancel)
+	CancelOrder(w http.ResponseWriter, r *http.Request, orderId OrderId, params CancelOrderParams)
+	// SetOrderDetails Contact details and answers to the checkout questions
+	// (PUT /v1/shop/orders/{orderId}/details)
+	SetOrderDetails(w http.ResponseWriter, r *http.Request, orderId OrderId, params SetOrderDetailsParams)
+	// PayOverdueInstalment Pay an overdue instalment now with the plan's saved card
+	// (POST /v1/shop/orders/{orderId}/instalments/pay-overdue)
+	PayOverdueInstalment(w http.ResponseWriter, r *http.Request, orderId OrderId, params PayOverdueInstalmentParams)
+	// SimulateNextInstalment Demo action - move the plan's clock to its next due date
+	// (POST /v1/shop/orders/{orderId}/instalments/simulate-next)
+	SimulateNextInstalment(w http.ResponseWriter, r *http.Request, orderId OrderId, params SimulateNextInstalmentParams)
+	// PayOrder Pay an order (one Pay press)
+	// (POST /v1/shop/orders/{orderId}/payments)
+	PayOrder(w http.ResponseWriter, r *http.Request, orderId OrderId, params PayOrderParams)
+	// ListSavedCards The caller's provider-saved cards for one organiser
+	// (GET /v1/shop/saved-cards)
+	ListSavedCards(w http.ResponseWriter, r *http.Request, params ListSavedCardsParams)
+	// DeleteSavedCard Delete a saved card and revoke its provider token
+	// (DELETE /v1/shop/saved-cards/{cardId})
+	DeleteSavedCard(w http.ResponseWriter, r *http.Request, cardId openapi_types.UUID, params DeleteSavedCardParams)
+	// ListWallets The caller's EPS Wallet balances, one per organiser (simulated money)
+	// (GET /v1/shop/wallets)
+	ListWallets(w http.ResponseWriter, r *http.Request)
+	// GetWallet The caller's wallet at one organiser, with its history
+	// (GET /v1/shop/wallets/{organiserId})
+	GetWallet(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, params GetWalletParams)
+	// CreatePayCode A 6-digit code for one stand payment within 2 minutes
+	// (POST /v1/shop/wallets/{organiserId}/pay-code)
+	CreatePayCode(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, params CreatePayCodeParams)
+	// TopUpWallet Top up the wallet through the simulated providers
+	// (POST /v1/shop/wallets/{organiserId}/topups)
+	TopUpWallet(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, params TopUpWalletParams)
+	// GetTopup A top-up's state
+	// (GET /v1/shop/wallets/{organiserId}/topups/{attemptId})
+	GetTopup(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, attemptId openapi_types.UUID)
 	// GetVersion Build and schema version of this service
 	// (GET /v1/version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
@@ -442,6 +1587,105 @@ func (siw *ServerInterfaceWrapper) ActivateSnapshot(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// GetPaymentProviders operation middleware
+func (siw *ServerInterfaceWrapper) GetPaymentProviders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPaymentProviders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetProviderKnobs operation middleware
+func (siw *ServerInterfaceWrapper) SetProviderKnobs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "provider" -------------
+	var provider SetProviderKnobsParamsProvider
+
+	err = runtime.BindStyledParameterWithOptions("simple", "provider", r.PathValue("provider"), &provider, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "provider", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetProviderKnobs(w, r, provider)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CloseSeason operation middleware
+func (siw *ServerInterfaceWrapper) CloseSeason(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CloseSeason(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StandPayment operation middleware
+func (siw *ServerInterfaceWrapper) StandPayment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params StandPaymentParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyRequired
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StandPayment(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetAvailability operation middleware
 func (siw *ServerInterfaceWrapper) GetAvailability(w http.ResponseWriter, r *http.Request) {
 
@@ -459,6 +1703,660 @@ func (siw *ServerInterfaceWrapper) GetAvailability(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetAvailability(w, r, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ClaimOrders operation middleware
+func (siw *ServerInterfaceWrapper) ClaimOrders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ClaimOrders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMyOrders operation middleware
+func (siw *ServerInterfaceWrapper) ListMyOrders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMyOrders(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateOrder operation middleware
+func (siw *ServerInterfaceWrapper) CreateOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateOrderParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateOrder(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetOrder operation middleware
+func (siw *ServerInterfaceWrapper) GetOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetOrderParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetOrder(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelOrder operation middleware
+func (siw *ServerInterfaceWrapper) CancelOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelOrderParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelOrder(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetOrderDetails operation middleware
+func (siw *ServerInterfaceWrapper) SetOrderDetails(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetOrderDetailsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetOrderDetails(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PayOverdueInstalment operation middleware
+func (siw *ServerInterfaceWrapper) PayOverdueInstalment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PayOverdueInstalmentParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PayOverdueInstalment(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SimulateNextInstalment operation middleware
+func (siw *ServerInterfaceWrapper) SimulateNextInstalment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SimulateNextInstalmentParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SimulateNextInstalment(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PayOrder operation middleware
+func (siw *ServerInterfaceWrapper) PayOrder(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PayOrderParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyRequired
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PayOrder(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSavedCards operation middleware
+func (siw *ServerInterfaceWrapper) ListSavedCards(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSavedCardsParams
+
+	// ------------- Required query parameter "organiserId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "organiserId", r.URL.Query(), &params.OrganiserId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "organiserId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organiserId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSavedCards(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSavedCard operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSavedCard(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "cardId" -------------
+	var cardId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "cardId", r.PathValue("cardId"), &cardId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cardId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteSavedCardParams
+
+	// ------------- Required query parameter "organiserId" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "organiserId", r.URL.Query(), &params.OrganiserId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "organiserId"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organiserId", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSavedCard(w, r, cardId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListWallets operation middleware
+func (siw *ServerInterfaceWrapper) ListWallets(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListWallets(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWallet operation middleware
+func (siw *ServerInterfaceWrapper) GetWallet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "organiserId" -------------
+	var organiserId OrganiserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organiserId", r.PathValue("organiserId"), &organiserId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organiserId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetWalletParams
+
+	// ------------- Optional query parameter "currency" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "currency", r.URL.Query(), &params.Currency, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "currency"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "currency", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWallet(w, r, organiserId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePayCode operation middleware
+func (siw *ServerInterfaceWrapper) CreatePayCode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "organiserId" -------------
+	var organiserId OrganiserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organiserId", r.PathValue("organiserId"), &organiserId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organiserId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreatePayCodeParams
+
+	// ------------- Optional query parameter "currency" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "currency", r.URL.Query(), &params.Currency, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "currency"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "currency", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePayCode(w, r, organiserId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TopUpWallet operation middleware
+func (siw *ServerInterfaceWrapper) TopUpWallet(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "organiserId" -------------
+	var organiserId OrganiserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organiserId", r.PathValue("organiserId"), &organiserId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organiserId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params TopUpWalletParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyRequired
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TopUpWallet(w, r, organiserId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTopup operation middleware
+func (siw *ServerInterfaceWrapper) GetTopup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "organiserId" -------------
+	var organiserId OrganiserId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "organiserId", r.PathValue("organiserId"), &organiserId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "organiserId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "attemptId" -------------
+	var attemptId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "attemptId", r.PathValue("attemptId"), &attemptId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "attemptId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTopup(w, r, organiserId, attemptId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -623,6 +2521,26 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/events/{eventId}/snapshots/{version}/activate", wrapper.ActivateSnapshot)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/organiser/events/{eventId}/pool-usage", wrapper.GetPoolUsage)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/public/events/{eventId}/availability", wrapper.GetAvailability)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/shop/orders", wrapper.ListMyOrders)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/orders", wrapper.CreateOrder)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/shop/orders/{orderId}", wrapper.GetOrder)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/shop/orders/{orderId}/details", wrapper.SetOrderDetails)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/orders/{orderId}/payments", wrapper.PayOrder)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/orders/{orderId}/cancel", wrapper.CancelOrder)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/orders/{orderId}/instalments/simulate-next", wrapper.SimulateNextInstalment)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/orders/{orderId}/instalments/pay-overdue", wrapper.PayOverdueInstalment)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/claims", wrapper.ClaimOrders)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/shop/saved-cards", wrapper.ListSavedCards)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/shop/saved-cards/{cardId}", wrapper.DeleteSavedCard)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/shop/wallets", wrapper.ListWallets)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/shop/wallets/{organiserId}", wrapper.GetWallet)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/wallets/{organiserId}/topups", wrapper.TopUpWallet)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/shop/wallets/{organiserId}/topups/{attemptId}", wrapper.GetTopup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/organiser/payments/providers", wrapper.GetPaymentProviders)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/organiser/payments/providers/{provider}/knobs", wrapper.SetProviderKnobs)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/wallets/{organiserId}/pay-code", wrapper.CreatePayCode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/wallet/stand-payments", wrapper.StandPayment)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/wallet/season-close", wrapper.CloseSeason)
 
 	return m
 }
@@ -870,6 +2788,163 @@ func (response ActivateSnapshotdefaultApplicationProblemPlusJSONResponse) VisitA
 	return err
 }
 
+type GetPaymentProvidersRequestObject struct {
+}
+
+type GetPaymentProvidersResponseObject interface {
+	VisitGetPaymentProvidersResponse(w http.ResponseWriter) error
+}
+
+type GetPaymentProviders200JSONResponse ProviderList
+
+func (response GetPaymentProviders200JSONResponse) VisitGetPaymentProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPaymentProvidersdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetPaymentProvidersdefaultApplicationProblemPlusJSONResponse) VisitGetPaymentProvidersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProviderKnobsRequestObject struct {
+	Provider SetProviderKnobsParamsProvider `json:"provider"`
+	Body     *SetProviderKnobsJSONRequestBody
+}
+
+type SetProviderKnobsResponseObject interface {
+	VisitSetProviderKnobsResponse(w http.ResponseWriter) error
+}
+
+type SetProviderKnobs200JSONResponse ProviderList
+
+func (response SetProviderKnobs200JSONResponse) VisitSetProviderKnobsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetProviderKnobsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SetProviderKnobsdefaultApplicationProblemPlusJSONResponse) VisitSetProviderKnobsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CloseSeasonRequestObject struct {
+	Body *CloseSeasonJSONRequestBody
+}
+
+type CloseSeasonResponseObject interface {
+	VisitCloseSeasonResponse(w http.ResponseWriter) error
+}
+
+type CloseSeason200JSONResponse SeasonCloseResult
+
+func (response CloseSeason200JSONResponse) VisitCloseSeasonResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CloseSeasondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CloseSeasondefaultApplicationProblemPlusJSONResponse) VisitCloseSeasonResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StandPaymentRequestObject struct {
+	Params StandPaymentParams
+	Body   *StandPaymentJSONRequestBody
+}
+
+type StandPaymentResponseObject interface {
+	VisitStandPaymentResponse(w http.ResponseWriter) error
+}
+
+type StandPayment200JSONResponse Wallet
+
+func (response StandPayment200JSONResponse) VisitStandPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StandPaymentdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response StandPaymentdefaultApplicationProblemPlusJSONResponse) VisitStandPaymentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetAvailabilityRequestObject struct {
 	EventId EventId `json:"eventId"`
 }
@@ -930,6 +3005,651 @@ type GetAvailabilitydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetAvailabilitydefaultApplicationProblemPlusJSONResponse) VisitGetAvailabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimOrdersRequestObject struct {
+	Body *ClaimOrdersJSONRequestBody
+}
+
+type ClaimOrdersResponseObject interface {
+	VisitClaimOrdersResponse(w http.ResponseWriter) error
+}
+
+type ClaimOrders200JSONResponse ClaimResult
+
+func (response ClaimOrders200JSONResponse) VisitClaimOrdersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimOrdersdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ClaimOrdersdefaultApplicationProblemPlusJSONResponse) VisitClaimOrdersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMyOrdersRequestObject struct {
+}
+
+type ListMyOrdersResponseObject interface {
+	VisitListMyOrdersResponse(w http.ResponseWriter) error
+}
+
+type ListMyOrders200JSONResponse OrderList
+
+func (response ListMyOrders200JSONResponse) VisitListMyOrdersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMyOrdersdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListMyOrdersdefaultApplicationProblemPlusJSONResponse) VisitListMyOrdersResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrderRequestObject struct {
+	Params CreateOrderParams
+	Body   *CreateOrderJSONRequestBody
+}
+
+type CreateOrderResponseObject interface {
+	VisitCreateOrderResponse(w http.ResponseWriter) error
+}
+
+type CreateOrder200JSONResponse OrderView
+
+func (response CreateOrder200JSONResponse) VisitCreateOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrder201JSONResponse OrderView
+
+func (response CreateOrder201JSONResponse) VisitCreateOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateOrderdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateOrderdefaultApplicationProblemPlusJSONResponse) VisitCreateOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOrderRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  GetOrderParams
+}
+
+type GetOrderResponseObject interface {
+	VisitGetOrderResponse(w http.ResponseWriter) error
+}
+
+type GetOrder200JSONResponse OrderView
+
+func (response GetOrder200JSONResponse) VisitGetOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetOrderdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetOrderdefaultApplicationProblemPlusJSONResponse) VisitGetOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelOrderRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  CancelOrderParams
+}
+
+type CancelOrderResponseObject interface {
+	VisitCancelOrderResponse(w http.ResponseWriter) error
+}
+
+type CancelOrder200JSONResponse OrderView
+
+func (response CancelOrder200JSONResponse) VisitCancelOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelOrderdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CancelOrderdefaultApplicationProblemPlusJSONResponse) VisitCancelOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetOrderDetailsRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  SetOrderDetailsParams
+	Body    *SetOrderDetailsJSONRequestBody
+}
+
+type SetOrderDetailsResponseObject interface {
+	VisitSetOrderDetailsResponse(w http.ResponseWriter) error
+}
+
+type SetOrderDetails200JSONResponse OrderView
+
+func (response SetOrderDetails200JSONResponse) VisitSetOrderDetailsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetOrderDetailsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SetOrderDetailsdefaultApplicationProblemPlusJSONResponse) VisitSetOrderDetailsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayOverdueInstalmentRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  PayOverdueInstalmentParams
+}
+
+type PayOverdueInstalmentResponseObject interface {
+	VisitPayOverdueInstalmentResponse(w http.ResponseWriter) error
+}
+
+type PayOverdueInstalment200JSONResponse OrderView
+
+func (response PayOverdueInstalment200JSONResponse) VisitPayOverdueInstalmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayOverdueInstalmentdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PayOverdueInstalmentdefaultApplicationProblemPlusJSONResponse) VisitPayOverdueInstalmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SimulateNextInstalmentRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  SimulateNextInstalmentParams
+}
+
+type SimulateNextInstalmentResponseObject interface {
+	VisitSimulateNextInstalmentResponse(w http.ResponseWriter) error
+}
+
+type SimulateNextInstalment200JSONResponse OrderView
+
+func (response SimulateNextInstalment200JSONResponse) VisitSimulateNextInstalmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SimulateNextInstalmentdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SimulateNextInstalmentdefaultApplicationProblemPlusJSONResponse) VisitSimulateNextInstalmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayOrderRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  PayOrderParams
+	Body    *PayOrderJSONRequestBody
+}
+
+type PayOrderResponseObject interface {
+	VisitPayOrderResponse(w http.ResponseWriter) error
+}
+
+type PayOrder200JSONResponse PaymentResult
+
+func (response PayOrder200JSONResponse) VisitPayOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PayOrderdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PayOrderdefaultApplicationProblemPlusJSONResponse) VisitPayOrderResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSavedCardsRequestObject struct {
+	Params ListSavedCardsParams
+}
+
+type ListSavedCardsResponseObject interface {
+	VisitListSavedCardsResponse(w http.ResponseWriter) error
+}
+
+type ListSavedCards200JSONResponse SavedCardList
+
+func (response ListSavedCards200JSONResponse) VisitListSavedCardsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSavedCardsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListSavedCardsdefaultApplicationProblemPlusJSONResponse) VisitListSavedCardsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteSavedCardRequestObject struct {
+	CardId openapi_types.UUID `json:"cardId"`
+	Params DeleteSavedCardParams
+}
+
+type DeleteSavedCardResponseObject interface {
+	VisitDeleteSavedCardResponse(w http.ResponseWriter) error
+}
+
+type DeleteSavedCard204Response struct {
+}
+
+func (response DeleteSavedCard204Response) VisitDeleteSavedCardResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteSavedCarddefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteSavedCarddefaultApplicationProblemPlusJSONResponse) VisitDeleteSavedCardResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWalletsRequestObject struct {
+}
+
+type ListWalletsResponseObject interface {
+	VisitListWalletsResponse(w http.ResponseWriter) error
+}
+
+type ListWallets200JSONResponse WalletList
+
+func (response ListWallets200JSONResponse) VisitListWalletsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListWalletsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListWalletsdefaultApplicationProblemPlusJSONResponse) VisitListWalletsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWalletRequestObject struct {
+	OrganiserId OrganiserId `json:"organiserId"`
+	Params      GetWalletParams
+}
+
+type GetWalletResponseObject interface {
+	VisitGetWalletResponse(w http.ResponseWriter) error
+}
+
+type GetWallet200JSONResponse Wallet
+
+func (response GetWallet200JSONResponse) VisitGetWalletResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetWalletdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetWalletdefaultApplicationProblemPlusJSONResponse) VisitGetWalletResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePayCodeRequestObject struct {
+	OrganiserId OrganiserId `json:"organiserId"`
+	Params      CreatePayCodeParams
+}
+
+type CreatePayCodeResponseObject interface {
+	VisitCreatePayCodeResponse(w http.ResponseWriter) error
+}
+
+type CreatePayCode200JSONResponse PayCode
+
+func (response CreatePayCode200JSONResponse) VisitCreatePayCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePayCodedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreatePayCodedefaultApplicationProblemPlusJSONResponse) VisitCreatePayCodeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TopUpWalletRequestObject struct {
+	OrganiserId OrganiserId `json:"organiserId"`
+	Params      TopUpWalletParams
+	Body        *TopUpWalletJSONRequestBody
+}
+
+type TopUpWalletResponseObject interface {
+	VisitTopUpWalletResponse(w http.ResponseWriter) error
+}
+
+type TopUpWallet200JSONResponse TopupResult
+
+func (response TopUpWallet200JSONResponse) VisitTopUpWalletResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TopUpWalletdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response TopUpWalletdefaultApplicationProblemPlusJSONResponse) VisitTopUpWalletResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTopupRequestObject struct {
+	OrganiserId OrganiserId        `json:"organiserId"`
+	AttemptId   openapi_types.UUID `json:"attemptId"`
+}
+
+type GetTopupResponseObject interface {
+	VisitGetTopupResponse(w http.ResponseWriter) error
+}
+
+type GetTopup200JSONResponse TopupResult
+
+func (response GetTopup200JSONResponse) VisitGetTopupResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTopupdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetTopupdefaultApplicationProblemPlusJSONResponse) VisitGetTopupResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -1047,9 +3767,69 @@ type StrictServerInterface interface {
 	// ActivateSnapshot Make a published snapshot version the one the core serves
 	// (POST /v1/organiser/events/{eventId}/snapshots/{version}/activate)
 	ActivateSnapshot(ctx context.Context, request ActivateSnapshotRequestObject) (ActivateSnapshotResponseObject, error)
+	// GetPaymentProviders The organiser's simulated providers - breaker state and live knobs
+	// (GET /v1/organiser/payments/providers)
+	GetPaymentProviders(ctx context.Context, request GetPaymentProvidersRequestObject) (GetPaymentProvidersResponseObject, error)
+	// SetProviderKnobs Change a simulated provider's knobs for this organiser (owner or admin)
+	// (PUT /v1/organiser/payments/providers/{provider}/knobs)
+	SetProviderKnobs(ctx context.Context, request SetProviderKnobsRequestObject) (SetProviderKnobsResponseObject, error)
+	// CloseSeason Move every fan's unspent balance to next-season credit (owner or admin)
+	// (POST /v1/organiser/wallet/season-close)
+	CloseSeason(ctx context.Context, request CloseSeasonRequestObject) (CloseSeasonResponseObject, error)
+	// StandPayment Charge a fan's wallet at a stand (simulated)
+	// (POST /v1/organiser/wallet/stand-payments)
+	StandPayment(ctx context.Context, request StandPaymentRequestObject) (StandPaymentResponseObject, error)
 	// GetAvailability Public availability of an event's products
 	// (GET /v1/public/events/{eventId}/availability)
 	GetAvailability(ctx context.Context, request GetAvailabilityRequestObject) (GetAvailabilityResponseObject, error)
+	// ClaimOrders Add guest orders placed with the caller's verified email to the account
+	// (POST /v1/shop/claims)
+	ClaimOrders(ctx context.Context, request ClaimOrdersRequestObject) (ClaimOrdersResponseObject, error)
+	// ListMyOrders The caller's orders across organisers, newest first
+	// (GET /v1/shop/orders)
+	ListMyOrders(ctx context.Context, request ListMyOrdersRequestObject) (ListMyOrdersResponseObject, error)
+	// CreateOrder Hold tickets and create an order
+	// (POST /v1/shop/orders)
+	CreateOrder(ctx context.Context, request CreateOrderRequestObject) (CreateOrderResponseObject, error)
+	// GetOrder An order's true state
+	// (GET /v1/shop/orders/{orderId})
+	GetOrder(ctx context.Context, request GetOrderRequestObject) (GetOrderResponseObject, error)
+	// CancelOrder Cancel a held or payment-failed order (stock is freed at once)
+	// (POST /v1/shop/orders/{orderId}/cancel)
+	CancelOrder(ctx context.Context, request CancelOrderRequestObject) (CancelOrderResponseObject, error)
+	// SetOrderDetails Contact details and answers to the checkout questions
+	// (PUT /v1/shop/orders/{orderId}/details)
+	SetOrderDetails(ctx context.Context, request SetOrderDetailsRequestObject) (SetOrderDetailsResponseObject, error)
+	// PayOverdueInstalment Pay an overdue instalment now with the plan's saved card
+	// (POST /v1/shop/orders/{orderId}/instalments/pay-overdue)
+	PayOverdueInstalment(ctx context.Context, request PayOverdueInstalmentRequestObject) (PayOverdueInstalmentResponseObject, error)
+	// SimulateNextInstalment Demo action - move the plan's clock to its next due date
+	// (POST /v1/shop/orders/{orderId}/instalments/simulate-next)
+	SimulateNextInstalment(ctx context.Context, request SimulateNextInstalmentRequestObject) (SimulateNextInstalmentResponseObject, error)
+	// PayOrder Pay an order (one Pay press)
+	// (POST /v1/shop/orders/{orderId}/payments)
+	PayOrder(ctx context.Context, request PayOrderRequestObject) (PayOrderResponseObject, error)
+	// ListSavedCards The caller's provider-saved cards for one organiser
+	// (GET /v1/shop/saved-cards)
+	ListSavedCards(ctx context.Context, request ListSavedCardsRequestObject) (ListSavedCardsResponseObject, error)
+	// DeleteSavedCard Delete a saved card and revoke its provider token
+	// (DELETE /v1/shop/saved-cards/{cardId})
+	DeleteSavedCard(ctx context.Context, request DeleteSavedCardRequestObject) (DeleteSavedCardResponseObject, error)
+	// ListWallets The caller's EPS Wallet balances, one per organiser (simulated money)
+	// (GET /v1/shop/wallets)
+	ListWallets(ctx context.Context, request ListWalletsRequestObject) (ListWalletsResponseObject, error)
+	// GetWallet The caller's wallet at one organiser, with its history
+	// (GET /v1/shop/wallets/{organiserId})
+	GetWallet(ctx context.Context, request GetWalletRequestObject) (GetWalletResponseObject, error)
+	// CreatePayCode A 6-digit code for one stand payment within 2 minutes
+	// (POST /v1/shop/wallets/{organiserId}/pay-code)
+	CreatePayCode(ctx context.Context, request CreatePayCodeRequestObject) (CreatePayCodeResponseObject, error)
+	// TopUpWallet Top up the wallet through the simulated providers
+	// (POST /v1/shop/wallets/{organiserId}/topups)
+	TopUpWallet(ctx context.Context, request TopUpWalletRequestObject) (TopUpWalletResponseObject, error)
+	// GetTopup A top-up's state
+	// (GET /v1/shop/wallets/{organiserId}/topups/{attemptId})
+	GetTopup(ctx context.Context, request GetTopupRequestObject) (GetTopupResponseObject, error)
 	// GetVersion Build and schema version of this service
 	// (GET /v1/version)
 	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
@@ -1203,6 +3983,127 @@ func (sh *strictHandler) ActivateSnapshot(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// GetPaymentProviders operation middleware
+func (sh *strictHandler) GetPaymentProviders(w http.ResponseWriter, r *http.Request) {
+	var request GetPaymentProvidersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetPaymentProviders(ctx, request.(GetPaymentProvidersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPaymentProviders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPaymentProvidersResponseObject); ok {
+		if err := validResponse.VisitGetPaymentProvidersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetProviderKnobs operation middleware
+func (sh *strictHandler) SetProviderKnobs(w http.ResponseWriter, r *http.Request, provider SetProviderKnobsParamsProvider) {
+	var request SetProviderKnobsRequestObject
+
+	request.Provider = provider
+
+	var body SetProviderKnobsJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.SetProviderKnobs(ctx, request.(SetProviderKnobsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetProviderKnobs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetProviderKnobsResponseObject); ok {
+		if err := validResponse.VisitSetProviderKnobsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CloseSeason operation middleware
+func (sh *strictHandler) CloseSeason(w http.ResponseWriter, r *http.Request) {
+	var request CloseSeasonRequestObject
+
+	var body CloseSeasonJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.CloseSeason(ctx, request.(CloseSeasonRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CloseSeason")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CloseSeasonResponseObject); ok {
+		if err := validResponse.VisitCloseSeasonResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StandPayment operation middleware
+func (sh *strictHandler) StandPayment(w http.ResponseWriter, r *http.Request, params StandPaymentParams) {
+	var request StandPaymentRequestObject
+
+	request.Params = params
+
+	var body StandPaymentJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.StandPayment(ctx, request.(StandPaymentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StandPayment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StandPaymentResponseObject); ok {
+		if err := validResponse.VisitStandPaymentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetAvailability operation middleware
 func (sh *strictHandler) GetAvailability(w http.ResponseWriter, r *http.Request, eventId EventId) {
 	var request GetAvailabilityRequestObject
@@ -1222,6 +4123,462 @@ func (sh *strictHandler) GetAvailability(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetAvailabilityResponseObject); ok {
 		if err := validResponse.VisitGetAvailabilityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ClaimOrders operation middleware
+func (sh *strictHandler) ClaimOrders(w http.ResponseWriter, r *http.Request) {
+	var request ClaimOrdersRequestObject
+
+	var body ClaimOrdersJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ClaimOrders(ctx, request.(ClaimOrdersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ClaimOrders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ClaimOrdersResponseObject); ok {
+		if err := validResponse.VisitClaimOrdersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMyOrders operation middleware
+func (sh *strictHandler) ListMyOrders(w http.ResponseWriter, r *http.Request) {
+	var request ListMyOrdersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListMyOrders(ctx, request.(ListMyOrdersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMyOrders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMyOrdersResponseObject); ok {
+		if err := validResponse.VisitListMyOrdersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateOrder operation middleware
+func (sh *strictHandler) CreateOrder(w http.ResponseWriter, r *http.Request, params CreateOrderParams) {
+	var request CreateOrderRequestObject
+
+	request.Params = params
+
+	var body CreateOrderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.CreateOrder(ctx, request.(CreateOrderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateOrder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateOrderResponseObject); ok {
+		if err := validResponse.VisitCreateOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetOrder operation middleware
+func (sh *strictHandler) GetOrder(w http.ResponseWriter, r *http.Request, orderId OrderId, params GetOrderParams) {
+	var request GetOrderRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetOrder(ctx, request.(GetOrderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetOrder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetOrderResponseObject); ok {
+		if err := validResponse.VisitGetOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelOrder operation middleware
+func (sh *strictHandler) CancelOrder(w http.ResponseWriter, r *http.Request, orderId OrderId, params CancelOrderParams) {
+	var request CancelOrderRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.CancelOrder(ctx, request.(CancelOrderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelOrder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelOrderResponseObject); ok {
+		if err := validResponse.VisitCancelOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetOrderDetails operation middleware
+func (sh *strictHandler) SetOrderDetails(w http.ResponseWriter, r *http.Request, orderId OrderId, params SetOrderDetailsParams) {
+	var request SetOrderDetailsRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	var body SetOrderDetailsJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.SetOrderDetails(ctx, request.(SetOrderDetailsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetOrderDetails")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetOrderDetailsResponseObject); ok {
+		if err := validResponse.VisitSetOrderDetailsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PayOverdueInstalment operation middleware
+func (sh *strictHandler) PayOverdueInstalment(w http.ResponseWriter, r *http.Request, orderId OrderId, params PayOverdueInstalmentParams) {
+	var request PayOverdueInstalmentRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.PayOverdueInstalment(ctx, request.(PayOverdueInstalmentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PayOverdueInstalment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PayOverdueInstalmentResponseObject); ok {
+		if err := validResponse.VisitPayOverdueInstalmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SimulateNextInstalment operation middleware
+func (sh *strictHandler) SimulateNextInstalment(w http.ResponseWriter, r *http.Request, orderId OrderId, params SimulateNextInstalmentParams) {
+	var request SimulateNextInstalmentRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.SimulateNextInstalment(ctx, request.(SimulateNextInstalmentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SimulateNextInstalment")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SimulateNextInstalmentResponseObject); ok {
+		if err := validResponse.VisitSimulateNextInstalmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PayOrder operation middleware
+func (sh *strictHandler) PayOrder(w http.ResponseWriter, r *http.Request, orderId OrderId, params PayOrderParams) {
+	var request PayOrderRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	var body PayOrderJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.PayOrder(ctx, request.(PayOrderRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PayOrder")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PayOrderResponseObject); ok {
+		if err := validResponse.VisitPayOrderResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSavedCards operation middleware
+func (sh *strictHandler) ListSavedCards(w http.ResponseWriter, r *http.Request, params ListSavedCardsParams) {
+	var request ListSavedCardsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListSavedCards(ctx, request.(ListSavedCardsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSavedCards")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSavedCardsResponseObject); ok {
+		if err := validResponse.VisitListSavedCardsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSavedCard operation middleware
+func (sh *strictHandler) DeleteSavedCard(w http.ResponseWriter, r *http.Request, cardId openapi_types.UUID, params DeleteSavedCardParams) {
+	var request DeleteSavedCardRequestObject
+
+	request.CardId = cardId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.DeleteSavedCard(ctx, request.(DeleteSavedCardRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSavedCard")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteSavedCardResponseObject); ok {
+		if err := validResponse.VisitDeleteSavedCardResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListWallets operation middleware
+func (sh *strictHandler) ListWallets(w http.ResponseWriter, r *http.Request) {
+	var request ListWalletsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListWallets(ctx, request.(ListWalletsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListWallets")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListWalletsResponseObject); ok {
+		if err := validResponse.VisitListWalletsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetWallet operation middleware
+func (sh *strictHandler) GetWallet(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, params GetWalletParams) {
+	var request GetWalletRequestObject
+
+	request.OrganiserId = organiserId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetWallet(ctx, request.(GetWalletRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetWallet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetWalletResponseObject); ok {
+		if err := validResponse.VisitGetWalletResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePayCode operation middleware
+func (sh *strictHandler) CreatePayCode(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, params CreatePayCodeParams) {
+	var request CreatePayCodeRequestObject
+
+	request.OrganiserId = organiserId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.CreatePayCode(ctx, request.(CreatePayCodeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePayCode")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreatePayCodeResponseObject); ok {
+		if err := validResponse.VisitCreatePayCodeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TopUpWallet operation middleware
+func (sh *strictHandler) TopUpWallet(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, params TopUpWalletParams) {
+	var request TopUpWalletRequestObject
+
+	request.OrganiserId = organiserId
+	request.Params = params
+
+	var body TopUpWalletJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.TopUpWallet(ctx, request.(TopUpWalletRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TopUpWallet")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TopUpWalletResponseObject); ok {
+		if err := validResponse.VisitTopUpWalletResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTopup operation middleware
+func (sh *strictHandler) GetTopup(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, attemptId openapi_types.UUID) {
+	var request GetTopupRequestObject
+
+	request.OrganiserId = organiserId
+	request.AttemptId = attemptId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetTopup(ctx, request.(GetTopupRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTopup")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTopupResponseObject); ok {
+		if err := validResponse.VisitGetTopupResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1282,55 +4639,129 @@ func (sh *strictHandler) GetWhoami(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

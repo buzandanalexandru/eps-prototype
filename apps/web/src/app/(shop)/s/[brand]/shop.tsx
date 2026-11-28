@@ -16,7 +16,7 @@ import { pagePath, StorefrontView } from "@/components/storefront/storefront";
 import { shopFontClass } from "@/components/storefront/fonts";
 import { FromPrice } from "@/components/storefront/shop-tickets";
 
-export type ShopRoute = { kind: "home" } | { kind: "event"; slug: string } | { kind: "info"; slug: string } | { kind: "checkout" };
+export type ShopRoute = { kind: "home" } | { kind: "event"; slug: string } | { kind: "info"; slug: string } | { kind: "checkout" } | { kind: "wallet" };
 
 /**
  * The shop a request names, or null. Pages are static and read no request headers: the proxy
@@ -35,7 +35,7 @@ export function catalogueOf(shop: PublishedShop, now: Date): ShopCatalogue {
 }
 
 function routePath(r: ShopRoute): string {
-  return r.kind === "home" ? "" : r.kind === "event" ? `/e/${r.slug}` : r.kind === "info" ? `/${r.slug}` : "/checkout";
+  return r.kind === "home" ? "" : r.kind === "event" ? `/e/${r.slug}` : r.kind === "info" ? `/${r.slug}` : r.kind === "wallet" ? "/wallet" : "/checkout";
 }
 
 /**
@@ -50,7 +50,7 @@ export function enabledLocale(shop: PublishedShop, key: ShopKey, locale: string,
 
 export function findPage(shop: PublishedShop, cat: ShopCatalogue, route: ShopRoute): Page | null {
   const pages = shop.document.pages;
-  if (route.kind === "home" || route.kind === "checkout") return pages[0] ?? null;
+  if (route.kind === "home" || route.kind === "checkout" || route.kind === "wallet") return pages[0] ?? null;
   if (route.kind === "event") return pages.find((p) => p.kind === "event" && !!p.eventId && cat[p.eventId]?.slug === route.slug) ?? null;
   return pages.find((p) => p.kind === "info" && p.slug === route.slug) ?? null;
 }
@@ -124,16 +124,17 @@ export async function renderShop(
   if (!page) notFound();
   const labels = SHOP_LABELS[loc];
   const base = shopBase(key, loc);
-  const here = route.kind === "checkout" ? "/checkout" : pagePath(page, cat) === "/" ? "" : pagePath(page, cat);
+  const tool = route.kind === "checkout" || route.kind === "wallet";
+  const here = tool ? routePath(route) : pagePath(page, cat) === "/" ? "" : pagePath(page, cat);
   const ev = page.kind === "event" && page.eventId ? cat[page.eventId] : null;
   return (
     <StorefrontView
       doc={shop.document}
-      page={route.kind === "checkout" ? { ...page, sections: page.sections.filter((s) => s.type === "footer") } : page}
+      page={tool ? { ...page, sections: page.sections.filter((s) => s.type === "footer") } : page}
       fontClass={shopFontClass}
       banner={shop.isSample ? <SampleBanner labels={labels} /> : undefined}
       localeLinks={shop.document.locales.enabled.map((l) => ({ locale: l, href: `${shopBase(key, l)}${here}${query}`, label: LANG_LABEL[l], current: l === loc }))}
-      intro={route.kind === "checkout" && extra ? extra({ shop, key, locale: loc, cat, now, base }) : ev ? <EventSummary ev={ev} locale={loc} labels={labels} /> : undefined}
+      intro={tool && extra ? extra({ shop, key, locale: loc, cat, now, base }) : ev ? <EventSummary ev={ev} locale={loc} labels={labels} /> : undefined}
       ctx={{
         locale: loc,
         labels,
@@ -157,7 +158,7 @@ export async function shopMetadata(brandParam: string, locale: string, route: Sh
   return {
     title: { absolute: title },
     // Sample organisers' shops are never indexed (sample-data rule); the checkout never is.
-    robots: shop.isSample || route.kind === "checkout" ? { index: false, follow: false } : undefined,
+    robots: shop.isSample || route.kind === "checkout" || route.kind === "wallet" ? { index: false, follow: false } : undefined,
     other: { "eps-storefront-version": String(shop.versionNumber) },
   };
 }
