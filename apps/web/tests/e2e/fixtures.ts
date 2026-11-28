@@ -1,9 +1,13 @@
 import { test as base, expect, type Page } from "@playwright/test";
 
-const expected404 = new WeakSet<Page>();
-/** For a test that opens a page expected to answer 404: the browser logs the status as an error. */
+const expectedStatus = new WeakMap<Page, Set<number>>();
+/** For a test that expects a response with this status: the browser logs the status as an error. */
+export function expectErrorResponse(page: Page, status: number) {
+  expectedStatus.set(page, new Set([...(expectedStatus.get(page) ?? []), status]));
+}
+/** For a test that opens a page expected to answer 404. */
 export function expectNotFoundResponse(page: Page) {
-  expected404.add(page);
+  expectErrorResponse(page, 404);
 }
 
 /** Fails the test on any console error or uncaught page error. */
@@ -12,7 +16,8 @@ export const test = base.extend<{ page: Page }>({
     const errors: string[] = [];
     page.on("console", (m) => {
       if (m.type() !== "error") return;
-      if (expected404.has(page) && /status of 404/.test(m.text())) return;
+      const status = /status of (\d{3})/.exec(m.text());
+      if (status && expectedStatus.get(page)?.has(Number(status[1]))) return;
       errors.push(m.text());
     });
     page.on("pageerror", (e) => errors.push(e.message));

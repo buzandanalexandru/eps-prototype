@@ -7,5 +7,7 @@ export default defineConfig({
     environment: "node",
     include: ["tests/unit/**/*.test.ts", "tests/unit/**/*.test.tsx"],
     restoreMocks: true,
+    // Unit tests never call OpenStreetMap (tests inject a fake tile fetcher).
+    env: { EPS_MAP_TILES: "off" },
   },
 });

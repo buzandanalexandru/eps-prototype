@@ -28,13 +28,24 @@ export function toMajorString(minor: number): string {
   return `${neg ? "-" : ""}${Math.floor(a / 100)}.${String(a % 100).padStart(2, "0")}`;
 }
 
-/** Display form for a locale: "552,48 RON" in Romanian, "552.48 RON" in English. */
+const MONEY_LOCALES: Record<string, string> = { ro: "ro-RO", en: "en-GB" };
+const moneyFormats = new Map<string, Intl.NumberFormat>();
+
+/**
+ * Display form for a locale through Intl.NumberFormat with the currency: "552,48 RON" in Romanian,
+ * "RON 552.48" in English (a no-break space between amount and currency). Amounts are integer minor
+ * units; the division is exact for display at two decimals.
+ */
 export function formatMoney(minor: number, currency: Currency, locale: string): string {
-  const s = toMajorString(minor);
-  const [int, dec] = s.replace("-", "").split(".");
-  const sep = locale === "ro" ? "." : ",";
-  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, sep);
-  return `${minor < 0 ? "−" : ""}${grouped}${locale === "ro" ? "," : "."}${dec} ${currency}`;
+  if (!isMinor(minor)) throw new Error("formatMoney: not an integer amount");
+  const tag = MONEY_LOCALES[locale] ?? "en-GB";
+  const key = `${tag}|${currency}`;
+  let f = moneyFormats.get(key);
+  if (!f) {
+    f = new Intl.NumberFormat(tag, { style: "currency", currency, currencyDisplay: "code", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    moneyFormats.set(key, f);
+  }
+  return f.format(minor / 100);
 }
 
 /** round(n / d) with halves rounded up, for non-negative integers. */

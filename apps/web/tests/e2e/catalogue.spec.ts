@@ -110,8 +110,8 @@ test("build a small festival: venue, event, pool, every product type, ladder, in
   await page.goto(`${eventUrl}/products`);
   await expect(page.getByTestId("product")).toHaveCount(7);
   const gc = page.getByTestId("product").filter({ hasText: "Golden Circle" });
-  await expect(gc.getByTestId("fan-pays")).toHaveText("Fan pays 552.48 RON");
-  await expect(gc.getByTestId("you-receive")).toHaveText("You receive 539.00 RON");
+  await expect(gc.getByTestId("fan-pays")).toHaveText("Fan pays RON 552.48");
+  await expect(gc.getByTestId("you-receive")).toHaveText("You receive RON 539.00");
 
   // Price ladder by date with a current and next step, and the fixed public note.
   await gc.getByRole("link", { name: "Golden Circle" }).click();
@@ -121,8 +121,8 @@ test("build a small festival: venue, event, pool, every product type, ladder, in
   await steps.nth(1).getByLabel(/^From/).fill("2099-01-01T00:00");
   await steps.nth(1).getByLabel(/^Price/).fill("599");
   await ladder.getByRole("button", { name: "Save ladder" }).click();
-  await expect(page.getByTestId("next-step")).toHaveText("Next: 599.00 RON from 2099-01-01 00:00");
-  await expect(page.getByTestId("price-in-force")).toHaveText("539.00 RON");
+  await expect(page.getByTestId("next-step")).toHaveText("Next: RON 599.00 from 2099-01-01 00:00");
+  await expect(page.getByTestId("price-in-force")).toHaveText("RON 539.00");
   await expect(page.getByTestId("public-note")).toContainText("never on who you are");
   // An unordered ladder is refused.
   await steps.nth(2).getByLabel(/^From/).fill("2098-01-01T00:00");
@@ -136,7 +136,7 @@ test("build a small festival: venue, event, pool, every product type, ladder, in
   await plan.locator("input[name=deposit]").fill("10");
   await plan.locator("input[name=monthlyCount]").fill("3");
   await plan.getByRole("button", { name: "Save plan" }).click();
-  await expect(page.getByTestId("deposit")).toHaveText("10.00 RON now");
+  await expect(page.getByTestId("deposit")).toHaveText("RON 10.00 now");
   await expect(page.getByTestId("payment")).toHaveCount(3);
   await expect(page.getByTestId("breakpoints")).toContainText("get 3 monthly payments");
   // A plan running past the event is refused with the latest possible count.

@@ -48,8 +48,24 @@ export const nibiru: SampleOrganiser = {
   owner: "demo-organiser",
   feePolicy: "pass_on",
   brands: [
-    { key: "festivals", name: "NIBIRU Festivals", slug: "nibiru", languages: ["ro", "en"], currency: "RON", template: "festival" },
-    { key: "resort", name: "NIBIRU Resort", slug: "nibiru-resort", languages: ["ro", "en"], currency: "RON", template: "resort" },
+    {
+      key: "festivals",
+      name: "NIBIRU Festivals",
+      slug: "nibiru",
+      languages: ["ro", "en"],
+      currency: "RON",
+      template: "festival",
+      storefront: { template: "festival", logo: "sample:logo-nibiru", event: "galaxia-2027" },
+    },
+    {
+      key: "resort",
+      name: "NIBIRU Resort",
+      slug: "nibiru-resort",
+      languages: ["ro", "en"],
+      currency: "RON",
+      template: "resort",
+      storefront: { template: "resort", logo: "sample:logo-nibiru-resort", event: "promenada-2027" },
+    },
   ],
   venues: [
     { key: "arena", name: "NIBIRU Arena", address: "Costinești – Tuzla, Constanța, România", lat: 43.9295, lng: 28.6312, stages: ["Main Stage", "Galaxy Stage"] },

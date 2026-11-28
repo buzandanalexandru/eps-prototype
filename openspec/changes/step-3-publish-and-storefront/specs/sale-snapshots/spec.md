@@ -59,7 +59,7 @@ Test: services/internal/snapshot/immutable_test.go
 Test: apps/web/tests/unit/snapshot-compile.test.ts
 
 ### Requirement: Snapshot contents are complete and self-contained
-A snapshot SHALL contain everything the on-sale engine needs without reading the catalogue: currency, time zone, fee policy, event days, buying rules, pools with their day or slot instances and capacities, and products with type settings, pools, requirements, sales windows, per-order maxima, price steps and instalment settings.
+A snapshot SHALL contain everything the on-sale engine and the published shop need without reading the catalogue: currency, time zone, fee policy, the event's slug, venue (name, address, coordinates), line-up, event days with opening hours, buying rules, pools with their day or slot instances and capacities, and products with type settings, pools, requirements, sales windows, per-order maxima, price steps and instalment settings.
 
 #### Scenario: Day-scoped pool instances
 - **WHEN** a pool scoped to each day of a 74-day season is compiled

@@ -126,7 +126,7 @@ describe("money helpers", () => {
     expect(parseMajor("-1")).toBeNull();
     for (const bad of ["+1", "1 000", "1.000,00", "01", "", "10000000", "1e3"]) expect(parseMajor(bad), bad).toBeNull();
     expect(parseMajor("1000000")).toBe(100_000_000);
-    expect(formatMoney(123900, "RON", "ro")).toBe("1.239,00 RON");
-    expect(formatMoney(55248, "RON", "en")).toBe("552.48 RON");
+    expect(formatMoney(123900, "RON", "ro")).toBe("1.239,00\u00a0RON");
+    expect(formatMoney(55248, "RON", "en")).toBe("RON\u00a0552.48");
   });
 });

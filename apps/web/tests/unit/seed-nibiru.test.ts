@@ -199,3 +199,40 @@ describeDb("seeded sample organisers", () => {
     expect(members).toEqual([expect.objectContaining({ email: `demo-organiser@${DOMAIN}`, role: "owner" })]);
   });
 });
+
+describeDb("sample storefronts", () => {
+  it("both NIBIRU brands and Sunwave have a published storefront that validates, and re-running the seed keeps it", async () => {
+    const { getStorefrontByBrand, listVersions, getVersionDocument } = await import("@/lib/storefront/domain");
+    const { parseDocument } = await import("@/lib/storefront/schema");
+    const { publishProblems } = await import("@/lib/storefront/publish-checks");
+    await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW });
+    const brands = [
+      [NIBIRU, sid("nibiru", "brand", "festivals"), "festival"],
+      [NIBIRU, sid("nibiru", "brand", "resort"), "resort"],
+      [organiserId(sunwave), sid("sunwave", "brand", "festival"), "club"],
+    ] as const;
+    const before: unknown[] = [];
+    for (const [org, brand] of brands) {
+      const sf = await tx({ organiserId: org }, (c) => getStorefrontByBrand(c, brand));
+      expect(sf?.live_number, brand).toBeGreaterThanOrEqual(1);
+      expect(parseDocument(sf!.document).ok).toBe(true);
+      const live = await tx({ organiserId: org }, (c) => getVersionDocument(c, sf!.id, sf!.live_number!));
+      const events = new Set((await tx({ organiserId: org }, (c) => c.query("select id::text from control.events where brand_id = $1", [brand]))).rows.map((r) => r.id));
+      expect(publishProblems(live, { knownEvents: events })).toEqual([]);
+      expect(sf!.document.tokens.logo).toMatch(/^sample:logo-/);
+      before.push(await tx({ organiserId: org }, (c) => listVersions(c, sf!.id)));
+    }
+    // A visitor edits a sample draft; the seed restores it and never adds or changes versions.
+    const sf0 = (await tx({ organiserId: NIBIRU }, (c) => getStorefrontByBrand(c, brands[0][1])))!;
+    await tx({ organiserId: NIBIRU }, (c) => c.query("update control.storefront_versions set document = jsonb_set(document, '{tokens,radius}', '\"none\"') where storefront_id = $1 and state = 'draft'", [sf0.id]));
+    await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW });
+    const after: unknown[] = [];
+    for (const [org, brand] of brands) {
+      const sf = await tx({ organiserId: org }, (c) => getStorefrontByBrand(c, brand));
+      after.push(await tx({ organiserId: org }, (c) => listVersions(c, sf!.id)));
+    }
+    expect(after).toEqual(before);
+    const restored = (await tx({ organiserId: NIBIRU }, (c) => getStorefrontByBrand(c, brands[0][1])))!;
+    expect(restored.document.tokens.radius).toBe("l");
+  });
+});

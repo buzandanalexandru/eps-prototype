@@ -5,6 +5,10 @@
 #   neon-branch.sh ensure-seed                    the empty seed branch previews are made from
 #   neon-branch.sh recreate <eps-preview/...>     delete (if any) and create a preview branch from
 #                                                 the seed: no production data, ever
+#   neon-branch.sh reset <eps-preview/...>        restore an existing preview branch in place to the
+#                                                 seed's head (same branch, endpoint and host, so a
+#                                                 running preview keeps its connection string), or
+#                                                 create it from the seed when it does not exist
 #   neon-branch.sh uri <name>                     owner URIs of a branch (for migrations and roles)
 #   neon-branch.sh default                        owner URIs of the default (production) branch
 #   neon-branch.sh delete-if-exists <name>        preview cleanup (eps-preview/* or preview/*)
@@ -116,6 +120,32 @@ case "${1-}" in
     body=$(jq -n --arg n "$name" --arg p "$seed" '{branch: {name: $n, parent_id: $p}, endpoints: [{type: "read_write"}]}')
     id=$(neon POST "/branches" "$body" | jq -r .branch.id)
     [[ -n "$id" && "$id" != null ]] || { echo "Could not create Neon branch $name" >&2; exit 1; }
+    wait_ready "$id"
+    emit "$id"
+    ;;
+  reset)
+    name="${2:?branch name}"
+    [[ "$name" == eps-preview/* ]] || { echo "Refusing to reset $name: only eps-preview/* branches." >&2; exit 2; }
+    seed=$(find_branch "$SEED")
+    [[ -n "$seed" ]] || { echo "Seed branch $SEED missing: run ensure-seed first." >&2; exit 1; }
+    id=$(find_branch "$name")
+    parent=""
+    [[ -n "$id" ]] && parent=$(neon GET "/branches/$id" | jq -r '.branch.parent_id // empty')
+    if [[ -n "$id" && "$parent" == "$seed" ]]; then
+      refuse_default "$id"
+      echo "Restoring $name ($id) to the seed's head in place: every push starts from an empty database."
+      body=$(jq -n --arg s "$seed" '{source_branch_id: $s}')
+      neon POST "/branches/$id/restore" "$body" > /dev/null
+      sleep 3
+    else
+      if [[ -n "$id" ]]; then
+        echo "Deleting $name ($id): it is not a child of the seed."
+        delete_id "$id"
+      fi
+      body=$(jq -n --arg n "$name" --arg p "$seed" '{branch: {name: $n, parent_id: $p}, endpoints: [{type: "read_write"}]}')
+      id=$(neon POST "/branches" "$body" | jq -r .branch.id)
+      [[ -n "$id" && "$id" != null ]] || { echo "Could not create Neon branch $name" >&2; exit 1; }
+    fi
     wait_ready "$id"
     emit "$id"
     ;;
