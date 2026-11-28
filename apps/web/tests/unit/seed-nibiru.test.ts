@@ -146,11 +146,15 @@ describeDb("seeded sample organisers", () => {
     await applySeed(testPool(), { demoDomain: DOMAIN, now: NOW });
     const first = await snapshot(ids);
     // A visitor edits the sample in Studio: a price, rules, a new event and venue used by a seeded
-    // event, and a day outside the seeded dates.
+    // event, and a day outside the seeded dates. Only draft events: the sample shops' events were
+    // published by the seed (step 3) and stay untouched ("Published event untouched").
     const standup = sid("nibiru", "event", "stand-up-the-fool");
     await tx({ organiserId: NIBIRU }, async (c) => {
-      await c.query("update control.price_steps set price_minor = 1 where organiser_id = $1", [NIBIRU]);
-      await c.query("update control.events set fee_policy = 'absorb', max_per_account = 99 where organiser_id = $1", [NIBIRU]);
+      await c.query(
+        "update control.price_steps s set price_minor = 1 from control.products p join control.events e on e.id = p.event_id where p.id = s.product_id and e.status = 'draft' and s.organiser_id = $1",
+        [NIBIRU],
+      );
+      await c.query("update control.events set fee_policy = 'absorb', max_per_account = 99 where organiser_id = $1 and status = 'draft'", [NIBIRU]);
       const f = await festival(c, sid("nibiru", "brand", "festivals"));
       await c.query("update control.events set venue_id = $1, ends_at = '2027-07-10T20:00:00Z' where id = $2", [f.venue.id, standup]);
       await c.query("insert into control.event_days (organiser_id, event_id, day, opens, closes) values ($1, $2, '2027-07-09', '20:00', '23:00')", [NIBIRU, standup]);

@@ -33,6 +33,7 @@ import { maxMonthlyPayments } from "@/lib/pricing/instalments";
 import { demoOrganiserEmail } from "@/lib/auth/demo-plugin";
 import { ensureStorefront, getStorefront, publishDraft, saveDraft } from "@/lib/storefront/domain";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
+import { noSalesBeforeFirstPublish, snapshotHook } from "@/lib/snapshot/publish";
 import { buildTemplate } from "@/lib/storefront/templates";
 import { ensureTiles, mapTilesForDocument, type TileFetcher } from "@/lib/storefront/maps";
 import { nibiru } from "./nibiru";
@@ -237,7 +238,11 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
     const fresh = await getStorefront(c, sf.id);
     let revision = fresh!.draft_revision;
     if (canonical(fresh!.document) !== canonical(doc)) revision = (await saveDraft(c, sf.id, { revision, document: doc })).revision;
-    if (!fresh!.live_version_id) await publishDraft(c, { storefrontId: sf.id, revision, userId: opts.userId });
+    // The first publish also compiles the sale snapshots of the events the shop sells (step 3);
+    // a brand's first publish has no sales to check against.
+    if (!fresh!.live_version_id) {
+      await publishDraft(c, { storefrontId: sf.id, revision, userId: opts.userId }, [snapshotHook({ usage: noSalesBeforeFirstPublish, userId: opts.userId, now: () => opts.now })]);
+    }
     // Static map tiles for the sample shops' map sections (best effort; the map shows a link without).
     await ensureTiles(c, await mapTilesForDocument(c, doc), opts.tileFetcher, 3);
   }
