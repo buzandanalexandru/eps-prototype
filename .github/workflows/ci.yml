@@ -130,6 +130,13 @@ jobs:
           # The core's internal port is on its Service but never on an ingress.
           ! awk '/kind: Ingress/{i=1} i' <<<"$core" | grep -q 'internal'
           grep -q 'name: internal' <<<"$core"
+          # Review D-h: the internal port admits only the simulator; Redis never the simulator.
+          np=$(helm template eps-ci deploy/helm/eps --show-only templates/networkpolicies.yaml)
+          grep -A3 'port: 8089' <<<"$np" | grep -q 'name: simulator' || awk '/name: simulator/{s=1} s && /8089/{f=1} END{exit !f}' <<<"$np"
+          rnp=$(helm template eps-ci deploy/helm/eps --show-only charts/redis/templates/redis.yaml)
+          ! grep -A30 'kind: NetworkPolicy' <<<"$rnp" | grep -q 'name: simulator'
+          lease=$(helm template eps-ci deploy/helm/eps --show-only charts/simulator/templates/lease.yaml)
+          grep -q 'resources: \["leases"\]' <<<"$lease" && ! grep -q 'kind: ClusterRole' <<<"$lease"
           grep -q 'redis:8\.[0-9]*\.[0-9]*' <<<"$out"
 
   migrations:

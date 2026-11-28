@@ -264,6 +264,8 @@ jobs:
           kubectl -n "$NS" create secret generic eps-db --from-literal=DATABASE_URL="$url" \
             --dry-run=client -o yaml | kubectl apply -f - > /dev/null
           deploy/scripts/runtime-secret.sh "$NS"
+          # Step 6: the namespace of the cluster's one rehearsal Lease (shared by every environment).
+          kubectl create namespace eps-sim --dry-run=client -o yaml | kubectl apply -f - > /dev/null
       - name: helm upgrade --install (atomic)
         env:
           WEB_ORIGINS: ${{ needs.web.outputs.origins }}

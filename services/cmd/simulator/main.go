@@ -45,6 +45,22 @@ func main() {
 		MaxInflight: inflight,
 		Log:         log,
 	}
+	if n, err := strconv.Atoi(os.Getenv("SIM_MAX_RPS")); err == nil && n > 0 && n <= 20000 {
+		e.MaxRPS = n
+	}
+	// One rehearsal at a time on the whole cluster (review D-b): a Lease every environment's
+	// simulator shares. Required outside EPS_ENV=dev.
+	if ns := os.Getenv("SIM_CLUSTER_LEASE_NAMESPACE"); ns != "" {
+		l, err := simulation.InClusterLease(ns, service.Env("SIM_LEASE_HOLDER", "dev"))
+		if err != nil {
+			log.Error("simulator cluster lease", "error", err.Error())
+			os.Exit(1)
+		}
+		e.Lease = l
+	} else if service.Env("EPS_ENV", "dev") != "dev" {
+		log.Error("SIM_CLUSTER_LEASE_NAMESPACE is required outside EPS_ENV=dev")
+		os.Exit(1)
+	}
 	go e.Run(ctx)
 	log.Info("simulator ready", "maxInflight", inflight)
 	service.Serve(log, service.SimpleHandler("simulator", log, nil, nil, nil))

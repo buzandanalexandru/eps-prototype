@@ -139,7 +139,14 @@ simulator:
   noRedis: true
   pdb: { enabled: false }
   simKeys: [SIM_TOKEN_PRIVATE_KEY, SIM_CONTROL_TOKEN]
+  # One run at a time on the whole cluster: a Lease in this namespace (CI creates it).
+  serviceAccount: true
+  clusterLease: { namespace: eps-sim }
   extraEnv:
+    SIM_CLUSTER_LEASE_NAMESPACE: eps-sim
+    SIM_LEASE_HOLDER: "{{ .Release.Namespace }}"
+    # All simulated clients together (review D-b).
+    SIM_MAX_RPS: "1500"
     GATEWAY_URL: "http://{{ .Release.Name }}-gateway"
     CORE_URL: "http://{{ .Release.Name }}-core"
     CORE_SIM_URL: "http://{{ .Release.Name }}-core:8089"
@@ -173,3 +180,8 @@ redis:
     limits: { cpu: 500m, memory: 256Mi }
   # A block-storage volume for the append-only file (production; previews keep an emptyDir).
   persistence: { enabled: false, storageClass: do-block-storage, size: 5Gi }
+
+# Step 6 (review D-h): the core's internal port only from the simulator, Prometheus only from the
+# worker (Redis's own policy, in its chart, admits core, gateway, worker and the providers only).
+networkPolicies:
+  enabled: true

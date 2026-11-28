@@ -97,7 +97,8 @@ spec:
       port: 6379
       targetPort: redis
 ---
-# Only the EPS services of this release may reach Redis.
+# Only the EPS services of this release that keep state in Redis may reach it: never the simulator
+# (step 6, review D-h) nor Prometheus.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -110,10 +111,12 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
+        {{- range $n := list "core" "gateway" "worker" "psp-a" "psp-b" }}
         - podSelector:
             matchLabels:
-              app.kubernetes.io/part-of: eps
-              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/name: {{ $n }}
+              app.kubernetes.io/instance: {{ $.Release.Name }}
+        {{- end }}
       ports:
         - port: 6379
 {{- end }}

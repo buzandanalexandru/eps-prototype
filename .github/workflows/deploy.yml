@@ -126,6 +126,8 @@ jobs:
           kubectl -n eps-prod create secret generic eps-db --from-literal=DATABASE_URL="$url" \
             --from-literal=LOGIN_PASSWORD="$pw" --dry-run=client -o yaml | kubectl apply -f - > /dev/null
           deploy/scripts/runtime-secret.sh eps-prod
+          # Step 6: the namespace of the cluster's one rehearsal Lease (shared by every environment).
+          kubectl create namespace eps-sim --dry-run=client -o yaml | kubectl apply -f - > /dev/null
       - name: Redis moves onto a volume once (step 5; a StatefulSet's volume templates cannot change in place)
         run: |
           # The counters rebuild from Postgres after a Redis loss (design D-9), so the one-time move

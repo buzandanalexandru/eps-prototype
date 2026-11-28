@@ -193,7 +193,13 @@ spec:
         eps.dev/rollout: {{ . | quote }}
         {{- end }}
     spec:
+      {{- if $v.serviceAccount }}
+      # Step 6: the simulator's own account, allowed only to update the cluster's rehearsal Lease.
+      serviceAccountName: {{ include "eps.fullname" . }}
+      automountServiceAccountToken: true
+      {{- else }}
       automountServiceAccountToken: false
+      {{- end }}
       terminationGracePeriodSeconds: 30
       {{- include "eps.podSecurity" . | nindent 6 }}
       containers:
