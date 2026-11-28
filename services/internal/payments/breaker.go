@@ -7,6 +7,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/redisx"
 )
 
@@ -17,7 +18,10 @@ const (
 	HalfOpen = "half_open"
 )
 
-// Breaker rules (D-4).
+// Breaker rules (D-4, review H2/L4): it opens when over the last 20 s at least 20 calls were made
+// and half or more failed, or after 5 failures in a row; after 15 s it lets up to 5 probe calls
+// through (a probe slot not used within 10 s is given out again); 4 successful probes close it
+// and a second failed probe reopens it for twice as long (at most 120 s).
 const (
 	WindowSeconds   = 20
 	MinCalls        = 20
@@ -27,12 +31,14 @@ const (
 	MaxOpenFor      = 120 * time.Second
 	Probes          = 5
 	ProbeSuccesses  = 4
+	ProbeFailures   = 2
+	ProbeSlotIdle   = 10 * time.Second
 )
 
 // Breaker is one circuit breaker per provider and merchant (organiser), shared by every core
-// through Redis: per-second buckets of successes and failures over the last 20 seconds and the
-// state hash. Declines are not failures (they are the card's answer, not the provider's health).
-// If Redis cannot be reached, calls are allowed (each core then decides alone).
+// through Redis. Every transition runs in one Lua script (review H2), so cores never interleave a
+// read and a write; Read has no side effects. Declines are not failures (they are the card's
+// answer, not the provider's health). If Redis cannot be reached, calls are allowed.
 type Breaker struct {
 	Redis *redis.Client
 	Now   func() time.Time
@@ -51,6 +57,18 @@ type State struct {
 	Consecutive int64     `json:"consecutiveFailures"`
 }
 
+var breakerChanges = map[string]*metrics.Counter{}
+
+func countChange(provider, to string) {
+	k := provider + "/" + to
+	c, ok := breakerChanges[k]
+	if !ok {
+		c = metrics.NewCounter("eps_breaker_transitions_total", "Circuit breaker state changes.", "provider", provider, "to", to)
+		breakerChanges[k] = c
+	}
+	c.Inc()
+}
+
 func (b *Breaker) now() time.Time {
 	if b.Now != nil {
 		return b.Now()
@@ -63,31 +81,95 @@ func (b *Breaker) stateKey(org, provider string) string {
 	return k
 }
 
-func (b *Breaker) bucketKey(org, provider string, sec int64) string {
-	k, _ := redisx.Key(org, "", "pay-win", provider, strconv.FormatInt(sec, 10))
-	return k
-}
-
-// window sums the last WindowSeconds buckets.
-func (b *Breaker) window(ctx context.Context, org, provider string) (calls, fails int64) {
+func (b *Breaker) bucketKeys(org, provider string) []string {
 	now := b.now().Unix()
-	pipe := b.Redis.Pipeline()
-	cmds := make([]*redis.MapStringStringCmd, 0, WindowSeconds)
+	out := make([]string, 0, WindowSeconds)
 	for s := now - WindowSeconds + 1; s <= now; s++ {
-		cmds = append(cmds, pipe.HGetAll(ctx, b.bucketKey(org, provider, s)))
+		k, _ := redisx.Key(org, "", "pay-win", provider, strconv.FormatInt(s, 10))
+		out = append(out, k)
 	}
-	_, _ = pipe.Exec(ctx)
-	for _, c := range cmds {
-		m := c.Val()
-		ok, _ := strconv.ParseInt(m["ok"], 10, 64)
-		er, _ := strconv.ParseInt(m["err"], 10, 64)
-		calls += ok + er
-		fails += er
-	}
-	return calls, fails
+	return out
 }
 
-// Read returns the breaker's state (moving open to half-open once its time is over).
+// KEYS: state. ARGV: now ms, open-for ms (default), probes, probe slot idle ms.
+// Returns 0 refused, 1 allowed, 2 allowed after moving open → half_open.
+var allowScript = redis.NewScript(`
+local st = redis.call('HGET', KEYS[1], 'state') or 'closed'
+if st == 'closed' then return 1 end
+local now = tonumber(ARGV[1])
+if st == 'open' then
+  local oa = tonumber(redis.call('HGET', KEYS[1], 'opened_at') or '0')
+  local of = tonumber(redis.call('HGET', KEYS[1], 'open_for') or ARGV[2])
+  if now < oa + of then return 0 end
+  redis.call('HSET', KEYS[1], 'state', 'half_open', 'probes', 1, 'probe_ok', 0, 'probe_fail', 0, 'probe_at', now)
+  return 2
+end
+local p = tonumber(redis.call('HGET', KEYS[1], 'probes') or '0')
+local pa = tonumber(redis.call('HGET', KEYS[1], 'probe_at') or '0')
+if p < tonumber(ARGV[3]) then
+  redis.call('HSET', KEYS[1], 'probes', p + 1, 'probe_at', now)
+  return 1
+end
+if now - pa > tonumber(ARGV[4]) then
+  -- The probes given out were never used (no call followed): give a slot out again.
+  redis.call('HSET', KEYS[1], 'probe_at', now)
+  return 1
+end
+return 0
+`)
+
+// KEYS: state, then the window's buckets, oldest to current.
+// ARGV: now ms, ok (1|0), open-for ms, max open-for ms, min calls, failure share bps, max
+// consecutive, probe successes, probe failures. Returns {from, to}.
+var recordScript = redis.NewScript(`
+local cur = KEYS[#KEYS]
+local ok = ARGV[2] == '1'
+redis.call('HINCRBY', cur, ok and 'ok' or 'err', 1)
+redis.call('EXPIRE', cur, 60)
+redis.call('EXPIRE', KEYS[1], 86400)
+local st = redis.call('HGET', KEYS[1], 'state') or 'closed'
+local consec
+if ok then redis.call('HSET', KEYS[1], 'consecutive', 0); consec = 0 else consec = redis.call('HINCRBY', KEYS[1], 'consecutive', 1) end
+local now = ARGV[1]
+if st == 'closed' then
+  if ok then return {st, st} end
+  local calls, fails = 0, 0
+  for i = 2, #KEYS do
+    local o = tonumber(redis.call('HGET', KEYS[i], 'ok') or '0')
+    local e = tonumber(redis.call('HGET', KEYS[i], 'err') or '0')
+    calls = calls + o + e
+    fails = fails + e
+  end
+  if consec >= tonumber(ARGV[7]) or (calls >= tonumber(ARGV[5]) and fails * 10000 >= calls * tonumber(ARGV[6])) then
+    redis.call('HSET', KEYS[1], 'state', 'open', 'opened_at', now, 'open_for', ARGV[3])
+    return {'closed', 'open'}
+  end
+  return {st, st}
+end
+if st == 'half_open' then
+  if ok then
+    local n = redis.call('HINCRBY', KEYS[1], 'probe_ok', 1)
+    if n >= tonumber(ARGV[8]) then
+      redis.call('HSET', KEYS[1], 'state', 'closed', 'consecutive', 0, 'open_for', ARGV[3])
+      for i = 2, #KEYS do redis.call('DEL', KEYS[i]) end
+      return {'half_open', 'closed'}
+    end
+  else
+    local f = redis.call('HINCRBY', KEYS[1], 'probe_fail', 1)
+    if f >= tonumber(ARGV[9]) then
+      local of = tonumber(redis.call('HGET', KEYS[1], 'open_for') or ARGV[3]) * 2
+      if of < 2 * tonumber(ARGV[3]) then of = 2 * tonumber(ARGV[3]) end
+      if of > tonumber(ARGV[4]) then of = tonumber(ARGV[4]) end
+      redis.call('HSET', KEYS[1], 'state', 'open', 'opened_at', now, 'open_for', of)
+      return {'half_open', 'open'}
+    end
+  end
+end
+return {st, st}
+`)
+
+// Read returns the breaker's state without changing it (an open breaker whose time is over reads
+// as half-open).
 func (b *Breaker) Read(ctx context.Context, org, provider string) State {
 	st := State{Provider: provider, State: Closed}
 	if b.Redis == nil {
@@ -110,87 +192,64 @@ func (b *Breaker) Read(ctx context.Context, org, provider string) State {
 	st.OpenFor = openFor.Seconds()
 	st.Consecutive, _ = strconv.ParseInt(m["consecutive"], 10, 64)
 	if st.State == Open && !b.now().Before(st.OpenedAt.Add(openFor)) {
-		b.set(ctx, org, provider, Open, HalfOpen, map[string]any{"state": HalfOpen, "probes": 0, "probe_ok": 0})
 		st.State = HalfOpen
 	}
-	st.Calls, st.Failures = b.window(ctx, org, provider)
+	pipe := b.Redis.Pipeline()
+	var cmds []*redis.MapStringStringCmd
+	for _, k := range b.bucketKeys(org, provider) {
+		cmds = append(cmds, pipe.HGetAll(ctx, k))
+	}
+	_, _ = pipe.Exec(ctx)
+	for _, c := range cmds {
+		v := c.Val()
+		ok, _ := strconv.ParseInt(v["ok"], 10, 64)
+		er, _ := strconv.ParseInt(v["err"], 10, 64)
+		st.Calls += ok + er
+		st.Failures += er
+	}
 	return st
 }
 
-func (b *Breaker) set(ctx context.Context, org, provider, from, to string, fields map[string]any) {
-	_ = b.Redis.HSet(ctx, b.stateKey(org, provider), fields).Err()
-	_ = b.Redis.Expire(ctx, b.stateKey(org, provider), 24*time.Hour).Err()
-	if from != to && b.OnChange != nil {
-		b.OnChange(ctx, org, provider, from, to)
-	}
-}
-
-// Allow reports whether a new attempt may go to the provider now (a half-open breaker lets up to
-// five probe attempts through).
+// Allow reports whether a call may go to the provider now; it reads only the state hash (review
+// L2). Call it right before the call it guards (review H2).
 func (b *Breaker) Allow(ctx context.Context, org, provider string) bool {
 	if b.Redis == nil {
 		return true
 	}
-	st := b.Read(ctx, org, provider)
-	switch st.State {
-	case Open:
-		return false
-	case HalfOpen:
-		n, err := b.Redis.HIncrBy(ctx, b.stateKey(org, provider), "probes", 1).Result()
-		return err != nil || n <= Probes
+	n, err := allowScript.Run(ctx, b.Redis, []string{b.stateKey(org, provider)},
+		b.now().UnixMilli(), OpenFor.Milliseconds(), Probes, ProbeSlotIdle.Milliseconds()).Int()
+	if err != nil {
+		return true // Redis down: each core decides alone
 	}
-	return true
+	if n == 2 {
+		b.changed(ctx, org, provider, Open, HalfOpen)
+	}
+	return n > 0
 }
 
-// Record counts a call's health: ok false for a 5xx, a connection error or a timeout.
+// Record counts a call's health: ok false for a pre-acceptance failure (refused connection or a
+// 503), true for an answer. Unknown outcomes are not counted.
 func (b *Breaker) Record(ctx context.Context, org, provider string, ok bool) {
 	if b.Redis == nil {
 		return
 	}
-	bk := b.bucketKey(org, provider, b.now().Unix())
-	field := "ok"
-	if !ok {
-		field = "err"
-	}
-	pipe := b.Redis.Pipeline()
-	pipe.HIncrBy(ctx, bk, field, 1)
-	pipe.Expire(ctx, bk, 60*time.Second)
+	okv := "0"
 	if ok {
-		pipe.HSet(ctx, b.stateKey(org, provider), "consecutive", 0)
-	} else {
-		pipe.HIncrBy(ctx, b.stateKey(org, provider), "consecutive", 1)
+		okv = "1"
 	}
-	_, _ = pipe.Exec(ctx)
+	keys := append([]string{b.stateKey(org, provider)}, b.bucketKeys(org, provider)...)
+	res, err := recordScript.Run(ctx, b.Redis, keys, b.now().UnixMilli(), okv, OpenFor.Milliseconds(), MaxOpenFor.Milliseconds(),
+		MinCalls, FailureShareBps, MaxConsecutive, ProbeSuccesses, ProbeFailures).StringSlice()
+	if err != nil || len(res) != 2 || res[0] == res[1] {
+		return
+	}
+	b.changed(ctx, org, provider, res[0], res[1])
+}
 
-	st := b.Read(ctx, org, provider)
-	nowMs := b.now().UnixMilli()
-	switch st.State {
-	case Closed:
-		tripped := st.Consecutive >= MaxConsecutive || (st.Calls >= MinCalls && st.Failures*10000 >= st.Calls*FailureShareBps)
-		if !ok && tripped {
-			b.set(ctx, org, provider, Closed, Open, map[string]any{"state": Open, "opened_at": nowMs, "open_for": OpenFor.Milliseconds()})
-		}
-	case HalfOpen:
-		if !ok {
-			// A failed probe reopens it, for twice as long (at most 120 s).
-			next := time.Duration(st.OpenFor*float64(time.Second)) * 2
-			if next < 2*OpenFor {
-				next = 2 * OpenFor
-			}
-			if next > MaxOpenFor {
-				next = MaxOpenFor
-			}
-			b.set(ctx, org, provider, HalfOpen, Open, map[string]any{"state": Open, "opened_at": nowMs, "open_for": next.Milliseconds()})
-			return
-		}
-		n, _ := b.Redis.HIncrBy(ctx, b.stateKey(org, provider), "probe_ok", 1).Result()
-		if n >= ProbeSuccesses {
-			b.set(ctx, org, provider, HalfOpen, Closed, map[string]any{"state": Closed, "consecutive": 0, "open_for": OpenFor.Milliseconds()})
-			// A fresh window after recovery: the failures that opened it no longer count.
-			for s := b.now().Unix() - WindowSeconds; s <= b.now().Unix(); s++ {
-				_ = b.Redis.Del(ctx, b.bucketKey(org, provider, s)).Err()
-			}
-		}
+func (b *Breaker) changed(ctx context.Context, org, provider, from, to string) {
+	countChange(provider, to)
+	if b.OnChange != nil {
+		b.OnChange(ctx, org, provider, from, to)
 	}
 }
 

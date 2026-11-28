@@ -16,7 +16,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
+	"syscall"
 	"time"
+
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 )
 
 // Charge is a provider's view of a charge (the fields EPS reads).
@@ -57,11 +61,12 @@ type ChargeRequest struct {
 
 // Adapter errors.
 var (
-	// ErrUnavailable: the provider refused before accepting (5xx, connection refused): it did
-	// not charge, so another provider may be tried.
+	// ErrUnavailable: the provider certainly did not take the call: the connection could not be
+	// made, or it answered 503 (its "not accepted" answer). Another provider may be tried.
 	ErrUnavailable = errors.New("payments: provider unavailable")
-	// ErrTimeout: no answer in time; the provider may have charged.
-	ErrTimeout = errors.New("payments: provider timeout")
+	// ErrTimeout: no usable answer (timeout, connection reset, 502/504 or another 5xx); the provider
+	// may have charged, so the attempt is unknown until asked by its key (review H3).
+	ErrTimeout = errors.New("payments: provider outcome unknown")
 	// ErrNoSuchCharge: the provider has no charge for the id or key.
 	ErrNoSuchCharge = errors.New("payments: no such charge")
 	// ErrRefused: the provider refused the request itself (an invalid saved card, ...).
@@ -91,7 +96,39 @@ type HTTPProvider struct {
 // Name is the provider id (a or b).
 func (p *HTTPProvider) Name() string { return p.ID }
 
+// SharedTransport is the connection pool for every call to the providers (review L3).
+var SharedTransport = &http.Transport{
+	Proxy:               http.ProxyFromEnvironment,
+	DialContext:         (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+	MaxIdleConns:        256,
+	MaxIdleConnsPerHost: 128,
+	IdleConnTimeout:     90 * time.Second,
+}
+
+var callLatency = map[string]*metrics.Histogram{}
+
+func observe(provider, op string, d time.Duration) {
+	k := provider + "/" + op
+	h, ok := callLatency[k]
+	if !ok {
+		h = metrics.NewHistogram("eps_provider_call_seconds", "Latency of calls to the payment providers.", metrics.DefaultLatencyBuckets, "provider", provider, "op", op)
+		callLatency[k] = h
+	}
+	h.Observe(d.Seconds())
+}
+
+// dialFailed reports a connection that was never made (nothing reached the provider).
+func dialFailed(err error) bool {
+	var op *net.OpError
+	if errors.As(err, &op) && op.Op == "dial" {
+		return true
+	}
+	return errors.Is(err, syscall.ECONNREFUSED)
+}
+
 func (p *HTTPProvider) call(ctx context.Context, method, path string, body any, out any) error {
+	start := time.Now()
+	defer func() { observe(p.ID, method+" "+strings.SplitN(strings.TrimPrefix(path, "/v1/"), "/", 2)[0], time.Since(start)) }()
 	t := p.Timeout
 	if t <= 0 {
 		t = 3 * time.Second
@@ -114,26 +151,23 @@ func (p *HTTPProvider) call(ctx context.Context, method, path string, body any, 
 	req.Header.Set("Content-Type", "application/json")
 	c := p.Client
 	if c == nil {
-		c = http.DefaultClient
+		c = &http.Client{Transport: SharedTransport}
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		var ne net.Error
-		if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
-			return ErrTimeout
+		if dialFailed(err) {
+			return fmt.Errorf("%w: %v", ErrUnavailable, err)
 		}
-		var ue *url.Error
-		if errors.As(err, &ue) && ue.Timeout() {
-			return ErrTimeout
-		}
-		// Refused or reset before a request was accepted.
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		// Timeout, reset, broken connection: the request may have reached the provider.
+		return fmt.Errorf("%w: %v", ErrTimeout, err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	switch {
-	case resp.StatusCode >= 500:
+	case resp.StatusCode == http.StatusServiceUnavailable:
 		return fmt.Errorf("%w: status %d", ErrUnavailable, resp.StatusCode)
+	case resp.StatusCode >= 500:
+		return fmt.Errorf("%w: status %d", ErrTimeout, resp.StatusCode)
 	case resp.StatusCode == http.StatusNotFound:
 		return ErrNoSuchCharge
 	case resp.StatusCode >= 400:
@@ -204,7 +238,7 @@ func (k *Knobs) do(ctx context.Context, method, merchant string, body json.RawMe
 	req.Header.Set("Authorization", "Bearer "+k.AdminToken)
 	c := k.Client
 	if c == nil {
-		c = http.DefaultClient
+		c = &http.Client{Transport: SharedTransport}
 	}
 	resp, err := c.Do(req)
 	if err != nil {
