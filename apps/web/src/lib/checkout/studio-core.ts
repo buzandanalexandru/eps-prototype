@@ -4,7 +4,7 @@ import "server-only";
 import { coreBaseUrl } from "../core/url";
 import { organiserCoreToken } from "../snapshot/studio";
 
-export type CoreAnswer<T> = { ok: true; data: T } | { ok: false; status: number; code: string };
+export type CoreAnswer<T> = { ok: true; data: T } | { ok: false; status: number; code: string; data?: Record<string, unknown> };
 
 export async function organiserCore<T>(method: "GET" | "PUT" | "POST", path: string, body?: unknown, idempotencyKey?: string): Promise<CoreAnswer<T>> {
   const base = coreBaseUrl();
@@ -24,7 +24,8 @@ export async function organiserCore<T>(method: "GET" | "PUT" | "POST", path: str
     });
     const json = await res.json().catch(() => null);
     if (res.ok) return { ok: true, data: json as T };
-    return { ok: false, status: res.status, code: (json && typeof json.code === "string" && json.code) || "EPS-UNAVAILABLE" };
+    const data = json && typeof json.data === "object" && json.data !== null ? (json.data as Record<string, unknown>) : undefined;
+    return { ok: false, status: res.status, code: (json && typeof json.code === "string" && json.code) || "EPS-UNAVAILABLE", data };
   } catch {
     return { ok: false, status: 503, code: "EPS-UNAVAILABLE" };
   }

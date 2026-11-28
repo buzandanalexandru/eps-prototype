@@ -3,7 +3,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 import type { EventGraph } from "@/lib/catalogue/domain";
 import { lt } from "@/lib/studio/text";
 
-export async function EventNav({ g, current }: { g: EventGraph; current: "details" | "products" | "pools" }) {
+export async function EventNav({ g, current }: { g: EventGraph; current: "details" | "products" | "pools" | "sales" }) {
   const t = await getTranslations("events");
   const locale = await getLocale();
   const base = `/studio/events/${g.event.id}`;
@@ -11,6 +11,7 @@ export async function EventNav({ g, current }: { g: EventGraph; current: "detail
     ["details", base, t("tabs.details")],
     ["products", `${base}/products`, t("tabs.products")],
     ["pools", `${base}/pools`, t("tabs.pools")],
+    ["sales", `${base}/sales`, t("tabs.sales")],
   ] as const;
   return (
     <div className="space-y-2">
