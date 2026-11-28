@@ -6,10 +6,16 @@
 //   git diff --name-only A B | node deploy/scripts/web-paths.cjs   -> prints "build" or "skip"
 
 const BUILD = [/^apps\/web\//, /^api\//, /^package\.json$/, /^package-lock\.json$/, /^\.nvmrc$/];
+/** Paths known not to reach the web app's build; anything else unknown builds (review D-i). */
+const SKIP = [/^docs\//, /^openspec\//, /^services\//, /^deploy\//, /^load\//, /^\.github\//, /^scripts\//, /^(README|CLAUDE|AGENTS)\.md$/];
 
 /** True when any of the paths needs a web build. */
 function needsWebBuild(paths) {
-  return paths.some((p) => BUILD.some((re) => re.test(p.trim().replace(/^\.\//, ""))));
+  return paths.some((raw) => {
+    const p = raw.trim().replace(/^\.\//, "");
+    if (p === "") return false;
+    return BUILD.some((re) => re.test(p)) || !SKIP.some((re) => re.test(p));
+  });
 }
 
 module.exports = { needsWebBuild };

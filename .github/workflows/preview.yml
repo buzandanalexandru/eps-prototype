@@ -157,7 +157,7 @@ jobs:
         with:
           script: |
             const wait = require("./.github/scripts/vercel-deployment.cjs");
-            await wait({ github, context, core }, { sha: process.env.SHA, production: false });
+            await wait({ github, context, core }, { sha: process.env.SHA, production: false, branch: process.env.BRANCH });
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/go.mod

@@ -39,35 +39,52 @@ function deploymentUrl(raw) {
     : null;
 }
 
-// The newest Vercel status of a commit in the environment: { state, url, raw, id } or null.
-async function vercelStatus(github, repo, sha, inEnv) {
+// The newest Vercel deployment of a commit in the environment: { state, url, raw, id } or null.
+// With ready, the newest successful one (a CI redeploy bound to the pull request's database is
+// newer than the git-triggered build of the same commit). With ref, only deployments of that
+// branch (Vercel names the branch, or the commit itself).
+async function vercelStatus(github, repo, sha, inEnv, { ready = false, ref = null } = {}) {
   const { data: deployments } = await github.rest.repos.listDeployments({ ...repo, sha, per_page: 100 });
-  for (const d of deployments.filter((d) => inEnv(d.environment))) {
+  for (const d of deployments.filter((d) => inEnv(d.environment) && (!ref || d.ref === ref || d.ref === sha))) {
     const { data: statuses } = await github.rest.repos.listDeploymentStatuses({ ...repo, deployment_id: d.id, per_page: 100 });
     const s = statuses.find((s) => s.creator?.login === "vercel[bot]");
     if (!s) continue;
     const raw = s.environment_url || s.target_url;
-    return { state: s.state, raw, url: deploymentUrl(raw), id: d.id };
+    const out = { state: s.state, raw, url: deploymentUrl(raw), id: d.id };
+    if (!ready || (s.state === "success" && out.url)) return out;
   }
   return null;
 }
 
-// The newest ancestor of sha (first parents, up to 50) with a successful Vercel deployment.
-async function readyAncestor(github, repo, sha, inEnv) {
+// The newest ancestor of sha with a ready Vercel deployment of this branch. A preview looks only at
+// commits after its merge base with main (never at main's own deployments); production at main's.
+async function readyAncestor(github, repo, sha, inEnv, branch, production) {
+  let stop = null;
+  if (!production) {
+    try {
+      const { data } = await github.rest.repos.compareCommits({ ...repo, base: "main", head: sha, per_page: 1 });
+      stop = data.merge_base_commit?.sha ?? null;
+    } catch {
+      return null;
+    }
+    if (!stop) return null;
+  }
   const { data: commits } = await github.rest.repos.listCommits({ ...repo, sha, per_page: 50 });
   for (const c of commits.slice(1)) {
-    const st = await vercelStatus(github, repo, c.sha, inEnv);
-    if (st && st.state === "success" && st.url) return { sha: c.sha, url: st.url, id: st.id };
+    if (c.sha === stop) return null; // the branch has no earlier deployment of its own
+    const st = await vercelStatus(github, repo, c.sha, inEnv, { ready: true, ref: branch });
+    if (st) return { sha: c.sha, url: st.url, id: st.id };
   }
   return null;
 }
 
-// Whether the commits between base and head need a web build (unknown: yes).
+// Whether the commits between base and head need a web build (unknown: yes). A renamed file counts
+// under both names (moving a file out of apps/web changes the web app).
 async function webChanged(github, repo, base, head) {
   try {
     const { data } = await github.rest.repos.compareCommits({ ...repo, base, head, per_page: 300 });
-    const files = (data.files || []).map((f) => f.filename);
-    if (data.status !== "ahead" || files.length >= 300) return true;
+    const files = (data.files || []).flatMap((f) => (f.previous_filename ? [f.filename, f.previous_filename] : [f.filename]));
+    if (data.status !== "ahead" || (data.files || []).length >= 300) return true;
     return needsWebBuild(files);
   } catch {
     return true;
@@ -76,13 +93,13 @@ async function webChanged(github, repo, base, head) {
 
 module.exports = async (
   { github, context, core },
-  { sha, production, attempts = 90, delayMs = 10000, skippedWaits = 9 },
+  { sha, production, branch = production ? "main" : null, attempts = 90, delayMs = 10000, skippedWaits = 9 },
 ) => {
   const kind = production ? "production" : "preview";
   const inEnv = (e) =>
     production ? /^production$/i.test(e) : !/^production$/i.test(e);
   const repo = { owner: context.repo.owner, repo: context.repo.repo };
-  const prev = await readyAncestor(github, repo, sha, inEnv);
+  const prev = branch ? await readyAncestor(github, repo, sha, inEnv, branch, production) : null;
   if (prev && !(await webChanged(github, repo, prev.sha, sha))) {
     core.info(`Nothing the web app uses changed since ${prev.sha} (its Vercel ${kind} deployment is ready): Vercel may skip building ${sha}.`);
     for (let i = 0; i < skippedWaits; i++) {
