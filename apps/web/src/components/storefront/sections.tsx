@@ -8,7 +8,8 @@ import type { ShopLabels } from "@/lib/storefront/labels";
 import { imageUrl } from "@/lib/storefront/links";
 import { osmLink } from "@/lib/storefront/maps";
 import type { Locale, Section } from "@/lib/storefront/schema";
-import { formatMoney } from "@/lib/pricing/money";
+import { AllInPrice } from "./all-in-price";
+import { ShopTickets } from "./shop-tickets";
 import { Countdown } from "./countdown";
 import { Gallery } from "./gallery";
 import { shopHref } from "./href";
@@ -26,6 +27,8 @@ export type RenderCtx = {
   hrefBase: string;
   /** On preview-link pages: the link's token, so the draft's uploads load. */
   previewToken?: string | null;
+  /** Published shop: the render time (ISO), shared by server and browser so the picker agrees. */
+  now?: string;
 };
 
 export function tx(v: Partial<Localized> | undefined | null, locale: Locale): string {
@@ -128,6 +131,15 @@ function Lineup({ s, ctx }: S<{ heading: Localized; layout: "grid" | "list" }>) 
 function TicketGrid({ s, ctx }: S<{ heading: Localized; showPerks: boolean }>) {
   const ev = eventOf(s, ctx);
   const buyLabel = ctx.mode === "published" ? ctx.labels.checkoutSoon : ctx.labels.availableAfterPublish;
+  if (ctx.mode === "published" && ev?.sale && ev.products.length > 0) {
+    // The published shop: live availability and the ticket picker (step 3).
+    return (
+      <Wrap id="tickets">
+        <Heading v={s.settings.heading} ctx={ctx} />
+        <ShopTickets event={ev} labels={ctx.labels} locale={ctx.locale} base={ctx.hrefBase} showPerks={s.settings.showPerks} now={ctx.now ?? new Date().toISOString()} />
+      </Wrap>
+    );
+  }
   return (
     <Wrap id="tickets">
       <Heading v={s.settings.heading} ctx={ctx} />
@@ -148,10 +160,7 @@ function TicketGrid({ s, ctx }: S<{ heading: Localized; showPerks: boolean }>) {
                 </ul>
               )}
               <div className="mt-auto">
-                <p className="text-2xl font-bold text-[var(--eps-primary)]" data-testid="ticket-price">
-                  {formatMoney(p.allInMinor, ev.currency, ctx.locale)}
-                </p>
-                <p className="text-xs text-[var(--eps-muted)]">{p.fanFeeMinor > 0 ? `${ctx.labels.allIn} · ${ctx.labels.includesFee}` : ctx.labels.allIn}</p>
+                <AllInPrice allInMinor={p.allInMinor} fanFeeMinor={p.fanFeeMinor} currency={ev.currency} locale={ctx.locale} labels={ctx.labels} showFee />
               </div>
               <button type="button" disabled className={`${primaryButton} cursor-not-allowed opacity-80`} data-testid="buy-disabled">
                 {buyLabel}
