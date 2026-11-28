@@ -21,7 +21,15 @@ const primary = `${btn} bg-[var(--eps-primary)] text-[var(--eps-on-primary)]`;
 const secondary = `${btn} border-2 border-[var(--eps-primary)] text-[var(--eps-primary)]`;
 const box = "rounded-[var(--eps-radius)] border border-[color-mix(in_srgb,var(--eps-on-surface)_15%,transparent)] bg-[color-mix(in_srgb,var(--eps-on-surface)_4%,var(--eps-surface))] p-4";
 const input = "min-h-11 w-full rounded-[var(--eps-radius)] border border-[color-mix(in_srgb,var(--eps-on-surface)_30%,transparent)] bg-[var(--eps-surface)] px-3 py-2";
-const LIVE = ["held", "paying", "payment_failed", "paid"];
+// How often the page asks the core (review D-k): every 2 s while a payment is in progress; every
+// 15 s while held or payment failed (the timer runs in the browser); a paid order once more until
+// it is issued; then only on focus or right after an action.
+function pollEvery(state: string | null): number | null {
+  if (state === "paying") return 2000;
+  if (state === "held" || state === "payment_failed") return 15_000;
+  if (state === "paid") return 3000;
+  return null;
+}
 
 const tx = (v: { ro: string; en: string } | undefined, l: Locale) => (v ? (v[l] || v[l === "ro" ? "en" : "ro"] || "").trim() : "");
 
@@ -66,13 +74,15 @@ function keepQueryOnLanguageLinks() {
   }
 }
 
-type Load = { state: "loading" } | { state: "ready"; order: OrderView } | { state: "error"; problem: Problem };
+type Hand = { eventId: string; version: number; locale: string; items: { productId: string; qty: number; instance?: string }[] };
+type Load = { state: "loading" } | { state: "ready"; order: OrderView } | { state: "error"; problem: Problem; retry?: Hand };
 
 export function Checkout({ labels, locale, base }: Props) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [skew, setSkew] = useState(0);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [link, setLink] = useState<string | undefined>(undefined);
+  const [already, setAlready] = useState<number | null>(null);
 
   const show = useCallback((o: OrderView) => {
     setSkew(Date.parse(o.serverTime) - Date.now());
@@ -122,18 +132,26 @@ export function Checkout({ labels, locale, base }: Props) {
     } catch {
       key = newKey();
     }
+    const forget = () => {
+      try {
+        sessionStorage.removeItem(handoff);
+      } catch {}
+    };
     (async () => {
       const body = { eventId: event, version: v, locale, items: items.map((l) => ({ productId: l.productId, qty: l.qty, ...(l.instance ? { instance: l.instance } : {}) })) };
       const r = await shopApi<OrderView>("orders", { method: "POST", key: key!, body });
       if (!r.ok) {
-        setLoad({ state: "error", problem: r.problem });
+        // Any error drops the hand-off's key (review M3): trying again is a new request.
+        forget();
+        setLoad({ state: "error", problem: r.problem, retry: r.problem.code === "EPS-PRICES-CHANGED" ? { ...body, version: Number((r.problem.data as { version?: number } | undefined)?.version ?? v) } : undefined });
         return;
       }
+      const asked = body.items.reduce((n, l) => n + l.qty, 0);
+      const held = r.data.lines.reduce((n, l) => n + l.qty, 0);
+      if (r.status === 200 && r.data.state !== "paid" && (held !== asked || r.data.lines.length !== body.items.length)) setAlready(held);
       if (!["held", "paying", "payment_failed"].includes(r.data.state)) {
         // This hand-off already became an order that is over (paid, expired...): a new hold.
-        try {
-          sessionStorage.removeItem(handoff);
-        } catch {}
+        forget();
         const again = await shopApi<OrderView>("orders", { method: "POST", key: newKey(), body });
         if (!again.ok) {
           setLoad({ state: "error", problem: again.problem });
@@ -147,14 +165,34 @@ export function Checkout({ labels, locale, base }: Props) {
     })();
   }, [locale, show]);
 
-  // Poll every 2 seconds while the order can still change.
   const state = load.state === "ready" ? load.order.state : null;
-  const planActive = load.state === "ready" && load.order.plan?.state === "active";
+  const [burst, setBurst] = useState(0);
   useEffect(() => {
-    if (!orderId || !state || (!LIVE.includes(state) && !planActive)) return;
-    const t = setInterval(() => void refresh(), 2000);
+    const every = burst > Date.now() ? 2000 : pollEvery(state);
+    if (!orderId || !every) return;
+    const t = setInterval(() => void refresh(), every);
     return () => clearInterval(t);
-  }, [orderId, state, planActive, refresh]);
+  }, [orderId, state, burst, refresh]);
+  useEffect(() => {
+    const onFocus = () => void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+  // After an action (a plan's next date simulated, an overdue part paid) the worker acts within
+  // seconds: ask every 2 s for half a minute.
+  const kick = useCallback(() => setBurst(Date.now() + 30_000), []);
+
+  const retryNew = async (body: NonNullable<Extract<Load, { state: "error" }>["retry"]>) => {
+    setLoad({ state: "loading" });
+    const r = await shopApi<OrderView>("orders", { method: "POST", key: newKey(), body });
+    if (!r.ok) {
+      setLoad({ state: "error", problem: r.problem });
+      return;
+    }
+    window.history.replaceState(null, "", `${window.location.pathname}?order=${r.data.id}`);
+    setOrderId(r.data.id);
+    show(r.data);
+  };
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 px-4 py-8" data-testid="checkout" data-state={state ?? load.state}>
@@ -167,8 +205,28 @@ export function Checkout({ labels, locale, base }: Props) {
           {labels.holding}
         </p>
       )}
-      {load.state === "error" && <Failed labels={labels} problem={load.problem} base={base} />}
-      {load.state === "ready" && <OrderScreen order={load.order} labels={labels} locale={locale} base={base} skew={skew} link={link} onChange={show} refresh={refresh} />}
+      {load.state === "error" && load.retry ? (
+        <div className="space-y-3" role="alert" data-testid="prices-changed">
+          <p className="text-xl font-semibold">{labels.pricesChanged}</p>
+          {typeof (load.problem.data as { totalMinor?: number } | undefined)?.totalMinor === "number" && (
+            <p data-testid="prices-changed-total">{fill(labels.pricesChangedTotal, { total: money((load.problem.data as { totalMinor: number }).totalMinor, ((load.problem.data as { currency?: string }).currency ?? "RON") as Currency, locale) })}</p>
+          )}
+          <button type="button" className={primary} onClick={() => void retryNew(load.retry!)} data-testid="continue-new-prices">
+            {labels.continueNewPrices}
+          </button>
+          <a href={base} className="block text-sm font-semibold underline">
+            {labels.backToShop}
+          </a>
+        </div>
+      ) : (
+        load.state === "error" && <Failed labels={labels} problem={load.problem} base={base} />
+      )}
+      {already !== null && load.state === "ready" && (
+        <p role="status" className={box} data-testid="already-holding">
+          {fill(labels.alreadyHolding, { n: already })}
+        </p>
+      )}
+      {load.state === "ready" && <OrderScreen order={load.order} labels={labels} locale={locale} base={base} skew={skew} link={link} onChange={(o) => { show(o); kick(); }} refresh={refresh} />}
     </div>
   );
 }
@@ -259,7 +317,10 @@ function OrderScreen(props: ScreenProps) {
   return (
     <div className="space-y-4" data-testid="order" data-order-id={order.id}>
       <p className="text-sm">
-        {labels.orderState}: <span data-testid="order-state">{order.state}</span>
+        {labels.orderState}:{" "}
+        <span data-testid="order-state" data-state={order.state}>
+          {(labels[`state_${order.state}` as keyof ShopLabels] as string) ?? order.state}
+        </span>
       </p>
       <Lines order={order} labels={labels} locale={locale} />
       {(order.state === "held" || order.state === "payment_failed" || order.state === "paying") && !ended && (
@@ -281,7 +342,7 @@ function OrderScreen(props: ScreenProps) {
       {(order.state === "paid" || order.state === "issued") && (
         <div className={box} data-testid="order-paid">
           <p className="text-xl font-bold">{order.state === "issued" ? labels.issuedTitle : labels.paidTitle}</p>
-          <p>{labels.paidLead}</p>
+          {order.state === "paid" && <p>{labels.paidLead}</p>}
         </div>
       )}
       {order.plan && order.plan.state !== "pending" && <PlanView {...props} />}
@@ -320,6 +381,9 @@ function GuestLinks({ order, labels, viewHref }: { order: OrderView; labels: Sho
   return (
     <div className="space-y-2" data-testid="guest-links">
       <p className="text-sm font-semibold">{labels.orderLink}</p>
+      <p className="text-sm" data-testid="save-this-link">
+        {labels.saveThisLink}
+      </p>
       <Copy text={viewHref} labels={labels} testId="order-link" />
       {(order.state === "paid" || order.state === "issued") &&
         (claim === "done" ? (
@@ -627,9 +691,12 @@ function PlanView({ order, labels, locale, link, onChange }: ScreenProps) {
               <button type="button" className={primary} disabled={busy} onClick={() => void act("instalments/pay-overdue")} data-testid="pay-overdue">
                 {labels.payOverdue}
               </button>
-              <button type="button" className={secondary} disabled title={labels.changeCardLater} data-testid="change-card">
+              <button type="button" className={secondary} disabled aria-describedby="change-card-soon" data-testid="change-card">
                 {labels.changeCard}
               </button>
+              <span id="change-card-soon" className="self-center rounded-full border px-2 py-0.5 text-xs font-semibold" data-testid="change-card-soon">
+                {labels.comingSoon}
+              </span>
             </>
           )}
         </div>

@@ -45,13 +45,21 @@ function readCookie(headers: Headers, name: string): string | undefined {
  * gets (or keeps) a guest cookie and a guest token. Otherwise 401, so a signed-out user cannot
  * renew a token.
  */
+/** The browser's address (the first X-Forwarded-For entry Vercel sets), for the core's limits. */
+export function clientIp(headers: Headers): string | undefined {
+  const raw = (headers.get("x-vercel-forwarded-for") || headers.get("x-real-ip") || headers.get("x-forwarded-for"))?.split(",")[0]?.trim();
+  return raw && /^[0-9a-fA-F.:]{2,45}$/.test(raw) ? raw : undefined;
+}
+
 export async function issueCoreToken(
   deps: CoreTokenDeps,
   req: { headers: Headers; guest: boolean },
 ): Promise<CoreTokenResult> {
   const now = Math.floor(Date.now() / 1000);
   const exp = now + CORE_TOKEN_TTL_SECONDS;
-  const base = { aud: CORE_AUDIENCE, iat: now, exp, jti: randomUUID() };
+  const ip = clientIp(req.headers);
+  // cip: the core limits hold creation per client (step 4 review D-h).
+  const base = { aud: CORE_AUDIENCE, iat: now, exp, jti: randomUUID(), ...(ip ? { cip: ip } : {}) };
 
   // Always from the database, never the session cookie cache: a signed-out or revoked session must
   // not renew a token. With the signing key and memberships cached in process, this read is the

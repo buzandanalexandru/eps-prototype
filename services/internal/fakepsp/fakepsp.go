@@ -185,7 +185,15 @@ func (p *Provider) stat(name string) {
 }
 
 func (p *Provider) key(kind string, rest ...string) string {
-	k, _ := redisx.PlatformKey("psp", append([]string{p.ID, kind}, rest...)...)
+	// Idempotency keys may hold colons (inst:<plan>:<part>:<try>); key parts may not.
+	safe := make([]string, len(rest))
+	for i, r := range rest {
+		safe[i] = hex.EncodeToString([]byte(r))
+	}
+	k, err := redisx.PlatformKey("psp", append([]string{p.ID, kind}, safe...)...)
+	if err != nil {
+		panic("fakepsp: key: " + err.Error())
+	}
 	return k
 }
 

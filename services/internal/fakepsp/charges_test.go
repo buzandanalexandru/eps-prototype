@@ -145,3 +145,13 @@ func TestSavedCards(t *testing.T) {
 	}
 	_ = context.Background()
 }
+
+// Review fix: idempotency keys with colons (instalment parts) are distinct keys.
+func TestKeysWithColonsAreDistinct(t *testing.T) {
+	r := newRig(t, true)
+	_, a := r.charge(t, "inst:plan-1:1:1", fakepsp.HostedCard, nil)
+	_, b := r.charge(t, "inst:plan-1:2:1", fakepsp.HostedCard, nil)
+	if a["charge_id"] == b["charge_id"] {
+		t.Fatal("two keys returned one charge")
+	}
+}

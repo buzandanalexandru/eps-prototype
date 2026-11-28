@@ -71,7 +71,8 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
     secretKeyRef:
       name: {{ $.ctx.Values.global.runtimeSecret }}
       key: {{ $k }}
-      optional: true
+      # Required (review sec L6): CI creates every key before the release rolls out.
+      optional: false
 {{- end }}
 {{- end }}
 {{- if .ctx.Values.paymentSecrets }}
@@ -83,6 +84,12 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
   value: {{ printf "http://%s-core" .ctx.Release.Name | quote }}
 - name: RETURN_URL_ORIGINS
   value: {{ .ctx.Values.global.corsAllowedOrigins | quote }}
+{{- with .ctx.Values.holdLimits }}
+- name: HOLD_RATE_PER_MINUTE
+  value: {{ .perMinute | quote }}
+- name: HOLD_LIVE_PER_CLIENT
+  value: {{ .live | quote }}
+{{- end }}
 {{- end }}
 {{- with .ctx.Values.providerId }}
 - name: PROVIDER_ID

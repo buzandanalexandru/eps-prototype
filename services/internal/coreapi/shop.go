@@ -853,3 +853,9 @@ func (s *Server) CloseSeason(ctx context.Context, req api.CloseSeasonRequestObje
 	}
 	return okRaw(map[string]any{"fans": n, "totalMinor": total}), nil
 }
+
+// ReturnURLAllowed reports whether a provider return address is allowed (tests).
+func (s *Server) ReturnURLAllowed(ctx context.Context, org, raw string) bool {
+	_, ok := s.returnURL(ctx, org, raw)
+	return ok && raw != ""
+}

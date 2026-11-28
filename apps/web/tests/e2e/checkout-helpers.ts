@@ -13,7 +13,7 @@ export async function holdGalaxia(page: Page, opts: { locale?: "en" | "ro"; qty?
   for (let i = 0; i < (opts.qty ?? 1); i++) await ga.getByTestId("plus").click();
   await page.getByTestId("continue").click();
   await expect(page).toHaveURL(/\/checkout\?order=[0-9a-f-]{36}/);
-  await expect(page.getByTestId("order-state")).toHaveText("held");
+  await expect(page.getByTestId("order-state")).toHaveAttribute("data-state", "held");
   return new URL(page.url()).searchParams.get("order")!;
 }
 
@@ -33,5 +33,5 @@ export async function pressPay(page: Page, method: "hosted_card" | "apple_pay" |
 
 /** Back on the shop after the provider: waits for the order's state. */
 export async function expectOrderState(page: Page, state: string | RegExp) {
-  await expect(page.getByTestId("order-state")).toHaveText(state, { timeout: 30_000 });
+  await expect(page.getByTestId("order-state")).toHaveAttribute("data-state", state, { timeout: 30_000 });
 }

@@ -34,6 +34,8 @@ core:
   replicas: 1
   # Checkout, payments and wallet need the order-link key and the providers' keys (eps-runtime).
   paymentSecrets: [ORDER_LINK_KEY, PSP_API_KEY, PSP_ADMIN_TOKEN, PSP_WEBHOOK_SECRET_A, PSP_WEBHOOK_SECRET_B]
+  # New holds per client per minute and live holds per client (review D-h); 0 turns a limit off.
+  holdLimits: { perMinute: 10, live: 10 }
   autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 10, targetCPU: 70 }
   pdb: { enabled: true }
   database: { enabled: true, maxConns: 5 }

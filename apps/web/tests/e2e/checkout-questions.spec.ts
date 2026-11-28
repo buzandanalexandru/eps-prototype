@@ -33,7 +33,7 @@ test("a required consent blocks payment until it is ticked", async ({ page, brow
   await expect(fan.getByTestId("shop-tickets")).toHaveAttribute("data-availability", "ok");
   await fan.getByTestId("ticket-card").first().getByTestId("plus").click();
   await fan.getByTestId("continue").click();
-  await expect(fan.getByTestId("order-state")).toHaveText("held");
+  await expect(fan.getByTestId("order-state")).toHaveAttribute("data-state", "held");
   await expect(fan.getByTestId("consents")).toContainText("I accept the festival rules (required)");
   await giveDetails(fan);
   await fan.getByTestId("method-hosted_card").locator("input").check();

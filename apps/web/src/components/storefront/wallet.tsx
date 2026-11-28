@@ -130,6 +130,7 @@ export function WalletView({ labels, locale, organiserId, currency }: Props) {
                 {labels.walletCode}: <code className="font-bold" data-testid="wallet-code">{st.wallet.code}</code>
               </p>
             )}
+            <PayCode labels={labels} organiserId={organiserId} currency={cur} />
           </div>
           {topup && (
             <p role="status" data-testid="topup-status" data-state={topup.attempt.state}>
@@ -184,6 +185,44 @@ export function WalletView({ labels, locale, organiserId, currency }: Props) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** A 6-digit code for one stand payment, valid 2 minutes (review D-d). */
+function PayCode({ labels, organiserId, currency }: { labels: ShopLabels; organiserId: string; currency: string }) {
+  const [code, setCode] = useState<{ payCode: string; expiresAt: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!code) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [code]);
+  const left = code ? Math.max(0, Math.floor((Date.parse(code.expiresAt) - now) / 1000)) : 0;
+  return (
+    <div className="mt-2 space-y-1 text-sm">
+      <button
+        type="button"
+        className="font-semibold underline"
+        data-testid="pay-code-show"
+        onClick={async () => {
+          const r = await shopApi<{ payCode: string; expiresAt: string }>(`wallets/${organiserId}/pay-code?currency=${currency}`, { method: "POST" });
+          if (r.ok) {
+            setCode(r.data);
+            setNow(Date.now());
+          }
+        }}
+      >
+        {labels.payCodeShow}
+      </button>
+      {code &&
+        (left > 0 ? (
+          <p>
+            {labels.payCode}: <code className="text-lg font-bold" data-testid="pay-code">{code.payCode}</code> · {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}
+          </p>
+        ) : (
+          <p data-testid="pay-code-expired">{labels.payCodeExpired}</p>
+        ))}
     </div>
   );
 }

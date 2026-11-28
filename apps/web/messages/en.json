@@ -877,6 +877,8 @@
     "remove": "Remove",
     "none": "No questions yet.",
     "questionsLink": "Checkout questions",
-    "added": "Question added. Publish the shop to show it."
+    "added": "Question added. Publish the shop to show it.",
+    "payCode": "Fan's pay code (6 digits)",
+    "resetsAt": "Changed settings go back to normal at {time} UTC (15 minutes after the last change)."
   }
 }

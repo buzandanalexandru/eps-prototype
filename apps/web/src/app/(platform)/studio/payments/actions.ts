@@ -41,6 +41,9 @@ export async function standPaymentAction(fd: FormData) {
   const code = String(fd.get("code") ?? "").trim().toUpperCase();
   const amount = Math.round(num(fd, "amount", 2000) * 100);
   const label = String(fd.get("label") ?? "").slice(0, 80);
-  const r = await organiserCore<{ balanceMinor: number; creditMinor: number; currency: string }>("POST", "/v1/organiser/wallet/stand-payments", { code, amountMinor: amount, label });
+  const payCode = String(fd.get("payCode") ?? "").trim();
+  // One key per rendered form: a double submit charges once.
+  const key = String(fd.get("key") ?? "");
+  const r = await organiserCore<{ balanceMinor: number; creditMinor: number; currency: string }>("POST", "/v1/organiser/wallet/stand-payments", { code, payCode, amountMinor: amount, label }, key);
   redirect(`/studio/stand?${r.ok ? `charged=${amount}&left=${r.data.balanceMinor + r.data.creditMinor}&currency=${r.data.currency}` : `error=${encodeURIComponent(r.code)}`}`);
 }

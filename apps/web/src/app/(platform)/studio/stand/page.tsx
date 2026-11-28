@@ -1,5 +1,6 @@
 // The stand screen (step 4, D12, simulated): a stand charges a fan's EPS Wallet by the code the fan
 // shows on their wallet page; the ledger records a stand sale.
+import { randomUUID } from "node:crypto";
 import { getTranslations } from "next-intl/server";
 import { formatMoney, type Currency } from "@/lib/pricing";
 import { requireStudio } from "@/lib/studio/context";
@@ -37,6 +38,11 @@ export default async function StandPage({ searchParams }: { searchParams: Promis
             {t("code")}
             <input name="code" required pattern="[A-Za-z0-9]{4}-[A-Za-z0-9]{4}" className={field} autoComplete="off" data-testid="stand-code" />
           </label>
+          <label className="grid gap-1 text-sm">
+            {t("payCode")}
+            <input name="payCode" required pattern="[0-9]{6}" inputMode="numeric" maxLength={6} className={field} autoComplete="off" data-testid="stand-pay-code" />
+          </label>
+          <input type="hidden" name="key" value={randomUUID()} />
           <label className="grid gap-1 text-sm">
             {t("amount")} (RON)
             <input name="amount" required inputMode="decimal" className={field} data-testid="stand-amount" />

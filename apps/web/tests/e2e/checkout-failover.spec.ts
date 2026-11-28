@@ -36,7 +36,7 @@ test("provider A down: the fan pays on B and the order is paid", async ({ page, 
   await expect(fan.getByTestId("shop-tickets")).toHaveAttribute("data-availability", "ok");
   await fan.getByTestId("ticket-card").first().getByTestId("plus").click();
   await fan.getByTestId("continue").click();
-  await expect(fan.getByTestId("order-state")).toHaveText("held");
+  await expect(fan.getByTestId("order-state")).toHaveAttribute("data-state", "held");
   await giveDetails(fan);
   await fan.getByTestId("method-hosted_card").locator("input").check();
   await fan.getByTestId("pay").click();

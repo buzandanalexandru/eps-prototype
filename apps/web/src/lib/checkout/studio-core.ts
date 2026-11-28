@@ -6,14 +6,18 @@ import { organiserCoreToken } from "../snapshot/studio";
 
 export type CoreAnswer<T> = { ok: true; data: T } | { ok: false; status: number; code: string };
 
-export async function organiserCore<T>(method: "GET" | "PUT" | "POST", path: string, body?: unknown): Promise<CoreAnswer<T>> {
+export async function organiserCore<T>(method: "GET" | "PUT" | "POST", path: string, body?: unknown, idempotencyKey?: string): Promise<CoreAnswer<T>> {
   const base = coreBaseUrl();
   const token = await organiserCoreToken();
   if (!base || !token) return { ok: false, status: 503, code: "EPS-UNAVAILABLE" };
   try {
     const res = await fetch(`${base}${path}`, {
       method,
-      headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(idempotencyKey && /^[A-Za-z0-9_-]{8,100}$/.test(idempotencyKey) ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
@@ -32,5 +36,5 @@ export type ProviderState = {
   calls?: number;
   failures?: number;
   reachable?: boolean;
-  knobs?: { failure_rate?: number; decline_rate?: number; latency_ms?: number; latency_jitter_ms?: number; outage?: boolean; outage_mode?: string; timeout_rate?: number; webhook_delay_ms?: number; webhook_drop_rate?: number; challenge_rate?: number };
+  knobs?: { failure_rate?: number; decline_rate?: number; latency_ms?: number; latency_jitter_ms?: number; outage?: boolean; outage_mode?: string; timeout_rate?: number; webhook_delay_ms?: number; webhook_drop_rate?: number; challenge_rate?: number; resets_at?: string };
 };

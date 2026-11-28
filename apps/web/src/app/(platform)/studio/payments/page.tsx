@@ -51,6 +51,11 @@ export default async function StudioPaymentsPage({ searchParams }: { searchParam
                 </p>
                 <p className="text-xs text-muted-foreground">{t("calls", { calls: p.calls ?? 0, failures: p.failures ?? 0 })}</p>
                 {!p.reachable && <p className="text-sm text-destructive">{t("unreachable")}</p>}
+                {k.resets_at && (
+                  <p className="text-xs" data-testid="knobs-reset">
+                    {t("resetsAt", { time: new Date(k.resets_at).toISOString().slice(11, 16) })}
+                  </p>
+                )}
                 {admin && p.reachable && (
                   <form action={setKnobsAction} className="space-y-2" data-testid={`knobs-${p.provider}`}>
                     <input type="hidden" name="provider" value={p.provider} />

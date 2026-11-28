@@ -27,12 +27,12 @@ test("the resume link opens the same order, timer and total on a phone, and pays
   await expectOrderState(page, /^(paid|issued)$/);
 });
 
-test("a changed link says so", async ({ page }) => {
+test("a changed link shows nothing of the order (Order not found)", async ({ page }) => {
   const id = await holdGalaxia(page);
   const ctx = await page.context().browser()!.newContext();
   const other = await ctx.newPage();
   await other.goto(`/s/nibiru/en/checkout?order=${id}&t=forged.token`);
-  await expect(other.getByTestId("link-invalid")).toHaveText("Link not valid");
+  await expect(other.getByTestId("order-not-found")).toHaveText("Order not found");
   await expect(other.getByTestId("pay-form")).toHaveCount(0);
   await ctx.close();
 });

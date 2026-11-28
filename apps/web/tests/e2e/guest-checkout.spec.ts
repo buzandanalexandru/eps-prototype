@@ -11,6 +11,7 @@ test("a guest buys and the order link opens the order on another device", async 
   await expectOrderState(page, /^(paid|issued)$/);
   const link = await page.getByTestId("order-link").inputValue();
   await expect(page.getByTestId("add-to-account")).toBeVisible();
+  await expect(page.getByTestId("save-this-link")).toHaveText("Save this link: it is the only way to reopen the order without an account.");
   const ctx = await browser.newContext();
   const other = await ctx.newPage();
   await other.goto(link);

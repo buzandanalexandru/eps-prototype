@@ -17,6 +17,7 @@ const ROUTES: { method: string; path: RegExp }[] = [
   { method: "GET", path: /^wallets$/ },
   { method: "GET", path: new RegExp(`^wallets/${UUID}$`) },
   { method: "POST", path: new RegExp(`^wallets/${UUID}/topups$`) },
+  { method: "POST", path: new RegExp(`^wallets/${UUID}/pay-code$`) },
   { method: "GET", path: new RegExp(`^wallets/${UUID}/topups/${UUID}$`) },
 ];
 

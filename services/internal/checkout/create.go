@@ -351,7 +351,7 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 	}
 	if req.Version != live.Version {
 		return nil, false, apperr.New(http.StatusUnprocessableEntity, apperr.PricesChanged, "Prices changed, please review.", true).
-			With("version", live.Version).With("totalMinor", total)
+			With("version", live.Version).With("totalMinor", total).With("currency", live.Currency)
 	}
 	id := uuid.NewString()
 	deadline := now.Add(time.Duration(HoldMinutes(live.Rules)) * time.Minute).Truncate(time.Millisecond)

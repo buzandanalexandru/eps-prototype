@@ -27,16 +27,18 @@ test("Romanian checkout: the hold, lines and total in Romanian; reload holds onc
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Finalizează comanda");
   await expect(page.getByTestId("checkout-total")).toHaveText("1.104,96 RON");
   await expect(page.getByTestId("hold-timer")).toContainText("Biletele sunt rezervate încă");
+  await expect(page.getByTestId("order-state")).toHaveText("Rezervată");
   await expectNoHorizontalScroll(page);
   const url = page.url();
   await page.reload();
   expect(page.url()).toBe(url);
-  await expect(page.getByTestId("order-state")).toHaveText("held");
+  await expect(page.getByTestId("order-state")).toHaveAttribute("data-state", "held");
 });
 
-test("a second hand-off for the same sale returns the order already held", async ({ page }) => {
+test("a second hand-off for the same sale returns the order already held, and says so", async ({ page }) => {
   const first = await holdGalaxia(page);
   const second = await holdGalaxia(page, { qty: 2 });
   expect(second).toBe(first);
+  await expect(page.getByTestId("already-holding")).toHaveText("You already hold 1 tickets for this sale. This is your order:");
   await page.goto(GALAXIA());
 });

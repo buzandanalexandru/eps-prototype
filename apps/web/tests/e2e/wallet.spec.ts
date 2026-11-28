@@ -18,6 +18,8 @@ test("top up 600 RON, pay a 552.48 RON order from the wallet in one step", async
   await expectNoHorizontalScroll(page);
   const code = await page.getByTestId("wallet-code").textContent();
   expect(code).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+  await page.getByTestId("pay-code-show").click();
+  await expect(page.getByTestId("pay-code")).toHaveText(/^\d{6}$/);
 
   await holdGalaxia(page);
   await giveDetails(page);

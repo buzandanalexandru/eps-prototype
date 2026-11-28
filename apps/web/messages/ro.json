@@ -877,6 +877,8 @@
     "remove": "Șterge",
     "none": "Încă nu există întrebări.",
     "questionsLink": "Întrebări la plată",
-    "added": "Întrebarea a fost adăugată. Publică magazinul ca să apară."
+    "added": "Întrebarea a fost adăugată. Publică magazinul ca să apară.",
+    "payCode": "Codul de plată al fanului (6 cifre)",
+    "resetsAt": "Setările schimbate revin la normal la {time} UTC (la 15 minute după ultima schimbare)."
   }
 }
