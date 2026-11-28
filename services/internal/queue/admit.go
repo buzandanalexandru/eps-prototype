@@ -250,6 +250,11 @@ func (e *Engine) Shuffle(ctx context.Context, sale *sales.Sale) (int, error) {
 		if n, err := renewScript.Run(ctx, e.Redis, []string{k.lock("draw")}, me, 10000).Int(); err != nil || n == 0 {
 			return 0, errors.New("queue: lost the draw lock")
 		}
+		if afterDrawBatch != nil {
+			if err := afterDrawBatch(end); err != nil {
+				return 0, err
+			}
+		}
 	}
 	tail, err := finishScript.Run(ctx, e.Redis, []string{k.Pre(), k.Line(), k.State(), k.Members()}, n).Int()
 	if err != nil {
@@ -263,6 +268,9 @@ func (e *Engine) Shuffle(ctx context.Context, sale *sales.Sale) (int, error) {
 	}
 	return tail, nil
 }
+
+// afterDrawBatch is a test hook (a draw cut short after a batch).
+var afterDrawBatch func(drawn int) error
 
 var unlockScript = redis.NewScript(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`)
 
