@@ -123,14 +123,23 @@ export function Checkout({ labels, locale, base }: Props) {
       key = newKey();
     }
     (async () => {
-      const r = await shopApi<OrderView>("orders", {
-        method: "POST",
-        key: key!,
-        body: { eventId: event, version: v, locale, items: items.map((l) => ({ productId: l.productId, qty: l.qty, ...(l.instance ? { instance: l.instance } : {}) })) },
-      });
+      const body = { eventId: event, version: v, locale, items: items.map((l) => ({ productId: l.productId, qty: l.qty, ...(l.instance ? { instance: l.instance } : {}) })) };
+      const r = await shopApi<OrderView>("orders", { method: "POST", key: key!, body });
       if (!r.ok) {
         setLoad({ state: "error", problem: r.problem });
         return;
+      }
+      if (!["held", "paying", "payment_failed"].includes(r.data.state)) {
+        // This hand-off already became an order that is over (paid, expired...): a new hold.
+        try {
+          sessionStorage.removeItem(handoff);
+        } catch {}
+        const again = await shopApi<OrderView>("orders", { method: "POST", key: newKey(), body });
+        if (!again.ok) {
+          setLoad({ state: "error", problem: again.problem });
+          return;
+        }
+        r.data = again.data;
       }
       window.history.replaceState(null, "", `${window.location.pathname}?order=${r.data.id}`);
       setOrderId(r.data.id);
@@ -140,11 +149,12 @@ export function Checkout({ labels, locale, base }: Props) {
 
   // Poll every 2 seconds while the order can still change.
   const state = load.state === "ready" ? load.order.state : null;
+  const planActive = load.state === "ready" && load.order.plan?.state === "active";
   useEffect(() => {
-    if (!orderId || !state || !LIVE.includes(state)) return;
+    if (!orderId || !state || (!LIVE.includes(state) && !planActive)) return;
     const t = setInterval(() => void refresh(), 2000);
     return () => clearInterval(t);
-  }, [orderId, state, refresh]);
+  }, [orderId, state, planActive, refresh]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 px-4 py-8" data-testid="checkout" data-state={state ?? load.state}>

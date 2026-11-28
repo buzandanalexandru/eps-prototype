@@ -31,9 +31,8 @@ test("2 GA and 1 camping: the running all-in total, and Continue hands the selec
   await expect(page.getByTestId("needs-ticket")).toHaveCount(0);
   await expectNoHorizontalScroll(page);
   await page.getByTestId("continue").click();
-  await expect(page).toHaveURL(/\/s\/nibiru\/en\/checkout\?event=[0-9a-f-]{36}&v=\d+&items=/);
-  const items = new URL(page.url()).searchParams.get("items")!;
-  expect(items.split(",").map((i) => i.split(":")[1]).sort()).toEqual(["1", "2"]);
+  // The hand-off (?event=&v=&items=) becomes a hold; the page then shows ?order=<id>.
+  await expect(page).toHaveURL(/\/s\/nibiru\/en\/checkout\?order=[0-9a-f-]{36}/);
   await expect(page.getByTestId("checkout-line")).toHaveCount(2);
   await expect(page.getByTestId("checkout-total")).toHaveText("RON 1,308.94");
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
