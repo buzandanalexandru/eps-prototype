@@ -82,3 +82,18 @@ const (
 	SavedCardInUse      = "EPS-SAVED-CARD-IN-USE"
 	PayCodeInvalid      = "EPS-PAY-CODE-INVALID"
 )
+
+// On-sale engine codes (step 5).
+const (
+	SaleInvalid  = "EPS-SALE-INVALID"
+	SaleLocked   = "EPS-SALE-LOCKED"
+	SaleNotFound = "EPS-SALE-NOT-FOUND"
+	PassRequired = "EPS-PASS-REQUIRED"
+	CapReached   = "EPS-CAP-REACHED"
+	OTPRequired  = "EPS-OTP-REQUIRED"
+	OTPWrong     = "EPS-OTP-WRONG"
+	OTPExpired   = "EPS-OTP-EXPIRED"
+	OTPLocked    = "EPS-OTP-LOCKED"
+	OTPResends   = "EPS-OTP-RESENDS"
+	QueueClosed  = "EPS-QUEUE-CLOSED"
+)

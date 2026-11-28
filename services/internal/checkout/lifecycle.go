@@ -293,16 +293,35 @@ func shortRef(ref string) string {
 // free; otherwise the order is marked refunded and Outcome.Refund asks the caller to refund.
 func (s *Service) Complete(ctx context.Context, org, orderID, ref, reason string, also func(tx pgx.Tx, o *Order) error) (Outcome, error) {
 	var out Outcome
+	releaseRef, releaseEvent := "", ""
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		o, err := LoadTx(ctx, tx, orderID, true)
 		if err != nil {
 			return err
 		}
+		releaseEvent = o.EventID
 		switch o.State {
 		case Paid, Issued:
 			out = Outcome{Paid: true, AlreadyPaid: true}
 			return nil
 		case Refunded:
+			out = Outcome{Refund: true}
+			return nil
+		}
+		// Step 5 (D-7): the cap per person is checked again on the record of truth.
+		if over, err := capOverTx(ctx, tx, o); err != nil {
+			return err
+		} else if over {
+			_, moved, err := Transition(ctx, tx, orderID, Refunded, "cap per person reached at payment", ", last_error_code = $4", apperr.CapReached)
+			if err != nil {
+				return err
+			}
+			if moved {
+				if err := emit(ctx, tx, o, "order.refunded", map[string]any{"reason": apperr.CapReached}); err != nil {
+					return err
+				}
+			}
+			releaseRef = o.HoldRef
 			out = Outcome{Refund: true}
 			return nil
 		}
@@ -344,10 +363,16 @@ func (s *Service) Complete(ctx context.Context, org, orderID, ref, reason string
 			}
 		}
 		out = Outcome{Paid: true}
+		if err := capLedgerTx(ctx, tx, o); err != nil {
+			return err
+		}
 		return emit(ctx, tx, o, "order.paid", map[string]any{"reason": reason})
 	})
 	if err != nil {
 		return Outcome{}, err
+	}
+	if releaseRef != "" {
+		_, _ = s.Inv.Release(ctx, org, releaseEvent, releaseRef)
 	}
 	out.Order, err = s.GetIn(ctx, org, orderID)
 	return out, err
@@ -365,6 +390,14 @@ func (s *Service) MarkPaidTx(ctx context.Context, tx pgx.Tx, orderID, reason str
 	}
 	if !o.HoldExpiresAt.After(s.now()) {
 		return o, apperr.New(http.StatusConflict, apperr.HoldExpired, "The hold ended and the tickets were released.", false)
+	}
+	if over, err := capOverTx(ctx, tx, o); err != nil {
+		return nil, err
+	} else if over {
+		return o, apperr.New(http.StatusUnprocessableEntity, apperr.CapReached, "You have reached the most tickets one person can buy for this event.", false).With("left", 0)
+	}
+	if err := capLedgerTx(ctx, tx, o); err != nil {
+		return nil, err
 	}
 	if _, _, err := Transition(ctx, tx, orderID, Paying, reason, ""); err != nil {
 		return nil, err
@@ -424,4 +457,28 @@ func (s *Service) Issue(ctx context.Context, org, orderID string) error {
 		}
 		return emit(ctx, tx, o, "order.issued", nil)
 	})
+}
+
+// capOverTx reports whether paying this order would take its buyer above the sale's cap per
+// person, counting the paid tickets in the cap ledger (step 5, D-7: checked again at payment).
+func capOverTx(ctx context.Context, tx pgx.Tx, o *Order) (bool, error) {
+	if o.CapIdentity == nil || o.CapPerPerson == nil || o.CapTickets == nil || *o.CapPerPerson <= 0 {
+		return false, nil
+	}
+	var have int
+	if err := tx.QueryRow(ctx, `select coalesce(sum(tickets), 0) from sales.cap_ledger where event_id = $1 and identity_hash = $2 and order_id <> $3`,
+		o.EventID, *o.CapIdentity, o.ID).Scan(&have); err != nil {
+		return false, err
+	}
+	return have+*o.CapTickets > *o.CapPerPerson, nil
+}
+
+// capLedgerTx records a paid order's tickets under its cap identity.
+func capLedgerTx(ctx context.Context, tx pgx.Tx, o *Order) error {
+	if o.CapIdentity == nil || o.CapTickets == nil {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `insert into sales.cap_ledger (organiser_id, event_id, identity_hash, order_id, tickets) values ($1, $2, $3, $4, $5)
+		on conflict (organiser_id, order_id) do nothing`, o.OrganiserID, o.EventID, *o.CapIdentity, o.ID, *o.CapTickets)
+	return err
 }

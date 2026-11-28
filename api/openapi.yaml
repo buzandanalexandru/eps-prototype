@@ -20,6 +20,9 @@ tags:
   - name: checkout
   - name: payments
   - name: wallet
+  - name: sales
+  - name: queue
+    description: Served by the gateway (x-eps-service gateway), not the core.
 paths:
   /healthz:
     get:
@@ -195,6 +198,8 @@ paths:
       tags: [checkout]
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/Pass"
+        - $ref: "#/components/parameters/Session"
       requestBody:
         required: true
         content:
@@ -286,6 +291,8 @@ paths:
         - $ref: "#/components/parameters/OrderId"
         - $ref: "#/components/parameters/OrderToken"
         - $ref: "#/components/parameters/IdempotencyKeyRequired"
+        - $ref: "#/components/parameters/Pass"
+        - $ref: "#/components/parameters/Session"
       requestBody:
         required: true
         content:
@@ -595,8 +602,239 @@ paths:
                 $ref: "#/components/schemas/SeasonCloseResult"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}/otp:
+    post:
+      operationId: sendOrderOtp
+      summary: Send (simulate) a one-time code for an order that needs one, or a new code
+      description: |
+        Risk-based OTP (E12, design D-8): asked only when the organiser switched it on and the buyer
+        scored as risky or the order is above the ticket threshold. The code is simulated: it is
+        returned here and shown on screen in a "simulated SMS" panel, never sent anywhere.
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+        - $ref: "#/components/parameters/Pass"
+        - $ref: "#/components/parameters/Session"
+      responses:
+        "200":
+          description: The simulated code.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtpChallenge"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}/otp/verify:
+    post:
+      operationId: verifyOrderOtp
+      summary: Check a one-time code (3 tries per code, 3 resends; then the order is cancelled)
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+        - $ref: "#/components/parameters/Pass"
+        - $ref: "#/components/parameters/Session"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code:
+                  type: string
+                  maxLength: 12
+      responses:
+        "200":
+          description: The order, with its code verified.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/events/{eventId}/sales:
+    get:
+      operationId: listSales
+      summary: The event's sale moments with their current settings
+      tags: [sales]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      responses:
+        "200":
+          description: Sale moments by opening time.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createSale
+      summary: Add a sale moment to a published event (owner or admin)
+      tags: [sales]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleCreate"
+      responses:
+        "201":
+          description: The sale with version 1 of its settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/sales/{saleId}:
+    get:
+      operationId: getSale
+      summary: A sale moment with its settings history and live queue figures
+      tags: [sales]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      responses:
+        "200":
+          description: The sale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/sales/{saleId}/settings:
+    put:
+      operationId: updateSaleSettings
+      summary: Save a new version of a sale's settings (owner or admin)
+      description: |
+        Live fields (admission rate, shopping limit, pause, bot defence, OTP, holds and caps) take
+        effect within 2 seconds. Opening time, pre-queue window and queue on/off are refused with
+        EPS-SALE-LOCKED once the pre-queue opened.
+      tags: [sales]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleSettings"
+      responses:
+        "200":
+          description: The sale with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/queue/{saleId}/join:
+    post:
+      operationId: joinQueue
+      x-eps-service: gateway
+      summary: Join a sale's waiting room (gateway)
+      description: |
+        Takes the fan's one place per account (or guest identity), or returns the place it has. Before
+        the pre-queue opens nothing is taken; in the pre-queue window the fan waits for the draw at
+        opening; after the draw the fan joins the back of the line; with the queue off a pass is ready
+        at once. The page sends a session secret it created (X-EPS-Session) and a proof of work:
+        SHA-256 of "<saleId>:<sha256(session) hex>:<pow>" with 16 leading zero bits.
+      tags: [queue]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+        - $ref: "#/components/parameters/SessionRequired"
+        - name: X-EPS-Client-UA
+          in: header
+          required: false
+          description: The browser's user agent, passed on by the web app.
+          schema:
+            type: string
+            maxLength: 400
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pow:
+                  type: string
+                  maxLength: 64
+                print:
+                  type: string
+                  maxLength: 128
+      responses:
+        "200":
+          description: The fan's place.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueStatus"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/queue/{saleId}/status:
+    get:
+      operationId: queueStatus
+      x-eps-service: gateway
+      summary: A place's position, estimate and, once admitted, its pass (gateway)
+      tags: [queue]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+        - $ref: "#/components/parameters/SessionRequired"
+        - name: X-EPS-Queue-Token
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        "200":
+          description: The place.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QueueStatus"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   parameters:
+    SaleId:
+      name: saleId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Pass:
+      name: X-EPS-Pass
+      in: header
+      required: false
+      description: The waiting room's signed pass (required on sales with a waiting room).
+      schema:
+        type: string
+        maxLength: 2048
+    Session:
+      name: X-EPS-Session
+      in: header
+      required: false
+      description: The browser's session secret the pass is bound to.
+      schema:
+        type: string
+        maxLength: 200
+    SessionRequired:
+      name: X-EPS-Session
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 200
     OrderId:
       name: orderId
       in: path
@@ -662,6 +900,176 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    SaleSettings:
+      type: object
+      required: [opensAt, prequeueMinutes, queueOn, ratePerMinute, activeLimit, paused, holdMinutes, capPerOrder, capPerPerson, botDefence, otpOn, otpThreshold]
+      properties:
+        opensAt:
+          type: string
+          format: date-time
+        prequeueMinutes:
+          type: integer
+          description: 5 to 120.
+        queueOn:
+          type: boolean
+        ratePerMinute:
+          type: integer
+          description: 10 to 60,000 fans admitted per minute.
+        activeLimit:
+          type: integer
+          description: Fans shopping at once, 1 to 100,000.
+        paused:
+          type: boolean
+        holdMinutes:
+          type: integer
+          description: 5 to 15.
+        capPerOrder:
+          type: integer
+          description: 1 to 20 tickets.
+        capPerPerson:
+          type: integer
+          description: 1 to 50 tickets across the event's sale moments.
+        botDefence:
+          type: boolean
+        otpOn:
+          type: boolean
+        otpThreshold:
+          type: integer
+          description: Orders above this many tickets are asked for a code (1 to 20).
+    SaleCreate:
+      type: object
+      required: [name, settings]
+      properties:
+        name:
+          type: string
+          maxLength: 80
+        settings:
+          $ref: "#/components/schemas/SaleSettings"
+    SaleVersion:
+      type: object
+      required: [version, settings, at, by]
+      properties:
+        version:
+          type: integer
+        settings:
+          $ref: "#/components/schemas/SaleSettings"
+        at:
+          type: string
+          format: date-time
+        by:
+          type: string
+    QueueCounts:
+      type: object
+      required: [state, prequeue, line, slow, admitted, active]
+      properties:
+        state:
+          type: string
+        prequeue:
+          type: integer
+        line:
+          type: integer
+        slow:
+          type: integer
+        admitted:
+          type: integer
+        active:
+          type: integer
+        seed:
+          type: string
+    SaleView:
+      type: object
+      required: [id, eventId, name, version, settings, phase, updatedAt, updatedBy]
+      properties:
+        id:
+          type: string
+          format: uuid
+        eventId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: integer
+        settings:
+          $ref: "#/components/schemas/SaleSettings"
+        phase:
+          type: string
+          enum: [before, prequeue, open]
+        prequeueOpensAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        updatedBy:
+          type: string
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaleVersion"
+        queue:
+          $ref: "#/components/schemas/QueueCounts"
+    SaleList:
+      type: object
+      required: [sales]
+      properties:
+        sales:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaleView"
+    OtpChallenge:
+      type: object
+      required: [code, expiresAt, resendsLeft, triesLeft, simulated]
+      properties:
+        code:
+          type: string
+          description: The simulated code (shown on screen; a real system would send it by SMS).
+        expiresAt:
+          type: string
+          format: date-time
+        resendsLeft:
+          type: integer
+        triesLeft:
+          type: integer
+        simulated:
+          type: boolean
+    QueueStatus:
+      type: object
+      required: [state, saleId, eventId, opensAt, prequeueOpensAt, paused, nextPollMs, serverTime]
+      properties:
+        state:
+          type: string
+          enum: [before, notopen, prequeue, shuffling, waiting, admitted, ended]
+        saleId:
+          type: string
+        eventId:
+          type: string
+        opensAt:
+          type: string
+          format: date-time
+        prequeueOpensAt:
+          type: string
+          format: date-time
+        queueToken:
+          type: string
+        ahead:
+          type: integer
+          description: Fans ahead in line.
+        estimateSeconds:
+          type: integer
+        paused:
+          type: boolean
+        pass:
+          type: string
+          description: The signed pass (once admitted), sent as X-EPS-Pass on checkout calls.
+        passExpiresAt:
+          type: integer
+          description: Unix milliseconds.
+        nextPollMs:
+          type: integer
+        serverTime:
+          type: string
+          format: date-time
     Health:
       type: object
       required: [status]
@@ -1359,6 +1767,14 @@ components:
           additionalProperties: true
         detailsGiven:
           type: boolean
+        saleId:
+          type: string
+        otpRequired:
+          type: boolean
+          description: A one-time code must be entered before payment (risk-based OTP, step 5).
+        otpVerifiedAt:
+          type: string
+          format: date-time
         lastErrorCode:
           type: string
         createdAt:

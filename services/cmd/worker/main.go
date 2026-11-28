@@ -1,7 +1,8 @@
 // Command worker runs the background work of the sales side (step 4): the hold sweeper, the payment
 // reconciler, the instalment runner and the plan defaults, the outbox relay to Redis Streams, the
-// purge of old idempotency keys and webhook ids, and the stub issuer that marks paid orders issued
-// until step 7 issues real tickets. Each loop has its own small connection pool (review M1), so a
+// purge of old idempotency keys and webhook ids, the stub issuer that marks paid orders issued
+// until step 7 issues real tickets, and step 5's shard sweeper, inventory reconciler, queue audit
+// and pass/cap ends. Each loop has its own small connection pool (review M1), so a
 // slow provider never starves the sweeper.
 package main
 
@@ -18,13 +19,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/buzandanalexandru/eps-prototype/services/internal/botdefence"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
-	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/onsale"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/outbox"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wire"
@@ -98,6 +102,14 @@ func main() {
 				return svc.Checkout.Issue(ctx, e.OrganiserID, p.OrderID)
 			}}
 		go issuer.Run(ctx)
+		// Step 5: the shard sweeper (lapsed shard entries within a second or two, even when the core
+		// that took them stopped), the reconciler (every 15 s, one worker at a time), the waiting
+		// rooms' audit copy to Postgres, and the end of passes and cap entries from order events.
+		go (&inventory.ShardSweeper{Inv: inv, Log: log}).Run(ctx, time.Second)
+		go (&inventory.Reconciler{Inv: inv, Pool: recon.Checkout.Pool, Log: log}).Run(ctx, 15*time.Second)
+		go (&onsale.Audit{Redis: rdb, Pool: pool, Log: log}).Run(ctx, 2*time.Second)
+		life := &onsale.Lifecycle{Checkout: svc.Checkout, Engine: &queue.Engine{Redis: rdb}, Caps: &botdefence.Caps{Redis: rdb}}
+		go (&outbox.Consumer{Redis: rdb, Topic: outbox.TopicOrders, Group: "onsale", Name: host, Log: log, Handle: life.Handle}).Run(ctx)
 		log.Info("worker loops started", "sweeper", "1s", "reconciler", "5s", "instalments", "5s", "relay", "200ms")
 	}
 	service.Serve(log, service.SimpleHandler("worker", log, checks, nil, nil))

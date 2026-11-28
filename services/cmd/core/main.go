@@ -37,12 +37,14 @@ func main() {
 	var usage snapshot.Usage = snapshot.NoUsage{}
 	var shop *coreapi.Shop
 	var hooks *payments.Webhooks
+	var onSale *coreapi.OnSale
 	if pool != nil {
 		// Copies in Redis are signed with SNAPSHOT_CACHE_KEY (a secret CI generates per environment).
 		snaps = snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
 		if rdb != nil {
 			shop, hooks = wire.Shop(pool, rdb, snaps, log)
 			usage = checkout.Usage{Svc: shop.Checkout}
+			onSale = wire.OnSale(pool, rdb, snaps, shop.Checkout, log)
 		}
 		avail = &snapshot.AvailabilityService{Store: snaps, Usage: usage, Redis: rdb}
 	}
@@ -51,6 +53,7 @@ func main() {
 		Availability: avail,
 		Usage:        usage,
 		Shop:         shop,
+		OnSale:       onSale,
 		Service:      "core",
 		Pool:         pool,
 		Checks: []health.Checker{

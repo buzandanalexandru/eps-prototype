@@ -59,6 +59,10 @@ type Buyer struct {
 	ID    string // user id, or guest:<id>
 	Kind  string // account | guest
 	Email string // verified email of an account ("" for guests)
+	// Step 5: the waiting room's pass and the browser's session secret (headers X-EPS-Pass and
+	// X-EPS-Session), required on sales with a waiting room.
+	Pass    string
+	Session string
 }
 
 // Line is one priced order line.
@@ -110,8 +114,17 @@ type Order struct {
 	LastErrorCode     *string          `json:"lastErrorCode,omitempty"`
 	CreatedAt         time.Time        `json:"createdAt"`
 	PaidAt            *time.Time       `json:"paidAt,omitempty"`
-	Lines             []Line           `json:"lines"`
-	History           []HistoryEntry   `json:"history"`
+	// Step 5: the sale moment, the queue place whose pass held it, the cap identity (a hash) and
+	// the sale's cap per person, and whether a one-time code is asked before payment.
+	SaleID       *string        `json:"saleId,omitempty"`
+	PassQID      *string        `json:"-"`
+	CapIdentity  *string        `json:"-"`
+	CapPerPerson *int           `json:"-"`
+	CapTickets   *int           `json:"-"`
+	OTPRequired  bool           `json:"otpRequired"`
+	OTPVerified  *time.Time     `json:"otpVerifiedAt,omitempty"`
+	Lines        []Line         `json:"lines"`
+	History      []HistoryEntry `json:"history"`
 }
 
 // SnapshotSource is the published sale terms (snapshot.Store).
@@ -128,6 +141,8 @@ type Service struct {
 	Links *Links
 	Log   *slog.Logger
 	Now   func() time.Time
+	// Gate is the on-sale engine (step 5); nil means no pass or sale caps.
+	Gate Gate
 
 	rebuilds singleflight.Group
 }
@@ -166,13 +181,15 @@ func (s *Service) OrganiserOf(ctx context.Context, orderID string) (string, erro
 }
 
 const orderCols = `id::text, organiser_id::text, event_id::text, snapshot_version, buyer_kind, buyer_id, buyer_email, buyer_name, locale, currency, state,
-	total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, pay_plan, answers, details_given, last_error_code, created_at, paid_at`
+	total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, pay_plan, answers, details_given, last_error_code, created_at, paid_at,
+	sale_id::text, pass_qid, cap_identity, cap_per_person, cap_tickets, otp_required, otp_verified_at`
 
 func scanOrder(row pgx.Row) (*Order, error) {
 	var o Order
 	var draws, answers []byte
 	err := row.Scan(&o.ID, &o.OrganiserID, &o.EventID, &o.SnapshotVersion, &o.BuyerKind, &o.BuyerID, &o.BuyerEmail, &o.BuyerName, &o.Locale, &o.Currency, &o.State,
-		&o.TotalMinor, &o.FaceMinor, &o.FanFeeMinor, &o.OrganiserNetMinor, &draws, &o.HoldExpiresAt, &o.HoldBaseExpiresAt, &o.HoldRef, &o.PayPlan, &answers, &o.DetailsGiven, &o.LastErrorCode, &o.CreatedAt, &o.PaidAt)
+		&o.TotalMinor, &o.FaceMinor, &o.FanFeeMinor, &o.OrganiserNetMinor, &draws, &o.HoldExpiresAt, &o.HoldBaseExpiresAt, &o.HoldRef, &o.PayPlan, &answers, &o.DetailsGiven, &o.LastErrorCode, &o.CreatedAt, &o.PaidAt,
+		&o.SaleID, &o.PassQID, &o.CapIdentity, &o.CapPerPerson, &o.CapTickets, &o.OTPRequired, &o.OTPVerified)
 	if err != nil {
 		return nil, err
 	}

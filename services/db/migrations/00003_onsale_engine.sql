@@ -102,6 +102,7 @@ ALTER TABLE sales.orders ADD COLUMN sale_id uuid;
 ALTER TABLE sales.orders ADD COLUMN pass_qid text;
 ALTER TABLE sales.orders ADD COLUMN cap_identity text;
 ALTER TABLE sales.orders ADD COLUMN cap_per_person int;
+ALTER TABLE sales.orders ADD COLUMN cap_tickets int;
 ALTER TABLE sales.orders ADD COLUMN otp_required boolean NOT NULL DEFAULT false;
 ALTER TABLE sales.orders ADD COLUMN otp_verified_at timestamptz;
 CREATE INDEX orders_cap_identity_idx ON sales.orders (organiser_id, event_id, cap_identity) WHERE cap_identity IS NOT NULL;
