@@ -41,8 +41,22 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
       divisor: "1"
 - name: CORE_TOKEN_ISSUERS
   value: {{ .ctx.Values.global.tokenIssuers | default (printf "urn:eps:web:%s" .ctx.Values.global.env) | quote }}
+# Redis requires a password (REDIS_PASSWORD, hex) and the core signs its cached copies with
+# SNAPSHOT_CACHE_KEY: both from the runtime secret CI creates once per environment.
+- name: REDIS_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ .ctx.Values.global.runtimeSecret }}
+      key: REDIS_PASSWORD
+      optional: true
 - name: REDIS_URL
-  value: {{ printf "redis://%s-redis:6379/0" .ctx.Release.Name | quote }}
+  value: {{ printf "redis://:$(REDIS_PASSWORD)@%s-redis:6379/0" .ctx.Release.Name | quote }}
+- name: SNAPSHOT_CACHE_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ .ctx.Values.global.runtimeSecret }}
+      key: SNAPSHOT_CACHE_KEY
+      optional: true
 - name: CORS_ALLOWED_ORIGINS
   value: {{ .ctx.Values.global.corsAllowedOrigins | quote }}
 - name: EPS_ENV
@@ -216,6 +230,50 @@ spec:
                 name: {{ include "eps.fullname" . }}
                 port:
                   name: http
+{{- if and $v.ingress.publicRateLimit $v.ingress.publicRateLimit.enabled }}
+---
+# The public endpoints (/v1/public/...) behind a rate limit (security review): shops reach them
+# through the web app's CDN-cached route, so direct traffic is small; a flood is cut at the edge.
+# Behind the load balancer every request shares one source, so this limit is per core host.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "eps.fullname" . }}-public-ratelimit
+  labels:
+    {{- include "eps.labels" . | nindent 4 }}
+spec:
+  rateLimit:
+    average: {{ $v.ingress.publicRateLimit.average | default 200 }}
+    burst: {{ $v.ingress.publicRateLimit.burst | default 400 }}
+    period: 1s
+    sourceCriterion:
+      requestHost: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "eps.fullname" . }}-public
+  labels:
+    {{- include "eps.labels" . | nindent 4 }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: {{ printf "%s-%s-public-ratelimit@kubernetescrd" .ctx.Release.Namespace (include "eps.fullname" .) | quote }}
+spec:
+  ingressClassName: {{ .ctx.Values.global.ingress.className }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ printf "%s-%s-tls" .name .ctx.Values.global.env | trunc 63 | trimSuffix "-" }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /v1/public/
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "eps.fullname" . }}
+                port:
+                  name: http
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end -}}
