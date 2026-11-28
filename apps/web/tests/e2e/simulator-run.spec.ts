@@ -48,7 +48,7 @@ test("a small run with an A outage: live numbers, a failover, then the summary",
   await expect(dash.getByTestId("live-providers")).toContainText("Provider A");
   await expect(dash.getByTestId("live-providers")).toContainText("Provider B");
   await expect(dash.getByTestId("live-stock").getByTestId("stock-line").first()).toBeVisible();
-  await expect(dash.getByTestId("live-system")).toBeAttached();
+  await expect(dash.getByText("Platform-wide (every sale in this environment)")).toBeVisible();
   // The bots-against-truth split waits for the end of the run.
   await expect(dash.getByTestId("live-truth-later")).toBeVisible();
   await expect(dash.getByTestId("live-truth")).toHaveCount(0);
