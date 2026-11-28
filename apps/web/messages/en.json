@@ -802,7 +802,7 @@
     "revoke": "Revoke",
     "saveFirst": "Not done: the draft could not be saved first ({reason}). Fix that, then try again.",
     "revokeAll": "Revoke all links",
-    "publicShopSoon": "The public shop at this address opens with step 3; until then, share a preview link.",
+    "openShop": "Open the shop",
     "notStarted": "The shop of {brand} has not been started yet. An owner or admin opens the builder first.",
     "uploads": "Uploaded images",
     "noUploads": "No uploads yet.",

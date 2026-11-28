@@ -428,9 +428,9 @@ export function BuilderClient(props: BuilderProps) {
               {live ? t("live", { n: live.number }) : t("notPublished")}
             </span>
             {live && (
-              <span className="text-xs text-muted-foreground" data-testid="address-note">
-                {t("publicShopSoon")}
-              </span>
+              <a href={address} target="_blank" rel="noopener" className="text-xs font-semibold underline" data-testid="address-note">
+                {t("openShop")}
+              </a>
             )}
             {props.hostnames.map((h) => (
               <code key={h} className="text-xs text-muted-foreground" data-testid="brand-hostname">

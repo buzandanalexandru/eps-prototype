@@ -74,7 +74,7 @@ Test: apps/web/tests/unit/snapshot-compile.test.ts
 #### Scenario: Matches the shared schema
 - **WHEN** any seeded event is compiled
 - **THEN** the document validates against the shared snapshot schema used by both the web app and the core
-Test: services/internal/snapshot/schema_test.go
+Test: services/internal/snapshot/schema_test.go, apps/web/tests/unit/snapshot-compile.test.ts
 
 ### Requirement: Snapshots carry precomputed all-in amounts
 Each price step in a snapshot SHALL carry the face amount, the all-in amount the fan pays, the fan's fee share and the organiser's net, in integer minor units, so that no consumer recomputes fees.
@@ -87,7 +87,7 @@ Test: apps/web/tests/unit/snapshot-compile.test.ts
 #### Scenario: Amounts add up
 - **WHEN** any snapshot is compiled
 - **THEN** for every step the all-in amount equals face plus fan fee
-Test: services/internal/snapshot/schema_test.go
+Test: services/internal/snapshot/schema_test.go, apps/web/tests/unit/snapshot-compile.test.ts
 
 ### Requirement: The core reads only published snapshots
 The Go core SHALL obtain sale terms only from live or earlier published snapshots, through a read that returns published data only, and MUST verify each snapshot's content hash when loading it.
@@ -123,7 +123,7 @@ Test: services/internal/snapshot/store_test.go
 #### Scenario: Activation for another organiser's event
 - **WHEN** an organiser token asks the core to activate an event of another organiser
 - **THEN** the core returns 404
-Test: services/internal/snapshot/store_test.go
+Test: services/internal/snapshot/store_test.go, services/internal/coreapi/snapshots_test.go
 
 ### Requirement: Public availability per event
 The core SHALL serve a public, short-cached availability answer per event from its live snapshot: for each visible product its sale status, current price step and all-in amount, and the remaining quantity only when few are left.

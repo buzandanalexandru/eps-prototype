@@ -16,7 +16,7 @@ test.describe("builder publish", () => {
     await page.getByTestId("publish").click();
     await expect(page.getByTestId("publish-message")).toHaveText("Version 1 is live.");
     await expect(page.getByTestId("address-state")).toHaveText("Published · version 1");
-    await expect(page.getByTestId("address-note")).toContainText("step 3");
+    await expect(page.getByTestId("address-note")).toHaveText("Open the shop");
     await expect(page.getByTestId("version")).toHaveCount(1);
     await expect(page.getByTestId("version").first()).toContainText(/v1.*\d{4}/);
     // Version 2 with a new title, then restore version 1 as version 3.
