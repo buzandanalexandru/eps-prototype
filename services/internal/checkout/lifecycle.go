@@ -54,6 +54,9 @@ func (s *Service) Cancel(ctx context.Context, o *Order) (*Order, error) {
 	if _, err := s.Inv.Release(ctx, o.OrganiserID, ended.EventID, ended.HoldRef); err != nil {
 		s.log().Warn("release after cancel failed", "order", o.ID, "error", err.Error())
 	}
+	if s.Ended != nil && o.SaleID != nil {
+		s.Ended(context.WithoutCancel(ctx), o, "revoked")
+	}
 	return s.GetIn(ctx, o.OrganiserID, o.ID)
 }
 
@@ -384,6 +387,14 @@ func (s *Service) Complete(ctx context.Context, org, orderID, ref, reason string
 		_, _ = s.Inv.Release(ctx, org, releaseEvent, releaseRef)
 	}
 	out.Order, err = s.GetIn(ctx, org, orderID)
+	if err == nil && s.Ended != nil && out.Order != nil && out.Order.SaleID != nil {
+		switch {
+		case out.Paid && !out.AlreadyPaid:
+			s.Ended(context.WithoutCancel(ctx), out.Order, "used")
+		case out.Refund:
+			s.Ended(context.WithoutCancel(ctx), out.Order, "revoked")
+		}
+	}
 	return out, err
 }
 

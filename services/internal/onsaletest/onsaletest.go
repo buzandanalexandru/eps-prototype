@@ -81,8 +81,10 @@ func Setup(t *testing.T) *Env {
 	gate := &onsale.Gate{Sales: sv, Redis: base.Redis, Pool: base.Pool, Passes: &queue.PassCheck{Verifier: queue.NewVerifier(priv.Public().(ed25519.PublicKey)), Redis: base.Redis},
 		Caps: caps, Scorer: scorer, OTP: &botdefence.OTP{Redis: base.Redis, Now: clk.Now}, Checkout: base.Svc, Now: clk.Now, Secret: []byte("test-secret")}
 	base.Svc.Gate = gate
+	life := &onsale.Lifecycle{Checkout: base.Svc, Engine: engine, Caps: caps}
+	base.Svc.Ended = func(ctx context.Context, o *checkout.Order, how string) { _ = life.End(ctx, o, how) }
 	return &Env{Env: base, Clock: clk, Sales: sv, Engine: engine, Gate: gate, Scorer: scorer, Caps: caps, Key: priv,
-		Life: &onsale.Lifecycle{Checkout: base.Svc, Engine: engine, Caps: caps}}
+		Life: life}
 }
 
 // Open are settings of a sale that opened a minute ago, with room to admit everyone at once.

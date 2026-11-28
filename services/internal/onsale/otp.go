@@ -63,17 +63,27 @@ func (g *Gate) VerifyOTP(ctx context.Context, o *checkout.Order, code string) er
 	if err != nil {
 		return err
 	}
+	if r.Outcome == botdefence.OTPNone {
+		return apperr.New(http.StatusConflict, apperr.OTPRequired, "Ask for a code first.", false)
+	}
+	if !r.Counted && r.Outcome == botdefence.OTPWrong {
+		return apperr.New(http.StatusUnprocessableEntity, apperr.OTPWrong, "Ask for a new code.", false).With("triesLeft", 0).With("resendsLeft", r.ResendsLeft)
+	}
 	switch r.Outcome {
 	case botdefence.OTPVerified:
-		g.record(ctx, o, "verified")
+		if r.Counted {
+			g.record(ctx, o, "verified")
+		}
 		return db.WithTx(ctx, g.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
 			_, err := tx.Exec(ctx, `update sales.orders set otp_verified_at = coalesce(otp_verified_at, now()), updated_at = now() where id = $1`, o.ID)
 			return err
 		})
 	case botdefence.OTPExpired:
-		g.record(ctx, o, "expired")
 		return apperr.New(http.StatusUnprocessableEntity, apperr.OTPExpired, "This code has expired. Ask for a new one.", false).With("resendsLeft", r.ResendsLeft)
 	case botdefence.OTPLocked:
+		if !r.Counted {
+			return apperr.New(http.StatusConflict, apperr.OTPLocked, "Too many wrong codes: the order was cancelled and the tickets released.", false)
+		}
 		g.record(ctx, o, "locked")
 		if g.Checkout != nil {
 			if _, err := g.Checkout.Cancel(ctx, o); err != nil {

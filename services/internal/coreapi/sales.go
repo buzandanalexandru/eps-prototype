@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -14,6 +16,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/onsale"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/redisx"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/sales"
 )
 
@@ -32,6 +35,8 @@ func (r raw) VisitUpdateSaleSettingsResponse(w http.ResponseWriter) error { retu
 func (r raw) VisitSendOrderOtpResponse(w http.ResponseWriter) error       { return r.write(w) }
 func (r raw) VisitVerifyOrderOtpResponse(w http.ResponseWriter) error     { return r.write(w) }
 func (r raw) VisitJoinQueueResponse(w http.ResponseWriter) error          { return r.write(w) }
+func (r raw) VisitDeleteSaleResponse(w http.ResponseWriter) error         { return r.write(w) }
+func (r raw) VisitPatchSaleLiveResponse(w http.ResponseWriter) error      { return r.write(w) }
 func (r raw) VisitQueueStatusResponse(w http.ResponseWriter) error        { return r.write(w) }
 
 func settingsOf(b api.SaleSettings) sales.Settings {
@@ -131,7 +136,11 @@ func (s *Server) UpdateSaleSettings(ctx context.Context, req api.UpdateSaleSetti
 	if req.Body == nil {
 		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
 	}
-	x, err := s.OnSale.Sales.Update(ctx, org, req.SaleId.String(), by(ctx), settingsOf(*req.Body))
+	base := 0
+	if req.Params.BaseVersion != nil {
+		base = *req.Params.BaseVersion
+	}
+	x, err := s.OnSale.Sales.Update(ctx, org, req.SaleId.String(), by(ctx), settingsOf(*req.Body), base)
 	if err != nil {
 		return s.fail(ctx, err), nil
 	}
@@ -158,6 +167,10 @@ func (s *Server) otpOrder(ctx context.Context, id string, tok, pass, session *st
 	o, access, err := s.mutable(ctx, id, tok)
 	if err != nil {
 		return nil, "", s.fail(ctx, err), false
+	}
+	// At most 10 code calls a minute per order and 30 per client (review sec M3).
+	if !s.allowed(ctx, "otp-order", o.ID, 10) || !s.allowed(ctx, "otp-client", clientKey(ctx), 30) {
+		return nil, "", problemRaw(ctx, apperr.New(http.StatusTooManyRequests, apperr.RateLimited, "Too many code requests. Wait a minute.", true)), false
 	}
 	b, _ := buyerOf(ctx)
 	if p := s.OnSale.Gate.PassOnly(ctx, o, withPass(b, pass, session), access == accessLink); p != nil {
@@ -207,4 +220,56 @@ func (s *Server) JoinQueue(ctx context.Context, _ api.JoinQueueRequestObject) (a
 
 func (s *Server) QueueStatus(ctx context.Context, _ api.QueueStatusRequestObject) (api.QueueStatusResponseObject, error) {
 	return wrongService(ctx), nil
+}
+
+// allowed counts one call per minute window under a platform key; false over max.
+func (s *Server) allowed(ctx context.Context, kind, who string, max int64) bool {
+	if s.OnSale == nil || s.OnSale.Redis == nil || who == "" {
+		return true
+	}
+	k, err := redisx.PlatformKey("rl", kind, strings.NewReplacer(":", "_", " ", "_").Replace(who), strconv.FormatInt(time.Now().Unix()/60, 10))
+	if err != nil {
+		return true
+	}
+	n, err := s.OnSale.Redis.Incr(ctx, k).Result()
+	if err != nil {
+		return true
+	}
+	if n == 1 {
+		_ = s.OnSale.Redis.Expire(ctx, k, 70*time.Second).Err()
+	}
+	return n <= max
+}
+
+func (s *Server) DeleteSale(ctx context.Context, req api.DeleteSaleRequestObject) (api.DeleteSaleResponseObject, error) {
+	if s.OnSale == nil {
+		return unavailable(ctx), nil
+	}
+	org, r, ok := organiserRole(ctx, "owner", "admin")
+	if !ok {
+		return r, nil
+	}
+	if err := s.OnSale.Sales.Delete(ctx, org, req.SaleId.String(), by(ctx)); err != nil {
+		return s.fail(ctx, err), nil
+	}
+	return raw{status: http.StatusNoContent}, nil
+}
+
+func (s *Server) PatchSaleLive(ctx context.Context, req api.PatchSaleLiveRequestObject) (api.PatchSaleLiveResponseObject, error) {
+	if s.OnSale == nil {
+		return unavailable(ctx), nil
+	}
+	org, r, ok := organiserRole(ctx, "owner", "admin")
+	if !ok {
+		return r, nil
+	}
+	if req.Body == nil {
+		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
+	}
+	x, err := s.OnSale.Sales.Patch(ctx, org, req.SaleId.String(), by(ctx), sales.LiveChange{RatePerMinute: req.Body.RatePerMinute, ActiveLimit: req.Body.ActiveLimit, Paused: req.Body.Paused})
+	if err != nil {
+		return s.fail(ctx, err), nil
+	}
+	_, hist, _ := s.OnSale.Sales.Get(ctx, org, x.ID)
+	return okRaw(s.view(ctx, x, hist, true)), nil
 }

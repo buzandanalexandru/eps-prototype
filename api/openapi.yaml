@@ -693,6 +693,17 @@ paths:
         default:
           $ref: "#/components/responses/Problem"
   /v1/organiser/sales/{saleId}:
+    delete:
+      operationId: deleteSale
+      summary: Delete a sale moment before its pre-queue opens (owner or admin)
+      tags: [sales]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      responses:
+        "204":
+          description: Deleted.
+        default:
+          $ref: "#/components/responses/Problem"
     get:
       operationId: getSale
       summary: A sale moment with its settings history and live queue figures
@@ -708,6 +719,28 @@ paths:
                 $ref: "#/components/schemas/SaleView"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/organiser/sales/{saleId}/live:
+    patch:
+      operationId: patchSaleLive
+      summary: Change the live dial, the shopping limit or pause on top of the current version (owner or admin)
+      tags: [sales]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleLiveChange"
+      responses:
+        "200":
+          description: The sale with its new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleView"
+        default:
+          $ref: "#/components/responses/Problem"
   /v1/organiser/sales/{saleId}/settings:
     put:
       operationId: updateSaleSettings
@@ -715,10 +748,17 @@ paths:
       description: |
         Live fields (admission rate, shopping limit, pause, bot defence, OTP, holds and caps) take
         effect within 2 seconds. Opening time, pre-queue window and queue on/off are refused with
-        EPS-SALE-LOCKED once the pre-queue opened.
+        EPS-SALE-LOCKED once the pre-queue opened. With baseVersion, a save on top of an older
+        version is refused with EPS-SALE-STALE (409).
       tags: [sales]
       parameters:
         - $ref: "#/components/parameters/SaleId"
+        - name: baseVersion
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
       requestBody:
         required: true
         content:
@@ -749,6 +789,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/SaleId"
         - $ref: "#/components/parameters/SessionRequired"
+        - $ref: "#/components/parameters/Tab"
         - name: X-EPS-Client-UA
           in: header
           required: false
@@ -783,8 +824,11 @@ paths:
       operationId: queueStatus
       x-eps-service: gateway
       summary: A place's position, estimate and, once admitted, its pass (gateway)
+      description: Needs only the queue token and the session secret it is bound to (no core token).
       tags: [queue]
+      security: []
       parameters:
+        - $ref: "#/components/parameters/Tab"
         - $ref: "#/components/parameters/SaleId"
         - $ref: "#/components/parameters/SessionRequired"
         - name: X-EPS-Queue-Token
@@ -827,6 +871,14 @@ components:
       schema:
         type: string
         maxLength: 200
+    Tab:
+      name: X-EPS-Tab
+      in: header
+      required: false
+      description: The page's tab id (polling is scored per tab).
+      schema:
+        type: string
+        maxLength: 16
     SessionRequired:
       name: X-EPS-Session
       in: header
@@ -936,6 +988,18 @@ components:
         otpThreshold:
           type: integer
           description: Orders above this many tickets are asked for a code (1 to 20).
+        accountsOnly:
+          type: boolean
+          description: Only signed-in fans may join (guests are asked to sign in first).
+    SaleLiveChange:
+      type: object
+      properties:
+        ratePerMinute:
+          type: integer
+        activeLimit:
+          type: integer
+        paused:
+          type: boolean
     SaleCreate:
       type: object
       required: [name, settings]

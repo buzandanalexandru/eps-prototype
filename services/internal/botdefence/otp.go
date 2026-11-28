@@ -51,26 +51,27 @@ return sends + 1
 `)
 
 // verifyScript checks a code. KEYS: challenge. ARGV: code hash, now ms, max tries, max sends.
-// Returns {outcome, tries left, resends left}.
+// Returns {outcome, tries left, resends left, counted (1 when this call used a try or changed
+// the challenge)}.
 var verifyScript = redis.NewScript(`
-if redis.call('EXISTS', KEYS[1]) == 0 then return {'none', 0, 0} end
+if redis.call('EXISTS', KEYS[1]) == 0 then return {'none', 0, 0, 0} end
 local sends = tonumber(redis.call('HGET', KEYS[1], 'sends') or '0')
 local resends = math.max(0, tonumber(ARGV[4]) - sends)
-if redis.call('HGET', KEYS[1], 'ok') == '1' then return {'verified', 0, resends} end
+if redis.call('HGET', KEYS[1], 'ok') == '1' then return {'verified', 0, resends, 0} end
 local tries = tonumber(redis.call('HGET', KEYS[1], 'tries') or '0')
 if tries >= tonumber(ARGV[3]) then
-  if resends == 0 then return {'locked', 0, 0} end
-  return {'wrong', 0, resends}
+  if resends == 0 then return {'locked', 0, 0, 0} end
+  return {'wrong', 0, resends, 0}
 end
-if tonumber(ARGV[2]) > tonumber(redis.call('HGET', KEYS[1], 'exp')) then return {'expired', tonumber(ARGV[3]) - tries, resends} end
+if tonumber(ARGV[2]) > tonumber(redis.call('HGET', KEYS[1], 'exp')) then return {'expired', tonumber(ARGV[3]) - tries, resends, 0} end
 if redis.call('HGET', KEYS[1], 'h') == ARGV[1] then
   redis.call('HSET', KEYS[1], 'ok', '1')
-  return {'verified', 0, resends}
+  return {'verified', 0, resends, 1}
 end
 tries = tries + 1
 redis.call('HSET', KEYS[1], 'tries', tries)
-if tries >= tonumber(ARGV[3]) and resends == 0 then return {'locked', 0, 0} end
-return {'wrong', tonumber(ARGV[3]) - tries, resends}
+if tries >= tonumber(ARGV[3]) and resends == 0 then return {'locked', 0, 0, 1} end
+return {'wrong', tonumber(ARGV[3]) - tries, resends, 1}
 `)
 
 // OTP sends and checks the simulated one-time codes (shown on screen, never sent anywhere).
@@ -134,6 +135,9 @@ type Result struct {
 	Outcome     string `json:"outcome"`
 	TriesLeft   int    `json:"triesLeft"`
 	ResendsLeft int    `json:"resendsLeft"`
+	// Counted is false when the call changed nothing (no code sent, every try already used, or
+	// already verified): nothing is recorded for it (review sec M3).
+	Counted bool `json:"-"`
 }
 
 // Verify checks a code: verified, wrong (tries left), expired (resend offered) or locked (every
@@ -150,7 +154,8 @@ func (o *OTP) Verify(ctx context.Context, org, event, orderID, code string) (Res
 	r := Result{Outcome: fmt.Sprint(v[0])}
 	r.TriesLeft = int(v[1].(int64))
 	r.ResendsLeft = int(v[2].(int64))
-	if m := otpOutcomes[r.Outcome]; m != nil {
+	r.Counted = v[3].(int64) == 1
+	if m := otpOutcomes[r.Outcome]; m != nil && r.Counted {
 		m.Inc()
 	}
 	return r, nil

@@ -143,6 +143,10 @@ type Service struct {
 	Now   func() time.Time
 	// Gate is the on-sale engine (step 5); nil means no pass or sale caps.
 	Gate Gate
+	// Ended ends an order's pass and cap entry at once when it is paid ("used") or cancelled
+	// ("revoked"), so a shopping place frees without waiting for the event consumer (step 5
+	// review spec M6; the worker's consumer stays as the backstop).
+	Ended func(ctx context.Context, o *Order, how string)
 
 	rebuilds singleflight.Group
 }

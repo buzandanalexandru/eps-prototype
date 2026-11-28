@@ -136,6 +136,8 @@ func OnSale(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, co *ch
 	g := &onsale.Gate{Sales: sv, Redis: rdb, Pool: pool, Passes: &queue.PassCheck{Verifier: queue.NewVerifier(pub), Redis: rdb},
 		Caps: &botdefence.Caps{Redis: rdb}, Scorer: &botdefence.Scorer{Redis: rdb}, OTP: &botdefence.OTP{Redis: rdb}, Checkout: co, Secret: IdentitySecret()}
 	co.Gate = g
+	life := &onsale.Lifecycle{Checkout: co, Engine: &queue.Engine{Redis: rdb}, Caps: g.Caps}
+	co.Ended = func(ctx context.Context, o *checkout.Order, how string) { _ = life.End(ctx, o, how) }
 	return &coreapi.OnSale{Sales: sv, Gate: g, Redis: rdb}
 }
 

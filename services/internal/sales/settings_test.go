@@ -242,3 +242,69 @@ func TestRefreshActive(t *testing.T) {
 		t.Fatalf("after the refresh: %v", err)
 	}
 }
+
+// Review D-l: a save made on an older version is refused (two organisers at once never undo each
+// other); a live patch applies on top of whatever is current; an older Redis copy never replaces a
+// newer one.
+func TestStaleSaveAndLivePatch(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	s := env.NewSale(t, env.Env.NewSale(t, 100, 100), env.Open())
+	a := s.Settings
+	a.RatePerMinute = 900
+	if _, err := env.Sales.Update(ctx, s.OrganiserID, s.ID, "ana", a, 1); err != nil {
+		t.Fatal(err)
+	}
+	b := s.Settings
+	b.CapPerPerson = 8
+	if _, err := env.Sales.Update(ctx, s.OrganiserID, s.ID, "bogdan", b, 1); err == nil {
+		t.Fatal("a save on version 1 replaced version 2")
+	} else if c, d := code(err); c != apperr.SaleStale || d["version"] != 2 {
+		t.Fatalf("got %v %v", err, d)
+	}
+	paused := true
+	x, err := env.Sales.Patch(ctx, s.OrganiserID, s.ID, "carmen", sales.LiveChange{Paused: &paused})
+	if err != nil || x.Version != 3 || !x.Settings.Paused || x.Settings.RatePerMinute != 900 {
+		t.Fatalf("patch: %+v %v", x, err)
+	}
+	// An older copy written late (a slow core) does not replace the newer one.
+	env.Sales.StoreForTest(ctx, s.OrganiserID, s.EventID, []sales.Sale{*s}, 1)
+	other := &sales.Service{Redis: env.Redis, MACKey: []byte("test-key")}
+	got, err := other.Lookup(ctx, s.ID)
+	if err != nil || got.Version != 3 {
+		t.Fatalf("the copy went back to version %v (%v)", got, err)
+	}
+}
+
+// Review D-k: the opening within a year, at most 10 sale moments per event, deletion only before
+// the pre-queue opens.
+func TestSaleLimitsAndDelete(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	sale := env.Env.NewSale(t, 100, 100)
+	far := env.Open()
+	far.OpensAt = env.Clock.Now().AddDate(1, 1, 0).Truncate(time.Second)
+	if _, err := env.Sales.Create(ctx, sale.Org, sale.Event, "Far", "u", far); err == nil {
+		t.Fatal("an opening 13 months away was accepted")
+	}
+	later := env.Open()
+	later.OpensAt = env.Clock.Now().Add(48 * time.Hour).Truncate(time.Second)
+	var ids []string
+	for i := 0; i < sales.MaxSalesPerEvent; i++ {
+		x := env.NewSale(t, sale, later)
+		ids = append(ids, x.ID)
+	}
+	if _, err := env.Sales.Create(ctx, sale.Org, sale.Event, "One too many", "u", later); err == nil {
+		t.Fatal("an 11th sale moment was accepted")
+	}
+	if err := env.Sales.Delete(ctx, sale.Org, ids[0], "u"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Sales.Lookup(ctx, ids[0]); err == nil {
+		t.Fatal("a deleted sale is still found")
+	}
+	open := env.NewSale(t, sale, env.Open())
+	if err := env.Sales.Delete(ctx, sale.Org, open.ID, "u"); err == nil {
+		t.Fatal("a sale whose pre-queue opened was deleted")
+	}
+}

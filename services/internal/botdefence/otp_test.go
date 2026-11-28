@@ -138,3 +138,24 @@ func TestOTPExpired(t *testing.T) {
 		t.Fatalf("the new code: %v", err)
 	}
 }
+
+// Review sec M3: a check with no code sent, or after every try was used, records nothing.
+func TestOTPRecordsOnlyCountedTries(t *testing.T) {
+	env, buy := otpSale(t, onsaletest.Setup(t), true)
+	ctx := context.Background()
+	o, _ := buy(6)
+	if c, _ := problem(env.Gate.VerifyOTP(ctx, o, "123456")); c != apperr.OTPRequired {
+		t.Fatalf("no code sent: %s", c)
+	}
+	if _, err := env.Gate.SendOTP(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < botdefence.MaxTries+3; i++ {
+		_ = env.Gate.VerifyOTP(ctx, o, "000000")
+	}
+	var n int
+	_ = env.Pool.QueryRow(ctx, "select count(*) from sales.otp_challenges where order_id = $1 and outcome = 'wrong'", o.ID).Scan(&n)
+	if n != botdefence.MaxTries {
+		t.Fatalf("%d wrong outcomes recorded, want %d (one per try counted)", n, botdefence.MaxTries)
+	}
+}
