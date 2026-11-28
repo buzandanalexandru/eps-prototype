@@ -59,17 +59,17 @@
 
 ## 9. Local checks
 
-- [ ] 9.1 Run the step's Go tests (`go test ./internal/checkout/... ./internal/payments/... ./internal/fakepsp/... ./internal/wallet/... ./internal/outbox/...`) and its Vitest and Playwright specs; verify all pass
-- [ ] 9.2 Run the full suite once (Go, Vitest, Playwright) and `npx openspec validate step-4-checkout-and-payments --strict`; verify both pass
+- [x] 9.1 Run the step's Go tests (`go test ./internal/checkout/... ./internal/payments/... ./internal/fakepsp/... ./internal/wallet/... ./internal/outbox/...`) and its Vitest and Playwright specs; verify all pass
+- [x] 9.2 Run the full suite once (Go, Vitest, Playwright) and `npx openspec validate step-4-checkout-and-payments --strict`; verify both pass
 
 ## 10. Review and release loop (CLAUDE.md)
 
-- [ ] 10.1 Open a PR from `step-4-checkout-and-payments` to `main`; verify CI is green and the preview (Vercel + Neon branch + per-PR DOKS namespace with psp-a and psp-b) is deployed
-- [ ] 10.2 Run the three adversarial reviewers in parallel (correctness: races, expiry, retries, partial failure; security and data: organiser isolation, ledger integrity, webhook signatures, card-data absence; spec and scale: every scenario tested, behaviour at 170 paid orders/s); verify each report is attached to the PR
-- [ ] 10.3 Fix every confirmed finding or record in the PR why it is rejected, then re-run the affected tests; verify CI is green again
-- [ ] 10.4 Run Playwright against the deployed preview URL (desktop and phone, RO and EN, no console errors, no horizontal scroll) for checkout, status, resume, wallet and failover, plus API checks against the deployed core (idempotent replay, forged webhook rejected, breaker state); verify all pass
-- [ ] 10.5 Squash-merge to `main`; verify the merge commit is on `main`
-- [ ] 10.6 Run the Playwright production smoke test (hold, pay with A, pay with failover to B, pay from wallet); verify it passes on production
+- [x] 10.1 Open a PR from `step-4-checkout-and-payments` to `main`; verify CI is green and the preview (Vercel + Neon branch + per-PR DOKS namespace with psp-a and psp-b) is deployed
+- [x] 10.2 Run the three adversarial reviewers in parallel (correctness: races, expiry, retries, partial failure; security and data: organiser isolation, ledger integrity, webhook signatures, card-data absence; spec and scale: every scenario tested, behaviour at 170 paid orders/s); verify each report is attached to the PR
+- [x] 10.3 Fix every confirmed finding or record in the PR why it is rejected, then re-run the affected tests; verify CI is green again
+- [x] 10.4 Run Playwright against the deployed preview URL (desktop and phone, RO and EN, no console errors, no horizontal scroll) for checkout, status, resume, wallet and failover, plus API checks against the deployed core (idempotent replay, forged webhook rejected, breaker state); verify all pass
+- [x] 10.5 Squash-merge to `main`; verify the merge commit is on `main`
+- [x] 10.6 Run the Playwright production smoke test (hold, pay with A, pay with failover to B, pay from wallet); verify it passes on production
 
 ## 11. Review fixes (three adversarial reviews of PR #6)
 
