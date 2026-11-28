@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/studio/copy-button";
 import { SimulatorPanel } from "@/components/studio/simulator-panel";
+import { RetryRefresh } from "@/components/studio/retry-refresh";
 import { createRehearsalAction, resetRehearsalAction, type Run, type SaleView } from "../actions";
 
 export const metadata = { title: "On-sale rehearsal" };
@@ -27,7 +28,15 @@ export default async function SimulatorPage({ params, searchParams }: { params: 
   const t = await getTranslations("simulator");
   const locale = await getLocale();
   const sale = await organiserCore<SaleView>("GET", `/v1/organiser/sales/${saleId}`);
-  if (!sale.ok) notFound();
+  if (!sale.ok && sale.status < 500 && sale.status !== 429) notFound();
+  if (!sale.ok) {
+    return (
+      <p role="alert" className="text-sm font-semibold text-destructive" data-testid="simulator-unavailable">
+        {t("unavailable", { code: sale.code })}
+        <RetryRefresh />
+      </p>
+    );
+  }
   if (sale.data.rehearsal) redirect(`/studio/sales/${sale.data.rehearsal.sourceSaleId}/simulator`);
   const g = await studioTx(s, (c) => loadEventGraph(c, sale.data.eventId));
   if (!g) notFound();
@@ -36,6 +45,9 @@ export default async function SimulatorPage({ params, searchParams }: { params: 
   const limits: Limits = rh.ok ? rh.data.limits : { maxFans: 2000, maxDurationSeconds: 600 };
   const runs = rehearsal ? await organiserCore<{ runs: Run[] }>("GET", `/v1/organiser/sales/${rehearsal.id}/simulations`) : null;
   const latest = runs?.ok ? runs.data.runs[0] : undefined;
+  // A core read that failed (a timeout under load) is never shown as "no rehearsal" or "no run":
+  // the page says so and asks again until the core answers.
+  const unreachable = !rh.ok ? rh.code : runs && !runs.ok ? runs.code : null;
   const admin = s.active.role === "owner" || s.active.role === "admin";
   const shopLocale = g.brand.languages.includes(locale as "ro" | "en") ? locale : (g.brand.languages[0] ?? "ro");
   const product = g.products.find((p) => p.visible && p.type === "pass") ?? g.products.find((p) => p.visible);
@@ -66,8 +78,14 @@ export default async function SimulatorPage({ params, searchParams }: { params: 
           {t("error", { message: sp.error })}
         </p>
       )}
+      {unreachable && (
+        <p role="alert" className="text-sm font-semibold text-destructive" data-testid="simulator-unavailable">
+          {t("unavailable", { code: unreachable })}
+          <RetryRefresh />
+        </p>
+      )}
       <Card>
-        {rehearsal ? (
+        {unreachable && !rehearsal ? null : rehearsal ? (
           <div className="space-y-3" data-testid="rehearsal" data-rehearsal-id={rehearsal.id}>
             <h3 className="font-semibold" data-testid="rehearsal-name">
               {rehearsal.name}
@@ -111,7 +129,7 @@ export default async function SimulatorPage({ params, searchParams }: { params: 
           </div>
         )}
       </Card>
-      {rehearsal && <SimulatorPanel sourceSaleId={saleId} rehearsalId={rehearsal.id} limits={limits} initial={latest ?? null} admin={admin} />}
+      {rehearsal && !unreachable && <SimulatorPanel sourceSaleId={saleId} rehearsalId={rehearsal.id} limits={limits} initial={latest ?? null} admin={admin} />}
       <Card>
         <section className="space-y-2 text-sm" data-testid="simulator-load">
           <h3 className="font-semibold">{t("loadTitle")}</h3>

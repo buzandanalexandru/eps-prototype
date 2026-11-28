@@ -64,7 +64,8 @@ export function SimulatorPanel({ rehearsalId, limits, initial, admin }: { source
   useEffect(() => {
     if (!run || !ACTIVE.includes(run.state)) return;
     timer.current = setTimeout(async () => {
-      const r = await runAction(run.id);
+      // An action that failed outright (the network, a function timeout) polls again too.
+      const r = await runAction(run.id).catch(() => ({ ok: false as const }));
       if (r.ok) {
         setRun(r.data);
         if (!ACTIVE.includes(r.data.state)) router.refresh();

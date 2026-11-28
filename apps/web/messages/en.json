@@ -1022,7 +1022,8 @@
     "loadSandboxTitle": "Measured in a sandbox (step 5), not on this cluster",
     "loadRunTitle": "Measured here, by this run",
     "errorRealSale": "A real sale on this platform has fans in its waiting room. Rehearse when it is over.",
-    "errorHourly": "At most 3 runs an hour per organiser. Try again later."
+    "errorHourly": "At most 3 runs an hour per organiser. Try again later.",
+    "unavailable": "Could not reach the platform's core ({code}), for example under a rehearsal's load. Trying again every few seconds."
   },
   "live": {
     "title": "Live on-sale",
@@ -1108,6 +1109,7 @@
       "stopped": "stopped",
       "a": "A",
       "b": "B"
-    }
+    },
+    "unavailable": "Could not reach the platform's core ({code}), for example under a rehearsal's load. Trying again every few seconds."
   }
 }

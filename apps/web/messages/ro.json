@@ -1022,7 +1022,8 @@
     "loadSandboxTitle": "Măsurat într-un sandbox (pasul 5), nu pe acest cluster",
     "loadRunTitle": "Măsurat aici, de această rulare",
     "errorRealSale": "O vânzare reală de pe platformă are fani în sala de așteptare. Repetă după ce se încheie.",
-    "errorHourly": "Cel mult 3 rulări pe oră per organizator. Încearcă mai târziu."
+    "errorHourly": "Cel mult 3 rulări pe oră per organizator. Încearcă mai târziu.",
+    "unavailable": "Nu am putut contacta nucleul platformei ({code}), de exemplu sub încărcarea unei repetiții. Reîncercăm la câteva secunde."
   },
   "live": {
     "title": "Vânzare live",
@@ -1108,6 +1109,7 @@
       "stopped": "oprită",
       "a": "A",
       "b": "B"
-    }
+    },
+    "unavailable": "Nu am putut contacta nucleul platformei ({code}), de exemplu sub încărcarea unei repetiții. Reîncercăm la câteva secunde."
   }
 }

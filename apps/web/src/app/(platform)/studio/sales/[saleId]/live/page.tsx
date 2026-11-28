@@ -8,6 +8,7 @@ import { organiserCore } from "@/lib/checkout/studio-core";
 import { gatewayBaseUrl } from "@/lib/core/url";
 import { requireStudio } from "@/lib/studio/context";
 import { LiveDashboard } from "@/components/studio/live-dashboard";
+import { RetryRefresh } from "@/components/studio/retry-refresh";
 import type { SaleView } from "../actions";
 
 export const metadata = { title: "Live on-sale" };
@@ -21,7 +22,16 @@ export default async function LivePage({ params }: { params: Promise<{ saleId: s
   const s = await requireStudio();
   const t = await getTranslations("live");
   const sale = await organiserCore<SaleView>("GET", `/v1/organiser/sales/${saleId}`);
-  if (!sale.ok) notFound();
+  if (!sale.ok && sale.status < 500 && sale.status !== 429) notFound();
+  if (!sale.ok) {
+    // The core did not answer in time (a rehearsal's load): say so and ask again, never a 404.
+    return (
+      <p role="alert" className="text-sm font-semibold text-destructive" data-testid="live-unavailable">
+        {t("unavailable", { code: sale.code })}
+        <RetryRefresh />
+      </p>
+    );
+  }
   const gateway = gatewayBaseUrl();
   const admin = s.active.role === "owner" || s.active.role === "admin";
   const simulatorOf = sale.data.rehearsal?.sourceSaleId ?? saleId;
