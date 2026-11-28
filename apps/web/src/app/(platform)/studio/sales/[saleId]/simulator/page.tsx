@@ -115,6 +115,7 @@ export default async function SimulatorPage({ params, searchParams }: { params: 
       <Card>
         <section className="space-y-2 text-sm" data-testid="simulator-load">
           <h3 className="font-semibold">{t("loadTitle")}</h3>
+          <h4 className="font-semibold">{t("loadSandboxTitle")}</h4>
           <p data-testid="simulator-load-measured">{t("loadMeasuredStep5")}</p>
           <h4 className="font-semibold">{t("loadMathTitle")}</h4>
           <p data-testid="simulator-load-math">{t("loadMath")}</p>

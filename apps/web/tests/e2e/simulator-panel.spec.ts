@@ -9,12 +9,16 @@ test("the panel says the fans are simulated, shows measured k6 numbers and the 1
   test.setTimeout(120_000);
   const { saleId } = await saleToRehearse(page);
   await page.goto(`/studio/sales/${saleId}/simulator`);
-  await expect(page.getByTestId("simulator-simulated-note")).toContainText("Simulated fans, real traffic");
+  await expect(page.getByTestId("simulator-simulated-note")).toContainText("this run's numbers are measured here");
   await expect(page.getByTestId("rehearsal-none")).toBeVisible();
   await expect(page.getByTestId("simulator-load-measured")).toContainText("1,000 joins and 2,000 status polls a second");
   await expect(page.getByTestId("simulator-load-math")).toContainText("100,000 fans");
+  await expect(page.getByTestId("simulator-load-math")).toContainText("2,000 polls a second at p95 13 ms");
+  await expect(page.getByTestId("simulator-load-math")).toContainText("The opening burst comes on top");
+  await expect(page.getByText("Measured in a sandbox (step 5), not on this cluster")).toBeVisible();
   await expect(page.getByText("Arithmetic, not a test")).toBeVisible();
-  await expect(page.getByTestId("simulator-load-cap")).toContainText("simulated fans at a time");
+  await expect(page.getByTestId("simulator-load-cap")).toContainText("one run at a time on the whole cluster");
+  await expect(page.getByTestId("simulator-load-cap")).toContainText("1,500 requests a second");
   const rehearsalId = await openRehearsal(page, saleId);
   expect(rehearsalId).toMatch(/^[0-9a-f-]{36}$/);
   await expect(page.getByTestId("rehearsal-name")).toHaveText("Rehearsal: General sale");
@@ -35,7 +39,7 @@ test("the panel says the fans are simulated, shows measured k6 numbers and the 1
   await setLocale(p, "ro");
   await p.goto(`/studio/sales/${saleId}/simulator`);
   await expect(p.getByRole("heading", { level: 2 })).toContainText("Repetiția vânzării");
-  await expect(p.getByTestId("simulator-load-math")).toContainText("Niciuna dintre presupuneri nu a fost măsurată aici");
+  await expect(p.getByTestId("simulator-load-math")).toContainText("Nimic din acestea nu a fost măsurat aici");
   await expect(p.getByTestId("knob-fans")).toBeVisible();
   await expectNoHorizontalScroll(p);
   expect(errors, "console errors on the phone").toEqual([]);
