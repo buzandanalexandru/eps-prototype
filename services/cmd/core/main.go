@@ -15,6 +15,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
@@ -44,10 +45,13 @@ func main() {
 		snaps = snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
 		if rdb != nil {
 			shop, hooks = wire.Shop(pool, rdb, snaps, log)
-			usage = checkout.Usage{Svc: shop.Checkout}
+			usage = checkout.Usage{Svc: shop.Checkout, HeldBy: inventory.HeldOf(shop.Checkout.Inv)}
 			onSale = wire.OnSale(pool, rdb, snaps, shop.Checkout, log)
 		}
 		avail = &snapshot.AvailabilityService{Store: snaps, Usage: usage, Redis: rdb}
+		if u, ok := usage.(checkout.Usage); ok {
+			avail.Held = u
+		}
 	}
 	srv := &coreapi.Server{
 		Snapshots:    snaps,

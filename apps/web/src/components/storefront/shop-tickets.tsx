@@ -114,7 +114,9 @@ export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
                     : status === "ended"
                       ? labels.salesEnded
                       : status === "sold_out"
-                        ? labels.soldOut
+                        ? a?.allHeld
+                          ? labels.allHeld
+                          : labels.soldOut
                         : a?.remaining !== undefined
                           ? fill(labels.fewLeft, { n: a.remaining })
                           : ""}

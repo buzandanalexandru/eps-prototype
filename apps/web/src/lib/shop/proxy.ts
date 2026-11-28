@@ -10,7 +10,7 @@ const ROUTES: { method: string; path: RegExp }[] = [
   { method: "GET", path: /^orders$/ },
   { method: "GET", path: new RegExp(`^orders/${UUID}$`) },
   { method: "PUT", path: new RegExp(`^orders/${UUID}/details$`) },
-  { method: "POST", path: new RegExp(`^orders/${UUID}/(payments|cancel|instalments/simulate-next|instalments/pay-overdue)$`) },
+  { method: "POST", path: new RegExp(`^orders/${UUID}/(payments|cancel|instalments/simulate-next|instalments/pay-overdue|otp|otp/verify)$`) },
   { method: "POST", path: /^claims$/ },
   { method: "GET", path: /^saved-cards$/ },
   { method: "DELETE", path: new RegExp(`^saved-cards/${UUID}$`) },
@@ -21,9 +21,20 @@ const ROUTES: { method: string; path: RegExp }[] = [
   { method: "GET", path: new RegExp(`^wallets/${UUID}/topups/${UUID}$`) },
 ];
 
+// The waiting room (step 5) is the gateway's, not the core's.
+const QUEUE_ROUTES: { method: string; path: RegExp }[] = [
+  { method: "POST", path: new RegExp(`^queue/${UUID}/join$`) },
+  { method: "GET", path: new RegExp(`^queue/${UUID}/status$`) },
+];
+
 /** Whether a method and path (after /api/shop/) may be forwarded. */
 export function allowedShopRoute(method: string, path: string): boolean {
-  return ROUTES.some((r) => r.method === method && r.path.test(path));
+  return ROUTES.some((r) => r.method === method && r.path.test(path)) || isQueueRoute(method, path);
+}
+
+/** Whether a path is a waiting-room operation (forwarded to the gateway's /v1/queue/...). */
+export function isQueueRoute(method: string, path: string): boolean {
+  return QUEUE_ROUTES.some((r) => r.method === method && r.path.test(path));
 }
 
 /** The query parameters the core reads (everything else is dropped). */
@@ -45,5 +56,15 @@ export function forwardHeaders(from: Headers, token: string): Headers {
   const link = from.get("x-order-token");
   if (link && link.length <= 400) h.set("X-Order-Token", link);
   if (from.get("content-type")?.startsWith("application/json")) h.set("Content-Type", "application/json");
+  // Step 5: the waiting room's pass and queue token, the session secret they are bound to, and the
+  // browser's user agent (a bot-defence signal).
+  const pass = from.get("x-eps-pass");
+  if (pass && pass.length <= 2048 && /^v1\.[A-Za-z0-9_.-]+$/.test(pass)) h.set("X-EPS-Pass", pass);
+  const qt = from.get("x-eps-queue-token");
+  if (qt && qt.length <= 2048 && /^v1\.[A-Za-z0-9_.-]+$/.test(qt)) h.set("X-EPS-Queue-Token", qt);
+  const session = from.get("x-eps-session");
+  if (session && /^[A-Za-z0-9_-]{16,200}$/.test(session)) h.set("X-EPS-Session", session);
+  const ua = from.get("user-agent");
+  if (ua) h.set("X-EPS-Client-UA", ua.slice(0, 400));
   return h;
 }

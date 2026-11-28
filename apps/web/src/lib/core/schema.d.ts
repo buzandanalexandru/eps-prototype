@@ -822,6 +822,8 @@ export interface components {
              * @description Present only when few are left (at most 50, or at most 5% of capacity).
              */
             remaining?: number;
+            /** @description Sold out for now, but held rather than sold (step 5) - some may come back. */
+            allHeld?: boolean;
         };
         Availability: {
             /** Format: uuid */
@@ -844,6 +846,7 @@ export interface components {
             status: "on_sale" | "sold_out";
             /** Format: int64 */
             remaining: number;
+            allHeld?: boolean;
         };
         Problem: {
             /** @description A URI reference identifying the problem type. */

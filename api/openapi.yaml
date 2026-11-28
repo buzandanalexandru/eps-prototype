@@ -1205,6 +1205,9 @@ components:
           type: integer
           format: int64
           description: Present only when few are left (at most 50, or at most 5% of capacity).
+        allHeld:
+          type: boolean
+          description: Sold out for now, but held rather than sold (step 5) - some may come back.
     Availability:
       type: object
       required: [eventId, version, generatedAt, products, instances]
@@ -1242,6 +1245,8 @@ components:
         remaining:
           type: integer
           format: int64
+        allHeld:
+          type: boolean
     Problem:
       type: object
       required: [type, title, status, code, requestId]

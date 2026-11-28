@@ -51,6 +51,9 @@ type ProductAvailability struct {
 	PriceStepIndex int        `json:"priceStepIndex"`
 	AllInMinor     int64      `json:"allInMinor"`
 	Remaining      *int64     `json:"remaining,omitempty"`
+	// AllHeld is set on a sold-out product whose stock is held, not sold (step 5, the honest sold
+	// out): some may come back.
+	AllHeld bool `json:"allHeld,omitempty"`
 }
 
 // InstanceAvailability is one pool instance (an event pool, a day or a slot) that is sold out or
@@ -59,6 +62,7 @@ type InstanceAvailability struct {
 	InstanceID string `json:"instanceId"`
 	Status     string `json:"status"` // on_sale | sold_out
 	Remaining  int64  `json:"remaining"`
+	AllHeld    bool   `json:"allHeld,omitempty"`
 }
 
 // Availability is an event's public availability, from one snapshot version.
@@ -99,6 +103,17 @@ func ActiveStep(steps []PriceStep, at time.Time, sold int64) int {
 // is sold out when any event-scoped pool it draws on is full; for day and slot pools, availability
 // is per day or slot (the picker asks), so they do not decide the product's status here.
 func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time) Availability {
+	return ComputeHeld(s, poolUsed, nil, productSold, now)
+}
+
+// HeldUsage is the units held (not sold) per pool instance (step 5's sharded inventory).
+type HeldUsage interface {
+	PoolHeld(ctx context.Context, organiserID, eventID string) (map[string]int64, error)
+}
+
+// ComputeHeld is Compute knowing which units are only held: a full pool with holds left is still
+// "sold_out" (nothing can be bought now) but marked allHeld, so the shop can say some may come back.
+func ComputeHeld(s *Snapshot, poolUsed, poolHeld, productSold map[string]int64, now time.Time) Availability {
 	pools := map[string]Pool{}
 	for _, p := range s.Pools {
 		pools[p.PoolID] = p
@@ -123,7 +138,7 @@ func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time)
 			if left == 0 {
 				st = SoldOut
 			}
-			out.Instances = append(out.Instances, InstanceAvailability{InstanceID: in.InstanceID, Status: st, Remaining: left})
+			out.Instances = append(out.Instances, InstanceAvailability{InstanceID: in.InstanceID, Status: st, Remaining: left, AllHeld: left == 0 && poolHeld[in.InstanceID] > 0})
 		}
 	}
 	prods := append([]Product(nil), s.Products...)
@@ -135,6 +150,7 @@ func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time)
 		idx := ActiveStep(p.PriceSteps, now, productSold[p.ProductID])
 		pa := ProductAvailability{ProductID: p.ProductID, PriceStepIndex: idx, AllInMinor: p.PriceSteps[idx].AllInMinor}
 		var remaining, capacity int64 = -1, 0
+		held := false
 		for _, id := range p.PoolIDs {
 			pool, ok := pools[id]
 			if !ok || pool.Scope != "event" || len(pool.Instances) != 1 {
@@ -148,6 +164,9 @@ func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time)
 			if remaining < 0 || left < remaining {
 				remaining, capacity = left, in.Capacity
 			}
+			if left == 0 && poolHeld[in.InstanceID] > 0 {
+				held = true
+			}
 		}
 		from, hasFrom := parseTime(p.SalesFrom)
 		until, hasUntil := parseTime(p.SalesUntil)
@@ -160,6 +179,7 @@ func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time)
 			pa.OpensAt = &f
 		case remaining == 0:
 			pa.Status = SoldOut
+			pa.AllHeld = held
 		default:
 			pa.Status = OnSale
 		}
@@ -177,6 +197,8 @@ func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time)
 type AvailabilityService struct {
 	Store *Store
 	Usage Usage
+	// Held tells held from sold units (nil: every full pool reads plain sold out).
+	Held  HeldUsage
 	Redis *redis.Client
 	TTL   time.Duration
 	Now   func() time.Time
@@ -222,7 +244,13 @@ func (a *AvailabilityService) Get(ctx context.Context, eventID string) (Availabi
 	if err != nil {
 		return Availability{}, err
 	}
-	out := Compute(snap, used, sold, now())
+	var held map[string]int64
+	if a.Held != nil {
+		if held, err = a.Held.PoolHeld(ctx, snap.OrganiserID, eventID); err != nil {
+			return Availability{}, err
+		}
+	}
+	out := ComputeHeld(snap, used, held, sold, now())
 	if a.Redis != nil && kerr == nil {
 		if b, err := json.Marshal(out); err == nil {
 			_ = a.Redis.Set(ctx, key, a.Store.Sign("availability", key, string(b))+"."+string(b), ttl).Err()

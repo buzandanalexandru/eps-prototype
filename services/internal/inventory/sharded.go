@@ -958,3 +958,26 @@ func (s *Sharded) Forget(ctx context.Context, org, event, holdID string) error {
 	}
 	return s.Redis.ZRem(ctx, k.homeExp(homeOf(holdID)), holdID).Err()
 }
+
+// Held is units held by live holds per instance (the shop's honest sold out).
+func (s *Sharded) Held(ctx context.Context, org, event string, instances []string) (map[string]int64, error) {
+	st, err := s.Stock(ctx, org, event, instances)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]int64{}
+	for in, l := range st {
+		if l.Held > 0 {
+			out[in] = l.Held
+		}
+	}
+	return out, nil
+}
+
+// HeldOf is the inventory's held reader when it is the sharded engine (nil otherwise).
+func HeldOf(inv checkout.Inventory) checkout.HeldReader {
+	if s, ok := inv.(*Sharded); ok {
+		return s
+	}
+	return nil
+}

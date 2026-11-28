@@ -22,11 +22,12 @@ const answer = z.object({
         priceStepIndex: z.int().min(0).max(100),
         allInMinor: z.int().min(0),
         remaining: z.int().min(0).optional(),
+        allHeld: z.boolean().optional(),
       }),
     )
     .max(500),
   instances: z
-    .array(z.object({ instanceId: z.string().regex(/^[0-9a-f-]{36}(@\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?)?$/), status: z.enum(["on_sale", "sold_out"]), remaining: z.int().min(0) }))
+    .array(z.object({ instanceId: z.string().regex(/^[0-9a-f-]{36}(@\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?)?$/), status: z.enum(["on_sale", "sold_out"]), remaining: z.int().min(0), allHeld: z.boolean().optional() }))
     .max(20_000)
     .default([]),
 });

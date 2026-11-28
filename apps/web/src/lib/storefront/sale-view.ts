@@ -5,7 +5,7 @@
 import { depositFor, instalmentSchedule } from "../pricing/instalments";
 import type { ShopEvent, ShopProduct, ShopSaleProduct } from "./catalogue";
 
-export type InstanceAvailability = { instanceId: string; status: "on_sale" | "sold_out"; remaining: number };
+export type InstanceAvailability = { instanceId: string; status: "on_sale" | "sold_out"; remaining: number; allHeld?: boolean };
 
 /** The core's answer for one product (only used when it is for the page's snapshot version). */
 export type Availability = {
@@ -14,6 +14,8 @@ export type Availability = {
   priceStepIndex: number;
   remaining?: number;
   opensAt?: string;
+  /** Sold out for now but held, not sold (step 5): some may come back. */
+  allHeld?: boolean;
 };
 
 /** The step in force at `now` by date (a sales ladder stays on its first step until the core says otherwise). */

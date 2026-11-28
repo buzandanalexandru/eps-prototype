@@ -9,8 +9,8 @@ export type Attempt = components["schemas"]["PaymentAttempt"];
 
 export type Answer<T> = { ok: true; status: number; data: T } | { ok: false; status: number; problem: Problem };
 
-export async function shopApi<T>(path: string, init: { method?: string; body?: unknown; key?: string; orderToken?: string } = {}): Promise<Answer<T>> {
-  const headers: Record<string, string> = {};
+export async function shopApi<T>(path: string, init: { method?: string; body?: unknown; key?: string; orderToken?: string; headers?: Record<string, string> } = {}): Promise<Answer<T>> {
+  const headers: Record<string, string> = { ...(init.headers ?? {}) };
   if (init.body !== undefined) headers["Content-Type"] = "application/json";
   if (init.key) headers["Idempotency-Key"] = init.key;
   if (init.orderToken) headers["X-Order-Token"] = init.orderToken;

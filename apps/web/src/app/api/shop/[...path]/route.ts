@@ -1,5 +1,6 @@
 // /api/shop/<path>: the shop's checkout, order, payment and wallet calls, forwarded to the core's
-// /v1/shop/<path> with the visitor's core token (lib/shop/proxy.ts). Never cached. The answer is
+// /v1/shop/<path> with the visitor's core token (lib/shop/proxy.ts); the waiting room's
+// queue/<sale>/join and status go to the gateway's /v1/queue/... the same way (step 5). Never cached. The answer is
 // always HTTP 200 with the core's status and body inside ({status, body}): a sold-out hold or a
 // declined card is an expected outcome the page shows, not a browser network error.
 import { NextResponse } from "next/server";
@@ -8,8 +9,8 @@ import { issueCoreToken } from "@/lib/auth/core-token";
 import { sharedMembershipLookup } from "@/lib/auth/membership";
 import { getAuth } from "@/lib/auth/server";
 import { getAppPool } from "@/lib/db/pool";
-import { coreBaseUrl } from "@/lib/core/url";
-import { allowedShopRoute, forwardHeaders, forwardQuery } from "@/lib/shop/proxy";
+import { coreBaseUrl, gatewayBaseUrl } from "@/lib/core/url";
+import { allowedShopRoute, forwardHeaders, forwardQuery, isQueueRoute } from "@/lib/shop/proxy";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,9 @@ function problem(status: number, code: string) {
 async function forward(req: Request, { params }: P) {
   const path = (await params).path.join("/");
   if (!allowedShopRoute(req.method, path)) return problem(404, "not_found");
-  const base = coreBaseUrl();
+  // The waiting room (step 5) is served by the gateway; everything else by the core.
+  const queue = isQueueRoute(req.method, path);
+  const base = queue ? gatewayBaseUrl() : coreBaseUrl();
   if (!base) return problem(503, "EPS-UNAVAILABLE");
   const tok = await issueCoreToken(
     { auth: getAuth(), memberships: sharedMembershipLookup(getAppPool()), secret: authSecret(), secureCookies: webOrigin().startsWith("https://") },
@@ -39,7 +42,8 @@ async function forward(req: Request, { params }: P) {
   if (body && body.length > 32_000) return problem(413, "invalid_request");
   let res: Response;
   try {
-    res = await fetch(`${base}/v1/shop/${path}${forwardQuery(new URL(req.url).searchParams)}`, {
+    const target = queue ? `${base}/v1/${path}` : `${base}/v1/shop/${path}${forwardQuery(new URL(req.url).searchParams)}`;
+    res = await fetch(target, {
       method: req.method,
       headers: forwardHeaders(req.headers, tok.token),
       body,
