@@ -23,7 +23,10 @@ const (
 	SlowLaneAt = 90 // admitted only when no one else waits
 )
 
-// Signals and their points (D-6). Each has a cap: a signal adds its points until the cap.
+// Signals and their points (D-6, with step 5's review D-e). Each has a cap: a signal adds its
+// points until the cap. The address signals (places per address or /64, per /24 or /48) do not add
+// up: the larger counts, and alone they reach at most "risky" (a code at checkout), never
+// "suspect"; with any other signal a full address signal makes a suspect.
 type Signal struct {
 	Name   string
 	Points int
@@ -32,85 +35,125 @@ type Signal struct {
 
 // The signals.
 var (
-	NoProofOfWork   = Signal{"pow", 40, 40}
-	FastPolling     = Signal{"fast", 10, 30} // per 10 polls under 2 s apart
-	RegularPolling  = Signal{"regular", 20, 20}
-	ManyPerIP       = Signal{"ip", 15, 15} // more than 3 places from one client address
-	ManyPerSubnet   = Signal{"subnet", 25, 25}
-	DataCentre      = Signal{"dc", 20, 20}
-	Headless        = Signal{"headless", 25, 25}
-	SharedPrint     = Signal{"print", 15, 15}
-	NewIdentity     = Signal{"new", 10, 10}
-	BadPass         = Signal{"pass", 30, 60} // checkout without a pass, with a forged one or another session's
-	OTPExhausted    = Signal{"otp", 20, 20}
+	NoProofOfWork  = Signal{"pow", 40, 40}
+	FastPolling    = Signal{"fast", 10, 30} // per 10 polls under 2 s apart and before the time the page was told
+	RegularPolling = Signal{"regular", 20, 20}
+	ManyPerIP      = Signal{"ip", 15, 15}     // more than 3 places from one address (or /64)
+	BusyIP         = Signal{"ip", 40, 40}     // more than 20 places from one address: risky alone
+	ManyPerSubnet  = Signal{"subnet", 25, 25} // more than 50 places from one /24 (or /48)
+	DataCentre     = Signal{"dc", 20, 20}
+	Headless       = Signal{"headless", 25, 25}
+	SharedPrint    = Signal{"print", 15, 15} // one browser print shared by more than 20 people
+	NewIdentity    = Signal{"new", 10, 10}
+	BadPass        = Signal{"pass", 30, 60} // another account's pass presented from another session
+	OTPExhausted   = Signal{"otp", 20, 20}
 	allSignalFields = []string{"pow", "fast", "regular", "ip", "subnet", "dc", "headless", "print", "new", "pass", "otp"}
+)
+
+// Thresholds of the counting signals.
+const (
+	ManyPerIPAt     = 3
+	BusyIPAt        = 20
+	ManyPerSubnetAt = 50
+	SharedPrintAt   = 20
 )
 
 var suspects = metrics.NewCounter("eps_bot_suspects_total", "Queue places whose score crossed the suspect threshold.")
 
-// addScript adds a signal's points (up to its cap) and returns the new score.
-// KEYS: score hash. ARGV: field, points, cap, suspect threshold.
-var addScript = redis.NewScript(`
-local f = 's:' .. ARGV[1]
+// totalLua recomputes a place's score from its signal fields (b:<name>) in KEYS[1].
+const totalLua = `
+local function total()
+  local f = redis.call('HGETALL', KEYS[1])
+  local addr, other = 0, 0
+  for i = 1, #f, 2 do
+    local name = f[i]
+    if string.sub(name, 1, 2) == 'b:' then
+      local v = tonumber(f[i + 1]) or 0
+      if name == 'b:ip' or name == 'b:subnet' then
+        if v > addr then addr = v end
+      else
+        other = other + v
+      end
+    end
+  end
+  local score = math.min(100, addr + other)
+  if addr >= 40 and other > 0 and score < 70 then score = 70 end
+  redis.call('HSET', KEYS[1], 'score', score)
+  return score
+end
+`
+
+// addScript adds a signal's points (up to its cap) and returns the new score (negative when it
+// just crossed the suspect threshold). KEYS: the place's hash. ARGV: field, points, cap, suspect.
+var addScript = redis.NewScript(totalLua + `
+local f = 'b:' .. ARGV[1]
 local cur = tonumber(redis.call('HGET', KEYS[1], f) or '0')
 local nxt = math.min(tonumber(ARGV[3]), cur + tonumber(ARGV[2]))
 local before = tonumber(redis.call('HGET', KEYS[1], 'score') or '0')
 if nxt ~= cur then redis.call('HSET', KEYS[1], f, nxt) end
-local score = math.min(100, before + (nxt - cur))
-redis.call('HSET', KEYS[1], 'score', score)
-redis.call('EXPIRE', KEYS[1], 172800)
+local score = total()
 if before < tonumber(ARGV[4]) and score >= tonumber(ARGV[4]) then return -score end
 return score
 `)
 
-// pollScript records one status poll at ARGV[1] (ms) and scores fast and regular polling.
-// KEYS: score hash. ARGV: now ms, suspect threshold.
-var pollScript = redis.NewScript(`
-local now = tonumber(ARGV[1])
+// setScript raises a signal to at least a value (the address signals grow by stages, not by sums).
+var setScript = redis.NewScript(totalLua + `
+local f = 'b:' .. ARGV[1]
+local cur = tonumber(redis.call('HGET', KEYS[1], f) or '0')
 local before = tonumber(redis.call('HGET', KEYS[1], 'score') or '0')
-local last = tonumber(redis.call('HGET', KEYS[1], 'lp') or '0')
-redis.call('HSET', KEYS[1], 'lp', now)
-redis.call('EXPIRE', KEYS[1], 172800)
-if last == 0 then return before end
+if tonumber(ARGV[2]) > cur then redis.call('HSET', KEYS[1], f, ARGV[2]) end
+local score = total()
+if before < tonumber(ARGV[3]) and score >= tonumber(ARGV[3]) then return -score end
+return score
+`)
+
+// pollScript records one status poll of one tab at ARGV[1] (ms) and scores fast and regular
+// polling (review D-e: per tab, and a poll at or after the time the server told the page is
+// never "fast"). KEYS: the place's hash. ARGV: now ms, tab id.
+var pollScript = redis.NewScript(totalLua + `
+local now = tonumber(ARGV[1])
+local tab = ARGV[2]
+if redis.call('HEXISTS', KEYS[1], 'lp:' .. tab) == 0 then
+  local tabs = tonumber(redis.call('HGET', KEYS[1], 'tabs') or '0')
+  if tabs >= 4 then tab = 'x' else redis.call('HSET', KEYS[1], 'tabs', tabs + 1) end
+end
+local last = tonumber(redis.call('HGET', KEYS[1], 'lp:' .. tab) or '0')
+local told = tonumber(redis.call('HGET', KEYS[1], 'np:' .. tab) or '0')
+redis.call('HSET', KEYS[1], 'lp:' .. tab, now)
+if last == 0 then return tonumber(redis.call('HGET', KEYS[1], 'score') or '0') end
 local iv = now - last
-local add = function(f, pts, cap)
-  local cur = tonumber(redis.call('HGET', KEYS[1], 's:' .. f) or '0')
-  local nxt = math.min(cap, cur + pts)
-  if nxt ~= cur then
-    redis.call('HSET', KEYS[1], 's:' .. f, nxt)
-    before = math.min(100, before + nxt - cur)
+local changed = false
+if iv < 2000 and (told == 0 or now < told - 1000) then
+  local fast = redis.call('HINCRBY', KEYS[1], 'fast:' .. tab, 1)
+  if fast % 10 == 0 then
+    local cur = tonumber(redis.call('HGET', KEYS[1], 'b:fast') or '0')
+    if cur < 30 then redis.call('HSET', KEYS[1], 'b:fast', math.min(30, cur + 10)); changed = true end
   end
 end
-if iv < 2000 then
-  local fast = redis.call('HINCRBY', KEYS[1], 'fast', 1)
-  if fast % 10 == 0 then add('fast', 10, 30) end
-end
 local list = {}
-local s = redis.call('HGET', KEYS[1], 'iv')
+local s = redis.call('HGET', KEYS[1], 'iv:' .. tab)
 if s then for x in string.gmatch(s, '[^,]+') do list[#list + 1] = tonumber(x) end end
 list[#list + 1] = iv
 while #list > 10 do table.remove(list, 1) end
-redis.call('HSET', KEYS[1], 'iv', table.concat(list, ','))
-if #list == 10 and not redis.call('HGET', KEYS[1], 's:regular') then
+redis.call('HSET', KEYS[1], 'iv:' .. tab, table.concat(list, ','))
+if #list == 10 and not redis.call('HGET', KEYS[1], 'b:regular') then
   local sum = 0
   for _, x in ipairs(list) do sum = sum + x end
   local mean = sum / 10
   local var = 0
   for _, x in ipairs(list) do var = var + (x - mean) * (x - mean) end
-  if math.sqrt(var / 10) < 100 then add('regular', 20, 20) end
+  if math.sqrt(var / 10) < 100 then redis.call('HSET', KEYS[1], 'b:regular', 20); changed = true end
 end
-redis.call('HSET', KEYS[1], 'score', before)
-return before
+if changed then return total() end
+return tonumber(redis.call('HGET', KEYS[1], 'score') or '0')
 `)
 
-// Scorer records signals into a place's score hash (the waiting room names the key).
+// Scorer records signals into a place's hash (the waiting room names the key).
 type Scorer struct {
 	Redis *redis.Client
 }
 
-// Add records a signal and returns the score.
-func (s *Scorer) Add(ctx context.Context, key string, sig Signal) (int, error) {
-	n, err := addScript.Run(ctx, s.Redis, []string{key}, sig.Name, sig.Points, sig.Cap, SuspectAt).Int()
+func (s *Scorer) counted(n int, err error) (int, error) {
 	if n < 0 {
 		suspects.Inc()
 		n = -n
@@ -118,14 +161,29 @@ func (s *Scorer) Add(ctx context.Context, key string, sig Signal) (int, error) {
 	return n, err
 }
 
-// Poll records a status poll at nowMs and returns the score.
-func (s *Scorer) Poll(ctx context.Context, key string, nowMs int64) (int, error) {
+// Add records a signal and returns the score.
+func (s *Scorer) Add(ctx context.Context, key string, sig Signal) (int, error) {
+	return s.counted(addScript.Run(ctx, s.Redis, []string{key}, sig.Name, sig.Points, sig.Cap, SuspectAt).Int())
+}
+
+// Raise sets a signal to at least its points (the address signals).
+func (s *Scorer) Raise(ctx context.Context, key string, sig Signal) (int, error) {
+	return s.counted(setScript.Run(ctx, s.Redis, []string{key}, sig.Name, sig.Points, SuspectAt).Int())
+}
+
+// Poll records a status poll of a tab at nowMs and returns the score.
+func (s *Scorer) Poll(ctx context.Context, key, tab string, nowMs int64) (int, error) {
 	before, _ := s.Score(ctx, key)
-	n, err := pollScript.Run(ctx, s.Redis, []string{key}, nowMs, SuspectAt).Int()
+	n, err := pollScript.Run(ctx, s.Redis, []string{key}, nowMs, tab).Int()
 	if err == nil && before < SuspectAt && n >= SuspectAt {
 		suspects.Inc()
 	}
 	return n, err
+}
+
+// Told records when the server told a tab to poll next (polls at or after it are never fast).
+func (s *Scorer) Told(ctx context.Context, key, tab string, dueMs int64) {
+	_ = s.Redis.HSet(ctx, key, "np:"+tab, dueMs).Err()
 }
 
 // Score reads a place's score (0 when none).
@@ -141,7 +199,7 @@ func (s *Scorer) Score(ctx context.Context, key string) (int, error) {
 func (s *Scorer) Signals(ctx context.Context, key string) (map[string]int, error) {
 	fields := make([]string, len(allSignalFields))
 	for i, f := range allSignalFields {
-		fields[i] = "s:" + f
+		fields[i] = "b:" + f
 	}
 	v, err := s.Redis.HMGet(ctx, key, fields...).Result()
 	if err != nil {
@@ -184,6 +242,9 @@ var dataCentres = func() []netip.Prefix {
 		"95.216.0.0/15", "135.181.0.0/16", "5.9.0.0/16", "88.198.0.0/16", // Hetzner
 		"51.68.0.0/16", "51.75.0.0/16", "54.36.0.0/16", // OVH
 		"198.51.100.0/24", // documentation range, used by the crowd test as a hosting range
+		// IPv6 (review D-e): AWS, Google Cloud, Azure, DigitalOcean, Hetzner, OVH.
+		"2600:1f00::/24", "2600:1900::/28", "2603:1000::/24", "2604:a880::/32", "2a03:b0c0::/32", "2a01:4f8::/32", "2a01:4f9::/32", "2001:41d0::/32",
+		"2001:db8:dc::/48", // documentation range, used by the tests as a hosting range
 	} {
 		out = append(out, netip.MustParsePrefix(s))
 	}
@@ -204,14 +265,32 @@ func InDataCentre(ip string) bool {
 	return false
 }
 
+// Address is the unit one person's places are counted per: the address itself (IPv4) or its /64
+// (IPv6, one household's prefix), "" when it is not an address.
+func Address(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ""
+	}
+	if a.Is4() || a.Is4In6() {
+		return a.Unmap().String()
+	}
+	p, err := a.Prefix(64)
+	if err != nil {
+		return ""
+	}
+	return strings.NewReplacer(":", "_", "/", "-").Replace(p.String())
+}
+
 // Subnet is the /24 (IPv4) or /48 (IPv6) of a client address, "" when it is not an address.
 func Subnet(ip string) string {
 	a, err := netip.ParseAddr(ip)
 	if err != nil {
 		return ""
 	}
+	a = a.Unmap()
 	bits := 24
-	if a.Is6() && !a.Is4In6() {
+	if a.Is6() {
 		bits = 48
 	}
 	p, err := a.Prefix(bits)

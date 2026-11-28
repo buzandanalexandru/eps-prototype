@@ -79,7 +79,7 @@ func TestSuspectMovedBackSilently(t *testing.T) {
 		r, _ := env.Engine.Admit(ctx, cur)
 		admitted += r.Admitted
 	}
-	if ok, _ := env.Redis.HExists(ctx, k.Admitted(), c.QID).Result(); ok {
+	if ok, _ := env.Redis.HExists(ctx, k.Fan(c.QID), "adm").Result(); ok {
 		t.Fatal("the suspect was let in before the last fan")
 	}
 }

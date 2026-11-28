@@ -82,7 +82,7 @@ func TestRateChangedLive(t *testing.T) {
 	for i := 0; i < 3000; i++ {
 		_ = env.Redis.ZAdd(ctx, k.Line(), redisZ(i)).Err()
 	}
-	_ = env.Redis.Set(ctx, k.State(), queue.StateOpen, 0).Err()
+	_ = env.Redis.HSet(ctx, k.State(), "state", queue.StateOpen).Err()
 	tick := func(n int) int64 {
 		var total int64
 		for i := 0; i < n; i++ {

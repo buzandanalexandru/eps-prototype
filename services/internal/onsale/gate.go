@@ -51,11 +51,12 @@ func PassRequired(saleID, eventID string) *apperr.Problem {
 		With("saleId", saleID).With("eventId", eventID)
 }
 
-// badPass scores a refused pass whose signature was good (another session's pass): D-6's
-// "checkout with another session's pass". A missing or forged pass has no place to score.
-func (g *Gate) badPass(ctx context.Context, sale *sales.Sale, err error) {
+// badPass scores a pass with a good signature presented from another session by another account
+// (D-6's "checkout with another session's pass", narrowed by review D-d): a person's own second
+// browser, an expired or an ended pass is never scored, and a missing or forged pass names no place.
+func (g *Gate) badPass(ctx context.Context, sale *sales.Sale, err error, sub string) {
 	var r *queue.Rejected
-	if g.Scorer == nil || !sale.Settings.BotDefence || !errors.As(err, &r) || r.Claims == nil {
+	if g.Scorer == nil || !sale.Settings.BotDefence || !errors.As(err, &r) || r.Claims == nil || r.Reason != queue.RejectSession || r.Claims.Sub == sub {
 		return
 	}
 	if k, e := queue.KeysOf(sale.OrganiserID, sale.EventID, sale.ID); e == nil {
@@ -110,7 +111,7 @@ func (g *Gate) BeforeHold(ctx context.Context, h checkout.GateHold) (*checkout.G
 	if err != nil {
 		var r *queue.Rejected
 		if errors.As(err, &r) {
-			g.badPass(ctx, sale, err)
+			g.badPass(ctx, sale, err, h.Buyer.ID)
 			return nil, PassRequired(sale.ID, h.EventID).With("reason", r.Reason)
 		}
 		return nil, err
@@ -205,7 +206,7 @@ func (g *Gate) BeforePay(ctx context.Context, o *checkout.Order, b checkout.Buye
 		if err != nil {
 			var r *queue.Rejected
 			if errors.As(err, &r) {
-				g.badPass(ctx, sale, err)
+				g.badPass(ctx, sale, err, b.ID)
 				return PassRequired(sale.ID, o.EventID).With("reason", r.Reason)
 			}
 			return err

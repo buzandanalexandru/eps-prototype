@@ -26,6 +26,7 @@ type client struct {
 	ip    string
 	print string
 	polls []time.Duration // gaps between status polls
+	tab   string
 	qid   string
 }
 
@@ -143,7 +144,7 @@ func TestSimulatedCrowd(t *testing.T) {
 				c.qid = vc.QID
 				for _, gap := range c.polls {
 					clk.Add(gap)
-					if _, err := eng.StatusOf(ctx, s.ID, st.QueueToken, session, c.sub); err != nil {
+					if _, err := eng.StatusOf(ctx, s.ID, st.QueueToken, session, c.tab); err != nil {
 						errs <- err
 						return
 					}

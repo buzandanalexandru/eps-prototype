@@ -27,23 +27,29 @@ const Tick = 500 * time.Millisecond
 // penaltyBase puts a suspect behind every place that will ever be handed out in order.
 const penaltyBase = 1_000_000
 
+var tickSeconds = metrics.NewHistogram("eps_queue_admit_tick_seconds", "Time of one admitter tick of one sale.", []float64{0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1})
+
 // admitScript admits up to the token bucket's worth of places from the front of the line within
 // the shopping limit (D-2): suspects met at the front go to the back (or to the slow lane), the
-// slow lane is served only when the line is empty, and a paused sale admits nobody.
-// KEYS: state, line, slow, admitted, active, bucket, tail.
-// ARGV: now ms, rate per minute, shopping limit, paused, pass life ms, bot defence on, score key
-// prefix, most per tick, suspect score, slow-lane score.
+// slow lane is served only when the line is empty, and a paused sale admits nobody. An admitted
+// place holds a shopping place for the fetch window until its pass is collected (review spec M3).
+// KEYS: state, line, slow, active, rate.
+// ARGV: test now (0: TIME), rate per minute, shopping limit, paused, fetch window ms, bot defence
+// on, fan key prefix, most per tick, suspect score, slow-lane score.
 // Returns {admitted, active after, moved back, slow-laned}.
 var admitScript = redis.NewScript(`
-if redis.call('GET', KEYS[1]) ~= 'open' then return {0, 0, 0, 0} end
+if redis.call('HGET', KEYS[1], 'state') ~= 'open' then return {0, 0, 0, 0} end
 local now = tonumber(ARGV[1])
-redis.call('ZREMRANGEBYSCORE', KEYS[5], '-inf', now)
-local active = redis.call('ZCARD', KEYS[5])
+if now == 0 then local t = redis.call('TIME'); now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000) end
+redis.call('ZREMRANGEBYSCORE', KEYS[4], '-inf', now)
+local active = redis.call('ZCARD', KEYS[4])
 local rate = tonumber(ARGV[2])
-local last = tonumber(redis.call('HGET', KEYS[6], 'last') or ARGV[1])
-local tokens = tonumber(redis.call('HGET', KEYS[6], 'tokens') or '0')
+local b = redis.call('HMGET', KEYS[1], 'last', 'tokens', 'tail')
+local last = tonumber(b[1] or now)
+local tokens = tonumber(b[2] or '0')
+local tail = tonumber(b[3] or '0')
 if ARGV[4] == '1' then
-  redis.call('HSET', KEYS[6], 'last', now, 'tokens', 0)
+  redis.call('HSET', KEYS[1], 'last', now, 'tokens', 0)
   return {0, active, 0, 0}
 end
 local burst = math.max(1, rate / 60)
@@ -51,10 +57,10 @@ tokens = math.min(burst, tokens + math.max(0, now - last) * rate / 60000)
 local room = tonumber(ARGV[3]) - active
 local n = math.min(math.floor(tokens), room, tonumber(ARGV[8]))
 local admitted, moved, slowed = 0, 0, 0
-local life = tonumber(ARGV[5])
+local fetch = tonumber(ARGV[5])
 local admit = function(qid)
-  redis.call('HSET', KEYS[4], qid, now)
-  redis.call('ZADD', KEYS[5], now + life, qid)
+  redis.call('HSET', ARGV[7] .. qid, 'adm', now)
+  redis.call('ZADD', KEYS[4], now + fetch, qid)
   admitted = admitted + 1
 end
 local looked = 0
@@ -67,10 +73,11 @@ while admitted < n and looked < n * 4 + 20 do
   if ARGV[6] == '1' then bs = tonumber(redis.call('HGET', ARGV[7] .. qid, 'score') or '0') end
   if bs >= tonumber(ARGV[10]) then
     redis.call('ZADD', KEYS[3], score, qid)
+    if score < ` + strconv.Itoa(penaltyBase) + ` then redis.call('HSET', ARGV[7] .. qid, 'pos', score) end
     slowed = slowed + 1
   elseif bs >= tonumber(ARGV[9]) and score < ` + strconv.Itoa(penaltyBase) + ` then
-    local tail = tonumber(redis.call('GET', KEYS[7]) or '0')
     redis.call('ZADD', KEYS[2], tail + ` + strconv.Itoa(penaltyBase) + ` + score, qid)
+    redis.call('HSET', ARGV[7] .. qid, 'pos', score)
     moved = moved + 1
   else
     admit(qid)
@@ -83,7 +90,10 @@ if admitted < n and redis.call('ZCARD', KEYS[2]) == 0 then
     admit(x[1])
   end
 end
-redis.call('HSET', KEYS[6], 'last', now, 'tokens', tokens - admitted)
+redis.call('HSET', KEYS[1], 'last', now, 'tokens', tokens - admitted)
+if admitted > 0 then redis.call('HINCRBY', KEYS[1], 'admc', admitted) end
+redis.call('LPUSH', KEYS[5], now .. ':' .. admitted)
+redis.call('LTRIM', KEYS[5], 0, 119)
 return {admitted, active + admitted, moved, slowed}
 `)
 
@@ -94,6 +104,8 @@ type TickResult struct {
 
 // Admit runs one admitter tick for a sale.
 func (e *Engine) Admit(ctx context.Context, sale *sales.Sale) (TickResult, error) {
+	start := time.Now()
+	defer func() { tickSeconds.Observe(time.Since(start).Seconds()) }()
 	k, err := KeysOf(sale.OrganiserID, sale.EventID, sale.ID)
 	if err != nil {
 		return TickResult{}, err
@@ -106,8 +118,8 @@ func (e *Engine) Admit(ctx context.Context, sale *sales.Sale) (TickResult, error
 	if st.BotDefence {
 		bot = "1"
 	}
-	v, err := admitScript.Run(ctx, e.Redis, []string{k.State(), k.Line(), k.Slow(), k.Admitted(), k.Active(), k.Bucket(), k.Tail()},
-		e.now().UnixMilli(), st.RatePerMinute, st.ActiveLimit, paused, PassLife.Milliseconds(), bot, k.prefix("q-bot"), 5000,
+	v, err := admitScript.Run(ctx, e.Redis, []string{k.State(), k.Line(), k.Slow(), k.Active(), k.Rate()},
+		e.testNow(), st.RatePerMinute, st.ActiveLimit, paused, FetchWindow.Milliseconds(), bot, k.prefix("qf"), 5000,
 		botdefence.SuspectAt, botdefence.SlowLaneAt).Int64Slice()
 	if err != nil {
 		return TickResult{}, err
@@ -119,18 +131,18 @@ func (e *Engine) Admit(ctx context.Context, sale *sales.Sale) (TickResult, error
 	return r, nil
 }
 
-// finishScript ends the draw: places that joined during it go behind, in arrival order; the line
-// opens. KEYS: pre, line, tail, state. ARGV: count drawn. Returns the tail.
+// finishScript ends the draw (review D-c): everyone still in the pre-queue (arrived at or after
+// opening, or during the draw) goes behind the drawn places in arrival order; the line opens.
+// KEYS: pre, line, state, members. ARGV: count drawn. Returns the tail.
 var finishScript = redis.NewScript(`
 local n = tonumber(ARGV[1])
 local late = redis.call('ZRANGE', KEYS[1], 0, -1)
 for i, qid in ipairs(late) do
   redis.call('ZADD', KEYS[2], n + i, qid)
 end
-redis.call('DEL', KEYS[1])
+redis.call('DEL', KEYS[1], KEYS[4])
 local tail = n + #late
-redis.call('SET', KEYS[3], tail)
-redis.call('SET', KEYS[4], 'open')
+redis.call('HSET', KEYS[3], 'tail', tail, 'state', 'open', 'drawn', n)
 return tail
 `)
 
@@ -147,37 +159,78 @@ func Permute(members []string, seed [32]byte) []string {
 	return out
 }
 
-// Shuffle draws the pre-queue at opening (D-2): one core at a time (a lock), a crypto-random seed
-// stored for the audit, positions 1..N written in batches of 5,000, then everyone who joined during
-// the draw behind in arrival order. With bot defence on, suspects are then moved to the back.
+// renewScript extends a lock only for its holder.
+var renewScript = redis.NewScript(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end return 0`)
+
+// Shuffle draws the pre-queue at opening (D-2, review D-c), resumable: the members who arrived
+// before opening are snapshotted with a crypto-random seed first (the audit keeps that one seed);
+// positions are then written in batches of 5,000, each batch recording how far the draw got, under
+// a short lock renewed per batch. A draw cut short is continued by the next tick from the same
+// snapshot and seed, so positions are never handed out twice. Joins during the draw wait in the
+// pre-queue and go behind it in arrival order. With bot defence on, suspects then go to the back.
 func (e *Engine) Shuffle(ctx context.Context, sale *sales.Sale) (int, error) {
 	k, err := KeysOf(sale.OrganiserID, sale.EventID, sale.ID)
 	if err != nil {
 		return 0, err
 	}
-	ok, err := e.Redis.SetNX(ctx, k.lock("shuffle"), "1", time.Minute).Result()
+	me := newID()
+	ok, err := e.Redis.SetNX(ctx, k.lock("draw"), me, 10*time.Second).Result()
 	if err != nil || !ok {
 		return 0, err
 	}
-	defer e.Redis.Del(context.WithoutCancel(ctx), k.lock("shuffle"))
-	if st, _ := e.Redis.Get(ctx, k.State()).Result(); st == StateOpen {
-		return 0, nil
-	}
-	if err := e.Redis.Set(ctx, k.State(), StateShuffling, 0).Err(); err != nil {
-		return 0, err
-	}
-	members, err := e.Redis.ZRange(ctx, k.Pre(), 0, -1).Result()
+	defer func() { _ = unlockScript.Run(context.WithoutCancel(ctx), e.Redis, []string{k.lock("draw")}, me).Err() }()
+	d, err := e.Redis.HMGet(ctx, k.State(), "state", "seed", "n", "drawn").Result()
 	if err != nil {
 		return 0, err
 	}
+	if fmt.Sprint(d[0]) == StateOpen {
+		return 0, nil
+	}
 	var seed [32]byte
-	if _, err := rand.Read(seed[:]); err != nil {
+	n, drawn := 0, 0
+	if d[1] == nil {
+		// The snapshot: who arrived before opening, in arrival order, with the seed.
+		if _, err := rand.Read(seed[:]); err != nil {
+			return 0, err
+		}
+		members, err := e.Redis.ZRangeArgs(ctx, redis.ZRangeArgs{Key: k.Pre(), Start: "-inf", Stop: "(" + strconv.FormatInt(sale.Settings.OpensAt.UnixMilli(), 10), ByScore: true}).Result()
+		if err != nil {
+			return 0, err
+		}
+		pipe := e.Redis.TxPipeline()
+		pipe.Del(ctx, k.Members())
+		for i := 0; i < len(members); i += 5000 {
+			chunk := make([]any, 0, 5000)
+			for _, m := range members[i:min(len(members), i+5000)] {
+				chunk = append(chunk, m)
+			}
+			pipe.RPush(ctx, k.Members(), chunk...)
+		}
+		pipe.HSet(ctx, k.State(), "state", StateShuffling, "seed", hex.EncodeToString(seed[:]), "n", len(members), "drawn", 0, "at", e.now().UnixMilli())
+		if _, err := pipe.Exec(ctx); err != nil {
+			return 0, err
+		}
+		n = len(members)
+	} else {
+		b, err := hex.DecodeString(fmt.Sprint(d[1]))
+		if err != nil || len(b) != 32 {
+			return 0, errors.New("queue: bad draw seed")
+		}
+		copy(seed[:], b)
+		n, _ = strconv.Atoi(fmt.Sprint(d[2]))
+		drawn, _ = strconv.Atoi(fmt.Sprint(d[3]))
+	}
+	members, err := e.Redis.LRange(ctx, k.Members(), 0, -1).Result()
+	if err != nil {
 		return 0, err
 	}
+	if len(members) != n {
+		return 0, fmt.Errorf("queue: draw snapshot has %d of %d members", len(members), n)
+	}
 	order := Permute(members, seed)
-	for i := 0; i < len(order); i += 5000 {
+	for i := drawn; i < len(order); i += 5000 {
 		end := min(len(order), i+5000)
-		pipe := e.Redis.Pipeline()
+		pipe := e.Redis.TxPipeline()
 		zs := make([]redis.Z, 0, end-i)
 		rm := make([]any, 0, end-i)
 		audit := make([]any, 0, end-i)
@@ -190,15 +243,18 @@ func (e *Engine) Shuffle(ctx context.Context, sale *sales.Sale) (int, error) {
 		pipe.ZAdd(ctx, k.Line(), zs...)
 		pipe.ZRem(ctx, k.Pre(), rm...)
 		pipe.RPush(ctx, k.Audit(), audit...)
+		pipe.HSet(ctx, k.State(), "drawn", end)
 		if _, err := pipe.Exec(ctx); err != nil {
 			return 0, err
 		}
+		if n, err := renewScript.Run(ctx, e.Redis, []string{k.lock("draw")}, me, 10000).Int(); err != nil || n == 0 {
+			return 0, errors.New("queue: lost the draw lock")
+		}
 	}
-	tail, err := finishScript.Run(ctx, e.Redis, []string{k.Pre(), k.Line(), k.Tail(), k.State()}, len(order)).Int()
+	tail, err := finishScript.Run(ctx, e.Redis, []string{k.Pre(), k.Line(), k.State(), k.Members()}, n).Int()
 	if err != nil {
 		return 0, err
 	}
-	_ = e.Redis.HSet(ctx, k.Shuffle(), "seed", hex.EncodeToString(seed[:]), "n", len(order), "at", e.now().UnixMilli()).Err()
 	shuffles.Inc()
 	if sale.Settings.BotDefence && e.Scorer != nil {
 		if _, err := e.Penalise(ctx, sale); err != nil {
@@ -208,6 +264,8 @@ func (e *Engine) Shuffle(ctx context.Context, sale *sales.Sale) (int, error) {
 	return tail, nil
 }
 
+var unlockScript = redis.NewScript(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`)
+
 // Penalise moves suspect places behind every other place (score 70 or more) or to the slow lane
 // (90 or more), after the draw only (D-6). Their page keeps showing a normal position.
 func (e *Engine) Penalise(ctx context.Context, sale *sales.Sale) (int, error) {
@@ -215,7 +273,7 @@ func (e *Engine) Penalise(ctx context.Context, sale *sales.Sale) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	tail, _ := e.Redis.Get(ctx, k.Tail()).Int64()
+	tail, _ := e.Redis.HGet(ctx, k.State(), "tail").Int64()
 	moved := 0
 	for start := int64(0); ; start += 5000 {
 		zs, err := e.Redis.ZRangeWithScores(ctx, k.Line(), start, start+4999).Result()
@@ -238,6 +296,8 @@ func (e *Engine) Penalise(ctx context.Context, sale *sales.Sale) (int, error) {
 			if z.Score >= penaltyBase || s < botdefence.SuspectAt {
 				continue
 			}
+			q := fmt.Sprint(z.Member)
+			mv.HSet(ctx, k.Fan(q), "pos", int64(z.Score))
 			if s >= botdefence.SlowLaneAt {
 				mv.ZRem(ctx, k.Line(), z.Member)
 				mv.ZAdd(ctx, k.Slow(), z)
@@ -254,9 +314,6 @@ func (e *Engine) Penalise(ctx context.Context, sale *sales.Sale) (int, error) {
 			}
 			moved += n
 			start -= int64(n) // members moved out of this window shift the ranks
-			if start < -5000 {
-				start = -5000
-			}
 		}
 		if len(zs) < 5000 {
 			break
@@ -265,7 +322,7 @@ func (e *Engine) Penalise(ctx context.Context, sale *sales.Sale) (int, error) {
 	return moved, nil
 }
 
-// Ended marks a place's pass used (its order paid) or revoked (cancelled), freeing a shopping
+// Ended marks a place's passes used (its order paid) or revoked (cancelled), freeing a shopping
 // place at once.
 func (e *Engine) Ended(ctx context.Context, org, event, saleID, qid, how string) error {
 	k, err := KeysOf(org, event, saleID)
@@ -276,8 +333,7 @@ func (e *Engine) Ended(ctx context.Context, org, event, saleID, qid, how string)
 		how = "revoked"
 	}
 	pipe := e.Redis.TxPipeline()
-	pipe.HSet(ctx, k.Pass(qid), "state", how)
-	pipe.Expire(ctx, k.Pass(qid), 24*time.Hour)
+	pipe.HSet(ctx, k.Fan(qid), "pst", how)
 	pipe.ZRem(ctx, k.Active(), qid)
 	_, err = pipe.Exec(ctx)
 	return err
@@ -301,27 +357,36 @@ func CountsOf(ctx context.Context, rdb *redis.Client, org, event, saleID string,
 		return Counts{}, err
 	}
 	pipe := rdb.Pipeline()
-	st := pipe.Get(ctx, k.State())
+	st := pipe.HMGet(ctx, k.State(), "state", "admc", "seed")
 	pre := pipe.ZCard(ctx, k.Pre())
 	line := pipe.ZCard(ctx, k.Line())
 	slow := pipe.ZCard(ctx, k.Slow())
-	adm := pipe.HLen(ctx, k.Admitted())
 	act := pipe.ZCount(ctx, k.Active(), strconv.FormatInt(now.UnixMilli(), 10), "+inf")
-	seed := pipe.HGet(ctx, k.Shuffle(), "seed")
 	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		return Counts{}, err
 	}
-	return Counts{State: st.Val(), Prequeue: pre.Val(), Line: line.Val(), Slow: slow.Val(), Admitted: adm.Val(), Active: act.Val(), Seed: seed.Val()}, nil
+	v := st.Val()
+	str := func(x any) string {
+		if x == nil {
+			return ""
+		}
+		return fmt.Sprint(x)
+	}
+	admc, _ := strconv.ParseInt(str(v[1]), 10, 64)
+	return Counts{State: str(v[0]), Prequeue: pre.Val(), Line: line.Val(), Slow: slow.Val(), Admitted: admc, Active: act.Val(), Seed: str(v[2])}, nil
 }
 
 // Admitter runs the draw and the admission ticks of every sale with a waiting room, each sale under
-// a lease (one admitter per sale across gateways, renewed every tick).
+// a lease (one admitter per sale across gateways, renewed every tick), a bounded number of sales at
+// once (review sec M5).
 type Admitter struct {
 	Engine *Engine
 	Log    *slog.Logger
-	me     string
-	once   sync.Once
-	gauges sync.Map
+	// Parallel is how many sales tick at once (default 8).
+	Parallel int
+	me       string
+	once     sync.Once
+	gauges   sync.Map
 }
 
 func (a *Admitter) lease(ctx context.Context, k Keys) bool {
@@ -334,11 +399,8 @@ func (a *Admitter) lease(ctx context.Context, k Keys) bool {
 	if ok {
 		return true
 	}
-	if cur, _ := a.Engine.Redis.Get(ctx, key).Result(); cur == a.me {
-		_ = a.Engine.Redis.Expire(ctx, key, 5*time.Second).Err()
-		return true
-	}
-	return false
+	n, _ := renewScript.Run(ctx, a.Engine.Redis, []string{key}, a.me, 5000).Int()
+	return n == 1
 }
 
 // RunOnce ticks every sale once.
@@ -348,44 +410,63 @@ func (a *Admitter) RunOnce(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	par := a.Parallel
+	if par <= 0 {
+		par = 8
+	}
+	sem := make(chan struct{}, par)
+	var wg sync.WaitGroup
 	for _, m := range list {
-		p := strings.Split(m, "/")
-		if len(p) != 3 {
-			continue
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(m string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			a.tick(ctx, m)
+		}(m)
+	}
+	wg.Wait()
+}
+
+func (a *Admitter) tick(ctx context.Context, m string) {
+	e := a.Engine
+	p := strings.Split(m, "/")
+	if len(p) != 3 {
+		return
+	}
+	k, err := KeysOf(p[0], p[1], p[2])
+	if err != nil {
+		return
+	}
+	sale, err := e.Sales.Lookup(ctx, p[2])
+	now := e.now()
+	if err != nil || now.After(sale.Settings.OpensAt.Add(72*time.Hour)) {
+		if err == nil || strings.Contains(err.Error(), "not found") {
+			// Long over or deleted: stop ticking it and drop its gauges.
+			_ = e.Redis.SRem(ctx, salesIndex(), m).Err()
+			a.dropGauges(p[2])
 		}
-		k, err := KeysOf(p[0], p[1], p[2])
-		if err != nil {
-			continue
+		return
+	}
+	a.gauge(p[0], p[1], p[2])
+	if !a.lease(ctx, k) || sale.Settings.PhaseAt(now) != sales.Open {
+		return
+	}
+	if st, _ := e.Redis.HGet(ctx, k.State(), "state").Result(); st != StateOpen {
+		if _, err := e.Shuffle(ctx, sale); err != nil && a.Log != nil {
+			a.Log.Warn("shuffle failed", "sale", sale.ID, "error", err.Error())
 		}
-		a.gauge(p[0], p[1], p[2])
-		if !a.lease(ctx, k) {
-			continue
-		}
-		sale, err := e.Sales.Lookup(ctx, p[2])
-		if err != nil {
-			continue
-		}
-		now := e.now()
-		if now.After(sale.Settings.OpensAt.Add(72 * time.Hour)) {
-			_ = e.Redis.SRem(ctx, salesIndex(), m).Err() // long over: stop ticking it
-			continue
-		}
-		if sale.Settings.PhaseAt(now) != sales.Open {
-			continue
-		}
-		if st, _ := e.Redis.Get(ctx, k.State()).Result(); st != StateOpen {
-			if _, err := e.Shuffle(ctx, sale); err != nil && a.Log != nil {
-				a.Log.Warn("shuffle failed", "sale", sale.ID, "error", err.Error())
-			}
-			continue
-		}
-		if _, err := e.Admit(ctx, sale); err != nil && a.Log != nil && ctx.Err() == nil {
-			a.Log.Warn("admit failed", "sale", sale.ID, "error", err.Error())
-		}
+		return
+	}
+	if _, err := e.Admit(ctx, sale); err != nil && a.Log != nil && ctx.Err() == nil {
+		a.Log.Warn("admit failed", "sale", sale.ID, "error", err.Error())
 	}
 }
 
-// gauge registers a sale's queue gauges once (read at scrape time).
+var gaugeNames = []string{"eps_queue_prequeue_size", "eps_queue_length", "eps_queue_admitted", "eps_queue_active_sessions"}
+
+// gauge registers a sale's queue gauges once (read at scrape time). With several gateways each
+// reports the same Redis figures: a dashboard takes the max per sale, never the sum.
 func (a *Admitter) gauge(org, event, sale string) {
 	if _, loaded := a.gauges.LoadOrStore(sale, true); loaded {
 		return
@@ -402,10 +483,17 @@ func (a *Admitter) gauge(org, event, sale string) {
 		}
 	}
 	l := `{sale="` + sale + `"}`
-	metrics.NewGauge("eps_queue_prequeue_size"+l, read(func(c Counts) int64 { return c.Prequeue }))
-	metrics.NewGauge("eps_queue_length"+l, read(func(c Counts) int64 { return c.Line + c.Slow }))
-	metrics.NewGauge("eps_queue_admitted"+l, read(func(c Counts) int64 { return c.Admitted }))
-	metrics.NewGauge("eps_queue_active_sessions"+l, read(func(c Counts) int64 { return c.Active }))
+	metrics.NewGauge(gaugeNames[0]+l, read(func(c Counts) int64 { return c.Prequeue }))
+	metrics.NewGauge(gaugeNames[1]+l, read(func(c Counts) int64 { return c.Line + c.Slow }))
+	metrics.NewGauge(gaugeNames[2]+l, read(func(c Counts) int64 { return c.Admitted }))
+	metrics.NewGauge(gaugeNames[3]+l, read(func(c Counts) int64 { return c.Active }))
+}
+
+func (a *Admitter) dropGauges(sale string) {
+	a.gauges.Delete(sale)
+	for _, n := range gaugeNames {
+		metrics.RemoveGauge(n + `{sale="` + sale + `"}`)
+	}
 }
 
 // Run ticks until ctx ends.

@@ -78,7 +78,7 @@ func (h *HTTP) join(w http.ResponseWriter, r *http.Request) {
 		ua = ua[:400]
 	}
 	st, err := h.Engine.Join(r.Context(), r.PathValue("saleId"), JoinInput{Sub: c.Subject, Kind: kind, Session: r.Header.Get("X-EPS-Session"),
-		Pow: body.Pow, Print: body.Print, UA: ua, IP: c.ClientIP})
+		Pow: body.Pow, Print: body.Print, UA: ua, IP: c.ClientIP, Tab: r.Header.Get("X-EPS-Tab")})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -87,13 +87,10 @@ func (h *HTTP) join(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, st)
 }
 
+// status needs only the queue token and the session secret it is bound to (review D-i): no core
+// token, so the web app forwards polls without reading a session.
 func (h *HTTP) status(w http.ResponseWriter, r *http.Request) {
-	c, ok := h.claims(r)
-	if !ok {
-		httpx.WriteProblem(w, r, http.StatusUnauthorized, "unauthenticated", "")
-		return
-	}
-	st, err := h.Engine.StatusOf(r.Context(), r.PathValue("saleId"), r.Header.Get("X-EPS-Queue-Token"), r.Header.Get("X-EPS-Session"), c.Subject)
+	st, err := h.Engine.StatusOf(r.Context(), r.PathValue("saleId"), r.Header.Get("X-EPS-Queue-Token"), r.Header.Get("X-EPS-Session"), r.Header.Get("X-EPS-Tab"))
 	if err != nil {
 		h.fail(w, r, err)
 		return

@@ -70,7 +70,8 @@ func (p *PassCheck) Check(ctx context.Context, tok, session, sub, org, event, sa
 	if err != nil {
 		return nil, reject(RejectSale, c)
 	}
-	v, err := p.Redis.HMGet(ctx, k.Pass(c.QID), "state", "tok").Result()
+	// The place's pass state and this session's own pass (one place, a pass per session: D-d).
+	v, err := p.Redis.HMGet(ctx, k.Fan(c.QID), "pst", "p:"+shortSid(c.Sid)).Result()
 	if err != nil {
 		return nil, err
 	}

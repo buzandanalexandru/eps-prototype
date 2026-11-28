@@ -43,6 +43,8 @@ type Settings struct {
 	BotDefence      bool      `json:"botDefence"`
 	OTPOn           bool      `json:"otpOn"`
 	OTPThreshold    int       `json:"otpThreshold"`
+	// AccountsOnly asks guests to sign in before they join (review D-f; default off).
+	AccountsOnly bool `json:"accountsOnly"`
 }
 
 // Defaults (D-1): pre-queue 30 minutes before, 2,000 fans a minute, 1,500 shopping at once, holds
@@ -65,6 +67,20 @@ var ranges = []struct {
 	{"capPerOrder", 1, 20, func(s Settings) int { return s.CapPerOrder }},
 	{"capPerPerson", 1, 50, func(s Settings) int { return s.CapPerPerson }},
 	{"otpThreshold", 1, 20, func(s Settings) int { return s.OTPThreshold }},
+}
+
+// MaxSalesPerEvent bounds the sale moments of one event (review D-k).
+const MaxSalesPerEvent = 10
+
+// ValidateAt is Validate plus the opening time within a year of now (review D-k).
+func (s Settings) ValidateAt(now time.Time) *apperr.Problem {
+	if p := s.Validate(); p != nil {
+		return p
+	}
+	if s.OpensAt.After(now.AddDate(1, 0, 0)) || s.OpensAt.Before(now.AddDate(-1, 0, 0)) {
+		return apperr.New(http.StatusUnprocessableEntity, apperr.SaleInvalid, "The opening time must be within a year of now.", false).With("field", "opensAt")
+	}
+	return nil
 }
 
 // Validate refuses a value outside its range, naming the field and the range.
@@ -176,13 +192,13 @@ func notFound() *apperr.Problem {
 }
 
 const cols = `s.id::text, s.organiser_id::text, s.event_id::text, s.name, v.version, v.opens_at, v.prequeue_minutes, v.queue_on, v.rate_per_minute,
-	v.active_limit, v.paused, v.hold_minutes, v.cap_per_order, v.cap_per_person, v.bot_defence, v.otp_on, v.otp_threshold, v.created_at, v.created_by`
+	v.active_limit, v.paused, v.hold_minutes, v.cap_per_order, v.cap_per_person, v.bot_defence, v.otp_on, v.otp_threshold, v.accounts_only, v.created_at, v.created_by`
 
 func scanSale(row pgx.Row) (Sale, error) {
 	var x Sale
 	st := &x.Settings
 	err := row.Scan(&x.ID, &x.OrganiserID, &x.EventID, &x.Name, &x.Version, &st.OpensAt, &st.PrequeueMinutes, &st.QueueOn, &st.RatePerMinute,
-		&st.ActiveLimit, &st.Paused, &st.HoldMinutes, &st.CapPerOrder, &st.CapPerPerson, &st.BotDefence, &st.OTPOn, &st.OTPThreshold, &x.UpdatedAt, &x.UpdatedBy)
+		&st.ActiveLimit, &st.Paused, &st.HoldMinutes, &st.CapPerOrder, &st.CapPerPerson, &st.BotDefence, &st.OTPOn, &st.OTPThreshold, &st.AccountsOnly, &x.UpdatedAt, &x.UpdatedBy)
 	st.OpensAt = st.OpensAt.UTC()
 	x.UpdatedAt = x.UpdatedAt.UTC()
 	return x, err
@@ -190,10 +206,10 @@ func scanSale(row pgx.Row) (Sale, error) {
 
 func insertVersion(ctx context.Context, tx pgx.Tx, org, saleID string, version int, st Settings, by string) error {
 	_, err := tx.Exec(ctx, `insert into sales.sale_settings (organiser_id, sale_id, version, opens_at, prequeue_minutes, queue_on, rate_per_minute,
-		active_limit, paused, hold_minutes, cap_per_order, cap_per_person, bot_defence, otp_on, otp_threshold, created_by)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+		active_limit, paused, hold_minutes, cap_per_order, cap_per_person, bot_defence, otp_on, otp_threshold, accounts_only, created_by)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
 		org, saleID, version, st.OpensAt, st.PrequeueMinutes, st.QueueOn, st.RatePerMinute, st.ActiveLimit, st.Paused, st.HoldMinutes,
-		st.CapPerOrder, st.CapPerPerson, st.BotDefence, st.OTPOn, st.OTPThreshold, by)
+		st.CapPerOrder, st.CapPerPerson, st.BotDefence, st.OTPOn, st.OTPThreshold, st.AccountsOnly, by)
 	return err
 }
 
@@ -206,7 +222,7 @@ func (s *Service) Create(ctx context.Context, org, event, name, by string, st Se
 	if name == "" || len(name) > 80 {
 		return nil, apperr.New(http.StatusUnprocessableEntity, apperr.SaleInvalid, "A name of 1 to 80 characters is required.", false).With("field", "name")
 	}
-	if p := st.Validate(); p != nil {
+	if p := st.ValidateAt(s.now()); p != nil {
 		return nil, p
 	}
 	st.OpensAt = st.OpensAt.UTC().Truncate(time.Second)
@@ -221,6 +237,14 @@ func (s *Service) Create(ctx context.Context, org, event, name, by string, st Se
 	}
 	id := uuid.NewString()
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		var n int
+		// The event's sales are counted under a lock on its first sale (two creates at once).
+		if err := tx.QueryRow(ctx, `select count(*) from (select id from sales.sales where event_id = $1 and deleted_at is null for update) x`, event).Scan(&n); err != nil {
+			return err
+		}
+		if n >= MaxSalesPerEvent {
+			return apperr.New(http.StatusUnprocessableEntity, apperr.SaleInvalid, fmt.Sprintf("An event has at most %d sale moments.", MaxSalesPerEvent), false).With("field", "sales").With("max", MaxSalesPerEvent)
+		}
 		if _, err := tx.Exec(ctx, `insert into sales.sales (id, organiser_id, event_id, name, created_by) values ($1, $2, $3, $4, $5)`, id, org, event, name, by); err != nil {
 			return err
 		}
@@ -247,7 +271,7 @@ func (s *Service) List(ctx context.Context, org, event string) ([]Sale, error) {
 	var out []Sale
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `select `+cols+` from sales.sales s join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id and v.version = s.settings_version
-			where s.event_id = $1 order by v.opens_at, s.created_at`, event)
+			where s.event_id = $1 and s.deleted_at is null order by v.opens_at, s.created_at`, event)
 		if err != nil {
 			return err
 		}
@@ -272,7 +296,7 @@ func (s *Service) Get(ctx context.Context, org, saleID string) (*Sale, []Version
 	var out *Sale
 	var hist []Version
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		x, err := scanSale(tx.QueryRow(ctx, `select `+cols+` from sales.sales s join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id and v.version = s.settings_version where s.id = $1`, saleID))
+		x, err := scanSale(tx.QueryRow(ctx, `select `+cols+` from sales.sales s join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id and v.version = s.settings_version where s.id = $1 and s.deleted_at is null`, saleID))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return notFound()
 		}
@@ -281,7 +305,7 @@ func (s *Service) Get(ctx context.Context, org, saleID string) (*Sale, []Version
 		}
 		out = &x
 		rows, err := tx.Query(ctx, `select version, opens_at, prequeue_minutes, queue_on, rate_per_minute, active_limit, paused, hold_minutes, cap_per_order,
-			cap_per_person, bot_defence, otp_on, otp_threshold, created_at, created_by from sales.sale_settings where sale_id = $1 order by version desc limit 200`, saleID)
+			cap_per_person, bot_defence, otp_on, otp_threshold, accounts_only, created_at, created_by from sales.sale_settings where sale_id = $1 order by version desc limit 200`, saleID)
 		if err != nil {
 			return err
 		}
@@ -290,7 +314,7 @@ func (s *Service) Get(ctx context.Context, org, saleID string) (*Sale, []Version
 			var v Version
 			st := &v.Settings
 			if err := rows.Scan(&v.Version, &st.OpensAt, &st.PrequeueMinutes, &st.QueueOn, &st.RatePerMinute, &st.ActiveLimit, &st.Paused, &st.HoldMinutes,
-				&st.CapPerOrder, &st.CapPerPerson, &st.BotDefence, &st.OTPOn, &st.OTPThreshold, &v.At, &v.By); err != nil {
+				&st.CapPerOrder, &st.CapPerPerson, &st.BotDefence, &st.OTPOn, &st.OTPThreshold, &st.AccountsOnly, &v.At, &v.By); err != nil {
 				return err
 			}
 			st.OpensAt = st.OpensAt.UTC()
@@ -304,9 +328,11 @@ func (s *Service) Get(ctx context.Context, org, saleID string) (*Sale, []Version
 
 // Update saves a new version of a sale's settings. Live fields (rate, shopping limit, pause, bot
 // defence, OTP, holds and caps) change at any time; opening time, pre-queue window and queue on/off
-// are refused once the pre-queue opened (EPS-SALE-LOCKED).
-func (s *Service) Update(ctx context.Context, org, saleID, by string, st Settings) (*Sale, error) {
-	if p := st.Validate(); p != nil {
+// are refused once the pre-queue opened (EPS-SALE-LOCKED). baseVersion is the version the change
+// was made on (review D-l): a save on top of an older version is refused with EPS-SALE-STALE, so
+// two organisers editing at once never silently undo each other; 0 skips the check.
+func (s *Service) Update(ctx context.Context, org, saleID, by string, st Settings, baseVersion ...int) (*Sale, error) {
+	if p := st.ValidateAt(s.now()); p != nil {
 		return nil, p
 	}
 	st.OpensAt = st.OpensAt.UTC().Truncate(time.Second)
@@ -317,23 +343,103 @@ func (s *Service) Update(ctx context.Context, org, saleID, by string, st Setting
 	if f := structuralChanged(cur.Settings, st); f != "" && cur.Settings.PhaseAt(s.now()) != Before {
 		return nil, apperr.New(http.StatusConflict, apperr.SaleLocked, "The opening time, pre-queue and queue cannot change once the pre-queue has opened.", false).With("field", f)
 	}
-	err = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		var v int
-		// The row lock serialises two saves of one sale.
-		if err := tx.QueryRow(ctx, `update sales.sales set settings_version = settings_version + 1 where id = $1 returning settings_version`, saleID).Scan(&v); err != nil {
+	base := 0
+	if len(baseVersion) > 0 {
+		base = baseVersion[0]
+	}
+	return s.save(ctx, org, cur, by, base, func(Settings) Settings { return st })
+}
+
+// Live is a change to the live fields alone (the dial, the shopping limit and pause): applied on top
+// of the current version, whatever it is, so a quick pause never conflicts.
+type LiveChange struct {
+	RatePerMinute *int  `json:"ratePerMinute,omitempty"`
+	ActiveLimit   *int  `json:"activeLimit,omitempty"`
+	Paused        *bool `json:"paused,omitempty"`
+}
+
+// Patch applies a live change as a new version (review D-l).
+func (s *Service) Patch(ctx context.Context, org, saleID, by string, c LiveChange) (*Sale, error) {
+	cur, _, err := s.Get(ctx, org, saleID)
+	if err != nil {
+		return nil, err
+	}
+	return s.save(ctx, org, cur, by, 0, func(st Settings) Settings {
+		if c.RatePerMinute != nil {
+			st.RatePerMinute = *c.RatePerMinute
+		}
+		if c.ActiveLimit != nil {
+			st.ActiveLimit = *c.ActiveLimit
+		}
+		if c.Paused != nil {
+			st.Paused = *c.Paused
+		}
+		return st
+	})
+}
+
+// save writes the next version under the sale's row lock: the change is applied to the settings
+// read under that lock.
+func (s *Service) save(ctx context.Context, org string, cur *Sale, by string, base int, change func(Settings) Settings) (*Sale, error) {
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		locked, err := scanSale(tx.QueryRow(ctx, `select `+cols+` from sales.sales s join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id
+			and v.version = s.settings_version where s.id = $1 and s.deleted_at is null for update of s`, cur.ID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return notFound()
+		}
+		if err != nil {
 			return err
 		}
-		if err := insertVersion(ctx, tx, org, saleID, v, st, by); err != nil {
+		if base > 0 && base != locked.Version {
+			return apperr.New(http.StatusConflict, apperr.SaleStale, "Someone saved this sale meanwhile. Reload to see their change.", false).With("version", locked.Version)
+		}
+		next := change(locked.Settings)
+		if p := next.Validate(); p != nil {
+			return p
+		}
+		if f := structuralChanged(locked.Settings, next); f != "" && locked.Settings.PhaseAt(s.now()) != Before {
+			return apperr.New(http.StatusConflict, apperr.SaleLocked, "The opening time, pre-queue and queue cannot change once the pre-queue has opened.", false).With("field", f)
+		}
+		v := locked.Version + 1
+		if _, err := tx.Exec(ctx, `update sales.sales set settings_version = $2 where id = $1`, cur.ID, v); err != nil {
 			return err
 		}
-		return writeEvent(ctx, tx, org, cur.EventID, saleID, "sale.settings_changed", v)
+		if err := insertVersion(ctx, tx, org, cur.ID, v, next, by); err != nil {
+			return err
+		}
+		return writeEvent(ctx, tx, org, cur.EventID, cur.ID, "sale.settings_changed", v)
 	})
 	if err != nil {
 		return nil, err
 	}
 	s.Refresh(ctx, org, cur.EventID)
-	out, _, err := s.Get(ctx, org, saleID)
+	out, _, err := s.Get(ctx, org, cur.ID)
 	return out, err
+}
+
+// Delete removes a sale moment before its pre-queue opens (review D-k).
+func (s *Service) Delete(ctx context.Context, org, saleID, by string) error {
+	cur, _, err := s.Get(ctx, org, saleID)
+	if err != nil {
+		return err
+	}
+	if cur.Settings.PhaseAt(s.now()) != Before {
+		return apperr.New(http.StatusConflict, apperr.SaleLocked, "A sale moment cannot be deleted once its pre-queue has opened.", false).With("field", "sale")
+	}
+	err = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `update sales.sales set deleted_at = now() where id = $1 and deleted_at is null`, saleID); err != nil {
+			return err
+		}
+		return writeEvent(ctx, tx, org, cur.EventID, saleID, "sale.deleted", cur.Version)
+	})
+	if err != nil {
+		return err
+	}
+	s.Refresh(ctx, org, cur.EventID)
+	if s.Redis != nil {
+		_ = s.Redis.Del(ctx, dirKey(saleID)).Err()
+	}
+	return nil
 }
 
 // Redis copies: the event's sales (signed) and a directory from sale id to organiser and event.
@@ -370,19 +476,53 @@ func (s *Service) Refresh(ctx context.Context, org, event string) {
 	if s.Redis == nil {
 		return
 	}
-	list, err := s.List(ctx, org, event)
+	list, gen, err := s.listGen(ctx, org, event)
 	if err != nil {
 		return
 	}
-	s.store(ctx, org, event, list)
+	s.store(ctx, org, event, list, gen)
 }
 
-func (s *Service) store(ctx context.Context, org, event string, list []Sale) {
+// listGen reads the event's sales and their generation (the newest version or deletion, in µs)
+// in one transaction, so a copy can be ordered against another core's.
+func (s *Service) listGen(ctx context.Context, org, event string) ([]Sale, int64, error) {
+	var gen int64
+	list, err := s.List(ctx, org, event)
+	if err != nil {
+		return nil, 0, err
+	}
+	err = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `select coalesce((extract(epoch from greatest(max(v.created_at), max(s.deleted_at))) * 1000000)::bigint, 0)
+			from sales.sales s left join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id where s.event_id = $1`, event).Scan(&gen)
+	})
+	return list, gen, err
+}
+
+func genKey(org, event string) string {
+	k, _ := redisx.Key(org, event, "sales-gen")
+	return k
+}
+
+// storeScript writes the copy only when it is at least as new as the one there (review D-l: a
+// slow core never puts an older rate back). KEYS: copy, generation. ARGV: value, generation.
+var storeScript = redis.NewScript(`
+local cur = tonumber(redis.call('GET', KEYS[2]) or '-1')
+if tonumber(ARGV[2]) < cur then return 0 end
+redis.call('SET', KEYS[1], ARGV[1])
+redis.call('SET', KEYS[2], ARGV[2])
+return 1
+`)
+
+// store writes the signed copy and the directory, with no expiry (review spec M4): the worker
+// rewrites them, and a deletion removes them.
+func (s *Service) store(ctx context.Context, org, event string, list []Sale, gen int64) {
 	b, _ := json.Marshal(list)
+	if n, err := storeScript.Run(ctx, s.Redis, []string{salesKey(org, event), genKey(org, event)}, s.sign(b), gen).Int(); err != nil || n == 0 {
+		return
+	}
 	pipe := s.Redis.Pipeline()
-	pipe.Set(ctx, salesKey(org, event), s.sign(b), 24*time.Hour)
 	for _, x := range list {
-		pipe.Set(ctx, dirKey(x.ID), org+"/"+event, 24*time.Hour)
+		pipe.Set(ctx, dirKey(x.ID), org+"/"+event, 0)
 	}
 	_, _ = pipe.Exec(ctx)
 	s.mu.Lock()
@@ -416,12 +556,13 @@ func (s *Service) Live(ctx context.Context, org, event string) ([]Sale, error) {
 		if s.Pool == nil {
 			return nil, errors.New("sales: no copy in Redis and no database")
 		}
+		var gen int64
 		var err error
-		if list, err = s.List(ctx, org, event); err != nil {
+		if list, gen, err = s.listGen(ctx, org, event); err != nil {
 			return nil, err
 		}
 		if s.Redis != nil {
-			s.store(ctx, org, event, list)
+			s.store(ctx, org, event, list, gen)
 		}
 	}
 	s.mu.Lock()
@@ -498,31 +639,39 @@ func Next(list []Sale, t time.Time) *Sale {
 	return next
 }
 
-// RefreshActive rewrites the Redis copies of every event with a sale opening within a day either
-// side of now (the worker, every minute), so the gateway finds them after a Redis restart.
+// RefreshActive rewrites the Redis copies of every event with a sale opening within a year ahead
+// or three days back, nearest opening first, a page of 200 at a time (the worker, every minute), so
+// the gateway finds them after a Redis restart (review spec M4).
 func (s *Service) RefreshActive(ctx context.Context) (int, error) {
-	var pairs [][2]string
 	now := s.now()
-	err := db.WithTx(ctx, s.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `select organiser_id::text, event_id::text from sales.events_with_sales($1, $2)`, now.Add(-72*time.Hour), now.Add(24*time.Hour))
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var a, b string
-			if err := rows.Scan(&a, &b); err != nil {
+	total := 0
+	for offset := 0; offset < 100_000; offset += 200 {
+		var pairs [][2]string
+		err := db.WithTx(ctx, s.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+			rows, err := tx.Query(ctx, `select organiser_id::text, event_id::text from sales.events_with_sales($1, $2, 200, $3)`, now.Add(-72*time.Hour), now.AddDate(1, 0, 1), offset)
+			if err != nil {
 				return err
 			}
-			pairs = append(pairs, [2]string{a, b})
+			defer rows.Close()
+			for rows.Next() {
+				var a, b string
+				if err := rows.Scan(&a, &b); err != nil {
+					return err
+				}
+				pairs = append(pairs, [2]string{a, b})
+			}
+			return rows.Err()
+		})
+		if err != nil {
+			return total, err
 		}
-		return rows.Err()
-	})
-	if err != nil {
-		return 0, err
+		for _, p := range pairs {
+			s.Refresh(ctx, p[0], p[1])
+		}
+		total += len(pairs)
+		if len(pairs) < 200 || ctx.Err() != nil {
+			break
+		}
 	}
-	for _, p := range pairs {
-		s.Refresh(ctx, p[0], p[1])
-	}
-	return len(pairs), nil
+	return total, nil
 }

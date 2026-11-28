@@ -16,6 +16,8 @@ CREATE TABLE sales.sales (
     shuffled_at     timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     created_by      text        NOT NULL,
+    -- A sale moment deleted before its pre-queue opened (kept for the audit, never shown).
+    deleted_at      timestamptz,
     UNIQUE (organiser_id, id)
 );
 CREATE INDEX sales_event_idx ON sales.sales (organiser_id, event_id);
@@ -37,6 +39,8 @@ CREATE TABLE sales.sale_settings (
     bot_defence      boolean     NOT NULL,
     otp_on           boolean     NOT NULL,
     otp_threshold    int         NOT NULL CHECK (otp_threshold BETWEEN 1 AND 20),
+    -- Only signed-in fans may join (guests are asked to sign in first).
+    accounts_only    boolean     NOT NULL DEFAULT false,
     created_at       timestamptz NOT NULL DEFAULT now(),
     created_by       text        NOT NULL,
     PRIMARY KEY (organiser_id, sale_id, version),
@@ -135,9 +139,8 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA sales TO eps_core;
 CREATE FUNCTION sales.sale_owner(p_sale uuid)
 RETURNS TABLE (organiser_id uuid, event_id uuid)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
-AS $fn$ SELECT s.organiser_id, s.event_id FROM sales.sales s WHERE s.id = p_sale $fn$;
+AS $fn$ SELECT s.organiser_id, s.event_id FROM sales.sales s WHERE s.id = p_sale AND s.deleted_at IS NULL $fn$;
 -- +goose StatementEnd
-GRANT SELECT (id, organiser_id, event_id) ON sales.sales TO eps_sales_index;
 CREATE POLICY sales_index ON sales.sales FOR SELECT TO eps_sales_index USING (true);
 REVOKE ALL ON FUNCTION sales.sale_owner(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION sales.sale_owner(uuid) TO eps_core;
@@ -150,22 +153,26 @@ ALTER TABLE sales.outbox DROP CONSTRAINT outbox_topic_check;
 ALTER TABLE sales.outbox ADD CONSTRAINT outbox_topic_check CHECK (topic IN ('orders', 'payments', 'wallet', 'inventory', 'sales'));
 
 -- +goose StatementBegin
--- Events with a sale opening (or opened) around now: the worker keeps their sales' signed copies in
--- Redis, so the gateway (which has no database) always finds them.
-CREATE FUNCTION sales.events_with_sales(p_from timestamptz, p_to timestamptz)
+-- Events with a sale moment opening in a window, nearest opening first, a page at a time: the
+-- worker keeps their sales' signed copies in Redis, so the gateway (which has no database) always
+-- finds them.
+CREATE FUNCTION sales.events_with_sales(p_from timestamptz, p_to timestamptz, p_limit int, p_offset int)
 RETURNS TABLE (organiser_id uuid, event_id uuid)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 AS $fn$
-    SELECT DISTINCT s.organiser_id, s.event_id FROM sales.sales s
-    JOIN sales.sale_settings v ON v.organiser_id = s.organiser_id AND v.sale_id = s.id AND v.version = s.settings_version
-    WHERE v.opens_at BETWEEN p_from AND p_to LIMIT 1000
+    SELECT e.organiser_id, e.event_id FROM (
+        SELECT s.organiser_id, s.event_id, min(abs(extract(epoch FROM v.opens_at - now()))) AS dist FROM sales.sales s
+        JOIN sales.sale_settings v ON v.organiser_id = s.organiser_id AND v.sale_id = s.id AND v.version = s.settings_version
+        WHERE s.deleted_at IS NULL AND v.opens_at BETWEEN p_from AND p_to
+        GROUP BY s.organiser_id, s.event_id) e
+    ORDER BY e.dist, e.event_id LIMIT least(greatest(p_limit, 1), 1000) OFFSET greatest(p_offset, 0)
 $fn$;
 -- +goose StatementEnd
-GRANT SELECT (id, organiser_id, event_id, settings_version) ON sales.sales TO eps_sales_index;
+GRANT SELECT (id, organiser_id, event_id, settings_version, deleted_at) ON sales.sales TO eps_sales_index;
 GRANT SELECT (organiser_id, sale_id, version, opens_at) ON sales.sale_settings TO eps_sales_index;
 CREATE POLICY sales_index ON sales.sale_settings FOR SELECT TO eps_sales_index USING (true);
-REVOKE ALL ON FUNCTION sales.events_with_sales(timestamptz, timestamptz) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION sales.events_with_sales(timestamptz, timestamptz) TO eps_core;
+REVOKE ALL ON FUNCTION sales.events_with_sales(timestamptz, timestamptz, int, int) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sales.events_with_sales(timestamptz, timestamptz, int, int) TO eps_core;
 GRANT CREATE ON SCHEMA sales TO eps_sales_index;
-ALTER FUNCTION sales.events_with_sales(timestamptz, timestamptz) OWNER TO eps_sales_index;
+ALTER FUNCTION sales.events_with_sales(timestamptz, timestamptz, int, int) OWNER TO eps_sales_index;
 REVOKE CREATE ON SCHEMA sales FROM eps_sales_index;

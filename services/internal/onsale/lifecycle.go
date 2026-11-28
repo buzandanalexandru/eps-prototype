@@ -140,7 +140,7 @@ func (a *Audit) sale(ctx context.Context, org, event, sale string) (int, error) 
 			admQ, admAt = append(admQ, e.QID), append(admAt, time.UnixMilli(e.At))
 		}
 	}
-	seed, _ := a.Redis.HGetAll(ctx, k.Shuffle()).Result()
+	seed, _ := a.Redis.HGetAll(ctx, k.State()).Result()
 	err = db.WithTx(ctx, a.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		if len(joinQ) > 0 {
 			if _, err := tx.Exec(ctx, `insert into sales.queue_entries (organiser_id, sale_id, qid, identity_hash, joined_at)

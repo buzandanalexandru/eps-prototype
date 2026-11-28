@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,10 +12,12 @@ import (
 	"fmt"
 	"math/bits"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/buzandanalexandru/eps-prototype/services/internal/apperr"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/botdefence"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/redisx"
@@ -41,17 +44,32 @@ const (
 	PlaceEnded     = "ended"     // the pass was used or ended
 )
 
+// FetchWindow is how long an admitted fan has to collect its pass before its shopping place goes to
+// the next fan (review spec M3).
+const FetchWindow = 60 * time.Second
+
+// MaxSessionsPerPlace bounds the browsers (sessions) one place hands passes to (review D-d).
+const MaxSessionsPerPlace = 4
+
 var (
 	joins      = metrics.NewCounter("eps_queue_joins_total", "Places taken in waiting rooms.")
 	rejoins    = metrics.NewCounter("eps_queue_rejoins_total", "Joins that returned an existing place.")
 	admittedC  = metrics.NewCounter("eps_queue_admitted_total", "Fans admitted from waiting rooms.")
 	passesC    = metrics.NewCounter("eps_queue_passes_issued_total", "Passes signed for admitted fans.")
-	joinLimit  = metrics.NewCounter("eps_queue_join_rate_limited_total", "Joins refused by the per-address limit.")
+	joinLimit  = map[string]*metrics.Counter{}
 	shuffles   = metrics.NewCounter("eps_queue_shuffles_total", "Pre-queues drawn at opening.")
 	penalised  = metrics.NewCounter("eps_queue_suspects_moved_total", "Suspect places moved to the back after the draw.")
 	slowLaned  = metrics.NewCounter("eps_queue_slow_lane_total", "Places moved to the slow lane.")
 	statusHits = metrics.NewCounter("eps_queue_status_total", "Status answers.")
+	unfetched  = metrics.NewCounter("eps_queue_passes_unfetched_total", "Admissions whose pass was not collected in time (the place went to the next fan).")
 )
+
+func init() {
+	// Joins refused by the per-address limits, by range (review spec M10).
+	for _, k := range []string{"address", "subnet", "new_guests"} {
+		joinLimit[k] = metrics.NewCounter("eps_queue_join_rate_limited_total", "Joins refused by the per-address limits.", "range", k)
+	}
+}
 
 // Engine runs the waiting rooms on Redis. The gateway holds the Signer; the core only verifies.
 type Engine struct {
@@ -59,9 +77,14 @@ type Engine struct {
 	Sales  *sales.Service
 	Signer *Signer
 	Scorer *botdefence.Scorer
-	Now    func() time.Time
+	// Now is a test clock; nil means Redis's own clock decides opening and arrival (review D-b).
+	Now func() time.Time
 	// JoinsPerMinute limits joins per client address (D-5; 0 means 10) and per /24 (×20).
 	JoinsPerMinute int
+	// NewGuestsPerMinute limits new guest places per address (review D-f; 0 means 5).
+	NewGuestsPerMinute int
+	// Secret keys the stored identity and address hashes (review sec L4); empty in tests is fine.
+	Secret []byte
 }
 
 func (e *Engine) now() time.Time {
@@ -71,19 +94,37 @@ func (e *Engine) now() time.Time {
 	return time.Now()
 }
 
-// Keys of one sale (one hash tag).
-type Keys struct{ org, event, sale string }
+// testNow is the clock the scripts use: the test clock, else 0 (the script asks Redis TIME).
+func (e *Engine) testNow() int64 {
+	if e.Now != nil {
+		return e.Now().UnixMilli()
+	}
+	return 0
+}
+
+// Keys of one sale (one hash tag, with a short form of the sale id: review D-h).
+type Keys struct{ org, event, sale, tag string }
+
+// ShortSale is the sale's part of the tag: its first 12 hex digits.
+func ShortSale(sale string) string {
+	s := strings.ReplaceAll(sale, "-", "")
+	if len(s) > 12 {
+		s = s[:12]
+	}
+	return s
+}
 
 // KeysOf names a sale's keys.
 func KeysOf(org, event, sale string) (Keys, error) {
-	if _, err := redisx.HotKey(org, event, sale, "q"); err != nil {
-		return Keys{}, err
+	tag := ShortSale(sale)
+	if _, err := redisx.HotKey(org, event, tag, "q"); err != nil || tag == "" {
+		return Keys{}, errors.New("queue: bad sale key")
 	}
-	return Keys{org, event, sale}, nil
+	return Keys{org, event, sale, tag}, nil
 }
 
 func (k Keys) k(kind string, rest ...string) string {
-	key, err := redisx.HotKey(k.org, k.event, k.sale, kind, rest...)
+	key, err := redisx.HotKey(k.org, k.event, k.tag, kind, rest...)
 	if err != nil {
 		panic(fmt.Sprintf("queue: bad key part: %v", err))
 	}
@@ -95,23 +136,21 @@ func (k Keys) prefix(kind string) string {
 	return s[:len(s)-1]
 }
 
-// Exported names for the core and the worker.
-func (k Keys) State() string            { return k.k("q-state") }
-func (k Keys) Pre() string              { return k.k("q-pre") }
-func (k Keys) Line() string             { return k.k("q-line") }
-func (k Keys) Slow() string             { return k.k("q-slow") }
-func (k Keys) Tail() string             { return k.k("q-tail") }
-func (k Keys) Admitted() string         { return k.k("q-admitted") }
-func (k Keys) Active() string           { return k.k("q-active") }
-func (k Keys) Bucket() string           { return k.k("q-bucket") }
-func (k Keys) Shuffle() string          { return k.k("q-shuffle") }
-func (k Keys) Audit() string            { return k.k("q-audit") }
-func (k Keys) Pass(qid string) string   { return k.k("q-pass", qid) }
-func (k Keys) Bot(qid string) string    { return k.k("q-bot", qid) }
-func (k Keys) Entry(qid string) string  { return k.k("q-entry", qid) }
-func (k Keys) Place(who string) string  { return k.k("q-place", who) }
-func (k Keys) lock(kind string) string  { return k.k("q-lock", kind) }
-func (k Keys) rl(rest ...string) string { return k.k("q-rl", rest...) }
+// Key names (short: one sale holds a key per fan).
+func (k Keys) State() string            { return k.k("qs") } // hash: state, tail, tokens, last, admc, draw...
+func (k Keys) Pre() string              { return k.k("qp") }
+func (k Keys) Line() string             { return k.k("ql") }
+func (k Keys) Slow() string             { return k.k("qw") }
+func (k Keys) Active() string           { return k.k("qa") }
+func (k Keys) Members() string          { return k.k("qm") } // the draw's member snapshot
+func (k Keys) Rate() string             { return k.k("qr") } // admissions per tick, last minute
+func (k Keys) Audit() string            { return k.k("qu") }
+func (k Keys) Fan(qid string) string    { return k.k("qf", qid) } // one hash per place: entry, signals, passes
+func (k Keys) Bot(qid string) string    { return k.Fan(qid) }
+func (k Keys) Pass(qid string) string   { return k.Fan(qid) }
+func (k Keys) Place(who string) string  { return k.k("qo", who) }
+func (k Keys) lock(kind string) string  { return k.k("qx", kind) }
+func (k Keys) rl(rest ...string) string { return k.k("qz", rest...) }
 
 // salesIndex lists every sale with a waiting room (the gateway's admitter walks it).
 func salesIndex() string {
@@ -150,37 +189,51 @@ func SolvePow(saleID, sid string) string {
 	}
 }
 
-// joinScript takes (or finds) a place. KEYS: place, state, pre, line, tail, entry, admitted,
-// active. ARGV: new qid, now ms, queue on, sale open, pass life ms, pass key prefix, who, sid, ip.
-// Returns {qid, fresh (1|0), where}.
+// joinScript takes (or finds) a place, deciding by Redis state and Redis's own clock (review D-b):
+// an open line takes the fan at its back whatever the caller's clock said; before the draw the fan
+// waits in the pre-queue with its arrival time (an arrival at or after opening is a latecomer the
+// draw places behind, in arrival order).
+// KEYS: place, state, pre, line, fan, active.
+// ARGV: new qid, test now (0: TIME), queue on, opens at ms, pass life ms, who, sid, address hash,
+// fetch window ms.
+// Returns {qid, fresh (1|0), where, now}.
 var joinScript = redis.NewScript(`
 local now = tonumber(ARGV[2])
+if now == 0 then local t = redis.call('TIME'); now = tonumber(t[1]) * 1000 + math.floor(tonumber(t[2]) / 1000) end
 local cur = redis.call('GET', KEYS[1])
 if cur then
-  local adm = redis.call('HGET', KEYS[7], cur)
+  local f = redis.call('HMGET', KEYS[5] .. cur, 'adm', 'pst', 'pf')
   local ended = false
-  if adm then
-    local st = redis.call('HGET', ARGV[6] .. cur, 'state')
-    if st == 'used' or st == 'revoked' or now >= tonumber(adm) + tonumber(ARGV[5]) then ended = true end
+  if f[1] then
+    local adm = tonumber(f[1])
+    if f[2] == 'used' or f[2] == 'revoked' or now >= adm + tonumber(ARGV[5]) then ended = true end
+    if not f[3] and now >= adm + tonumber(ARGV[9]) then ended = true end
+  elseif redis.call('EXISTS', KEYS[5] .. cur) == 0 then
+    ended = true -- the place is gone (a store reset)
   end
-  if not ended then return {cur, 0, adm and 'admitted' or 'kept'} end
+  if not ended then return {cur, 0, f[1] and 'admitted' or 'kept', now} end
 end
 local qid = ARGV[1]
+local fan = KEYS[5] .. qid
 redis.call('SET', KEYS[1], qid, 'EX', 172800)
-redis.call('HSET', KEYS[6], 'who', ARGV[7], 'sid', ARGV[8], 'ip', ARGV[9], 'joined', now)
-redis.call('EXPIRE', KEYS[6], 172800)
+redis.call('HSET', fan, 'who', ARGV[6], 'sid', ARGV[7], 'ip', ARGV[8], 'joined', now)
+redis.call('EXPIRE', fan, 172800)
+local state = redis.call('HGET', KEYS[2], 'state')
 if ARGV[3] == '0' then
-  redis.call('HSET', KEYS[7], qid, now)
-  redis.call('ZADD', KEYS[8], now + tonumber(ARGV[5]), qid)
-  return {qid, 1, 'admitted'}
+  if now < tonumber(ARGV[4]) then return {qid, 1, 'notopen', now} end
+  redis.call('HSET', fan, 'adm', now)
+  redis.call('ZADD', KEYS[6], now + tonumber(ARGV[9]), qid)
+  redis.call('HINCRBY', KEYS[2], 'admc', 1)
+  return {qid, 1, 'admitted', now}
 end
-if ARGV[4] == '1' and redis.call('GET', KEYS[2]) == 'open' then
-  local pos = redis.call('INCR', KEYS[5])
+if state == 'open' then
+  local pos = redis.call('HINCRBY', KEYS[2], 'tail', 1)
   redis.call('ZADD', KEYS[4], pos, qid)
-  return {qid, 1, 'line'}
+  redis.call('HSET', fan, 'pos', pos)
+  return {qid, 1, 'line', now}
 end
 redis.call('ZADD', KEYS[3], now, qid)
-return {qid, 1, 'pre'}
+return {qid, 1, 'pre', now}
 `)
 
 // JoinInput is what the gateway knows of a join.
@@ -192,6 +245,7 @@ type JoinInput struct {
 	Print   string // the page's browser fingerprint hash (optional)
 	UA      string
 	IP      string
+	Tab     string // the page's tab id (polling is scored per tab)
 }
 
 // Status is what the waiting room shows.
@@ -223,10 +277,26 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-// IdentityHash is a place's owner as stored (an account or guest id, hashed).
-func IdentityHash(sale, sub string) string {
-	h := sha256.Sum256([]byte(sale + "|" + sub))
-	return hex.EncodeToString(h[:16])
+// IdentityHash is a place's owner as stored: a keyed hash of the sale and the account or guest id.
+func IdentityHash(secret []byte, sale, sub string) string {
+	m := hmac.New(sha256.New, secret)
+	m.Write([]byte("place|" + sale + "|" + sub))
+	return hex.EncodeToString(m.Sum(nil)[:12])
+}
+
+// addrHash is a keyed hash of an address unit (never the address itself; review D-h).
+func (e *Engine) addrHash(kind, v string) string {
+	m := hmac.New(sha256.New, e.Secret)
+	m.Write([]byte(kind + "|" + v))
+	return hex.EncodeToString(m.Sum(nil)[:8])
+}
+
+// shortSid is the stored form of a session hash.
+func shortSid(sid string) string {
+	if len(sid) > 32 {
+		return sid[:32]
+	}
+	return sid
 }
 
 func (e *Engine) limit(ctx context.Context, key string, max int64, window time.Duration) bool {
@@ -238,6 +308,14 @@ func (e *Engine) limit(ctx context.Context, key string, max int64, window time.D
 		_ = e.Redis.Expire(ctx, key, window+5*time.Second).Err()
 	}
 	return n <= max
+}
+
+// jitter is a random duration in [lo, hi).
+func jitter(lo, hi time.Duration) time.Duration {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	n := int64(b[0])<<24 | int64(b[1])<<16 | int64(b[2])<<8 | int64(b[3])
+	return lo + time.Duration(n%int64(hi-lo))
 }
 
 // Join takes the fan's place (or returns the one it has): before the pre-queue nothing is taken;
@@ -254,61 +332,72 @@ func (e *Engine) Join(ctx context.Context, saleID string, in JoinInput) (*Status
 		return nil, err
 	}
 	now := e.now()
-	base := &Status{SaleID: sale.ID, EventID: sale.EventID, OpensAt: st.OpensAt, PrequeueOpensAt: st.PrequeueOpensAt(), ServerTime: now, NextPollMs: e.pollDelay(10_000)}
-	phase := st.PhaseAt(now)
-	if phase == sales.Before {
+	base := &Status{SaleID: sale.ID, EventID: sale.EventID, OpensAt: st.OpensAt, PrequeueOpensAt: st.PrequeueOpensAt(), ServerTime: now}
+	if st.PhaseAt(now) == sales.Before {
 		base.State = PlaceBefore
-		base.NextPollMs = min(60_000, max(1_000, time.Until(st.PrequeueOpensAt()).Milliseconds()))
-		return base, nil
-	}
-	if !st.QueueOn && phase != sales.Open {
-		base.State = PlaceNotOpen
-		base.NextPollMs = min(30_000, max(500, st.OpensAt.Sub(now).Milliseconds()))
+		// Come back at the opening of the pre-queue, spread over a few seconds (review D-i).
+		base.NextPollMs = min(60_000, max(1_000, st.PrequeueOpensAt().Sub(now).Milliseconds())) + jitter(0, 5*time.Second).Milliseconds()
 		return base, nil
 	}
 	if in.Sub == "" || len(in.Session) < 16 || len(in.Session) > 200 {
 		return nil, ErrBadToken
 	}
-	// Join limits per client address (D-5): 10 a minute per address, 200 per /24.
-	per := int64(e.JoinsPerMinute)
-	if per <= 0 {
-		per = 10
-	}
-	minute := strconv.FormatInt(now.Unix()/60, 10)
-	if in.IP != "" {
-		if !e.limit(ctx, k.rl("ip", ipPart(in.IP), minute), per, time.Minute) {
-			joinLimit.Inc()
-			return nil, ErrRateLimited
-		}
-		if sn := botdefence.Subnet(in.IP); sn != "" && !e.limit(ctx, k.rl("sn", sn, minute), per*20, time.Minute) {
-			joinLimit.Inc()
-			return nil, ErrRateLimited
-		}
+	if st.AccountsOnly && in.Kind != "account" {
+		return nil, apperr.New(403, apperr.SignInRequired, "Sign in to join this waiting room.", false)
 	}
 	sid := SessionHash(in.Session)
-	who := IdentityHash(sale.ID, in.Sub)
-	qid := newID()
-	open := "0"
-	if phase == sales.Open {
-		open = "1"
+	who := IdentityHash(e.Secret, sale.ID, in.Sub)
+	// A rejoin of a live place costs nothing against the join limits (review sec L2).
+	existing, _ := e.Redis.Get(ctx, k.Place(who)).Result()
+	addr := botdefence.Address(in.IP)
+	if existing == "" && addr != "" {
+		per := int64(e.JoinsPerMinute)
+		if per <= 0 {
+			per = 10
+		}
+		minute := strconv.FormatInt(now.Unix()/60, 10)
+		if !e.limit(ctx, k.rl("ip", e.addrHash("a", addr), minute), per, time.Minute) {
+			joinLimit["address"].Inc()
+			return nil, ErrRateLimited
+		}
+		if sn := botdefence.Subnet(in.IP); sn != "" && !e.limit(ctx, k.rl("sn", e.addrHash("s", sn), minute), per*20, time.Minute) {
+			joinLimit["subnet"].Inc()
+			return nil, ErrRateLimited
+		}
+		// New guest identities from one address (review D-f: guest identities are free to make).
+		if in.Kind == "guest" {
+			g := int64(e.NewGuestsPerMinute)
+			if g <= 0 {
+				g = 5
+			}
+			if !e.limit(ctx, k.rl("ng", e.addrHash("a", addr), minute), g, time.Minute) {
+				joinLimit["new_guests"].Inc()
+				return nil, ErrRateLimited
+			}
+		}
 	}
+	qid := newID()
 	queueOn := "1"
 	if !st.QueueOn {
 		queueOn = "0"
 	}
-	res, err := joinScript.Run(ctx, e.Redis, []string{k.Place(who), k.State(), k.Pre(), k.Line(), k.Tail(), k.Entry(qid), k.Admitted(), k.Active()},
-		qid, now.UnixMilli(), queueOn, open, PassLife.Milliseconds(), k.prefix("q-pass"), who, sid, in.IP).Slice()
+	res, err := joinScript.Run(ctx, e.Redis, []string{k.Place(who), k.State(), k.Pre(), k.Line(), k.prefix("qf"), k.Active()},
+		qid, e.testNow(), queueOn, st.OpensAt.UnixMilli(), PassLife.Milliseconds(), who, shortSid(sid), e.addrHash("a", addr), FetchWindow.Milliseconds()).Slice()
 	if err != nil {
 		return nil, err
 	}
 	qid = fmt.Sprint(res[0])
 	fresh := res[1].(int64) == 1
+	where := fmt.Sprint(res[2])
+	if e.Now == nil {
+		now = time.UnixMilli(res[3].(int64))
+	}
 	if fresh {
 		joins.Inc()
 		_ = e.Redis.SAdd(ctx, salesIndex(), sale.OrganiserID+"/"+sale.EventID+"/"+sale.ID).Err()
 		b, _ := json.Marshal(map[string]any{"t": "join", "qid": qid, "who": who, "at": now.UnixMilli()})
 		_ = e.Redis.RPush(ctx, k.Audit(), b).Err()
-		if fmt.Sprint(res[2]) == "admitted" {
+		if where == "admitted" {
 			admittedC.Inc()
 			b, _ := json.Marshal(map[string]any{"t": "admit", "qid": qid, "at": now.UnixMilli()})
 			_ = e.Redis.RPush(ctx, k.Audit(), b).Err()
@@ -319,9 +408,14 @@ func (e *Engine) Join(ctx context.Context, saleID string, in JoinInput) (*Status
 	} else {
 		rejoins.Inc()
 	}
+	if where == "notopen" {
+		base.State = PlaceNotOpen
+		base.NextPollMs = min(30_000, max(500, st.OpensAt.Sub(now).Milliseconds())) + jitter(2*time.Second, 15*time.Second).Milliseconds()
+		return base, nil
+	}
 	tok := e.Signer.Sign(Claims{Kind: KindQueue, Org: sale.OrganiserID, Evt: sale.EventID, Sale: sale.ID, Sub: in.Sub, Sid: sid, QID: qid,
 		Iat: now.Unix(), Exp: now.Add(QueueTokenLife).Unix()})
-	out, err := e.status(ctx, sale, k, qid, in.Sub, sid, now)
+	out, err := e.status(ctx, sale, k, qid, in.Sub, sid, tabOf(in.Tab), now)
 	if err != nil {
 		return nil, err
 	}
@@ -329,18 +423,16 @@ func (e *Engine) Join(ctx context.Context, saleID string, in JoinInput) (*Status
 	return out, nil
 }
 
-func ipPart(ip string) string {
-	b := []byte(ip)
-	for i, c := range b {
-		if c == ':' {
-			b[i] = '_'
-		}
+func tabOf(t string) string {
+	if t == "" || len(t) > 16 || strings.ContainsAny(t, ":{} ") {
+		return "-"
 	}
-	return string(b)
+	return t
 }
 
-// scoreJoin records the join's signals (D-6): proof of work, automation markers, a hosting
-// address, many places from one address or /24, one fingerprint shared by several people.
+// scoreJoin records the join's signals (D-6 with review D-e): proof of work, automation markers, a
+// hosting address, many places from one address (or /64) or one /24 (or /48), one browser print
+// shared by many people.
 func (e *Engine) scoreJoin(ctx context.Context, k Keys, saleID, qid, sid string, in JoinInput) {
 	bk := k.Bot(qid)
 	add := func(s botdefence.Signal) { _, _ = e.Scorer.Add(ctx, bk, s) }
@@ -350,78 +442,67 @@ func (e *Engine) scoreJoin(ctx context.Context, k Keys, saleID, qid, sid string,
 	if botdefence.IsHeadless(in.UA) {
 		add(botdefence.Headless)
 	}
-	if in.IP != "" {
-		if botdefence.InDataCentre(in.IP) {
-			add(botdefence.DataCentre)
-		}
-		ipk := k.k("q-ip", ipPart(in.IP))
+	if botdefence.InDataCentre(in.IP) {
+		add(botdefence.DataCentre)
+	}
+	count := func(kind, v string) (string, int64) {
+		key := k.k(kind, e.addrHash(kind, v))
 		pipe := e.Redis.Pipeline()
-		pipe.SAdd(ctx, ipk, qid)
-		pipe.Expire(ctx, ipk, 48*time.Hour)
-		n := pipe.SCard(ctx, ipk)
-		var sn *redis.IntCmd
-		if s := botdefence.Subnet(in.IP); s != "" {
-			snk := k.k("q-sn", s)
-			pipe.SAdd(ctx, snk, qid)
-			pipe.Expire(ctx, snk, 48*time.Hour)
-			sn = pipe.SCard(ctx, snk)
+		pipe.SAdd(ctx, key, qid)
+		pipe.Expire(ctx, key, time.Hour)
+		n := pipe.SCard(ctx, key)
+		if _, err := pipe.Exec(ctx); err != nil {
+			return key, 0
 		}
-		if _, err := pipe.Exec(ctx); err == nil {
-			if n.Val() > 3 {
-				add(botdefence.ManyPerIP)
-				// The earlier places from that address are scored too.
-				if n.Val() == 4 {
-					for _, other := range e.Redis.SMembers(ctx, ipk).Val() {
-						if other != qid {
-							_, _ = e.Scorer.Add(ctx, k.Bot(other), botdefence.ManyPerIP)
-						}
-					}
-				}
-			}
-			if sn != nil && sn.Val() > 50 {
-				add(botdefence.ManyPerSubnet)
-				// The earlier places from that /24 are scored too.
-				if sn.Val() == 51 {
-					for _, other := range e.Redis.SMembers(ctx, k.k("q-sn", botdefence.Subnet(in.IP))).Val() {
-						if other != qid {
-							_, _ = e.Scorer.Add(ctx, k.Bot(other), botdefence.ManyPerSubnet)
-						}
-					}
+		return key, n.Val()
+	}
+	// Address signals rise by stages; when a stage is crossed the earlier places get it too.
+	raise := func(key string, n int64, at int64, sig botdefence.Signal) {
+		if n <= at {
+			return
+		}
+		_, _ = e.Scorer.Raise(ctx, bk, sig)
+		if n == at+1 {
+			for _, other := range e.Redis.SMembers(ctx, key).Val() {
+				if other != qid {
+					_, _ = e.Scorer.Raise(ctx, k.Bot(other), sig)
 				}
 			}
 		}
 	}
+	if a := botdefence.Address(in.IP); a != "" {
+		key, n := count("qi", a)
+		raise(key, n, botdefence.ManyPerIPAt, botdefence.ManyPerIP)
+		raise(key, n, botdefence.BusyIPAt, botdefence.BusyIP)
+	}
+	if sn := botdefence.Subnet(in.IP); sn != "" {
+		key, n := count("qn", sn)
+		raise(key, n, botdefence.ManyPerSubnetAt, botdefence.ManyPerSubnet)
+	}
 	if in.Print != "" && len(in.Print) <= 128 {
-		fk := k.k("q-print", ipPart(in.Print))
+		key := k.k("qk", e.addrHash("p", in.Print))
 		pipe := e.Redis.Pipeline()
-		pipe.SAdd(ctx, fk, IdentityHash(saleID, in.Sub))
-		pipe.Expire(ctx, fk, 48*time.Hour)
-		n := pipe.SCard(ctx, fk)
-		if _, err := pipe.Exec(ctx); err == nil && n.Val() > 1 {
+		pipe.SAdd(ctx, key, IdentityHash(e.Secret, saleID, in.Sub))
+		pipe.Expire(ctx, key, time.Hour)
+		n := pipe.SCard(ctx, key)
+		if _, err := pipe.Exec(ctx); err == nil && n.Val() > botdefence.SharedPrintAt {
 			add(botdefence.SharedPrint)
 		}
 	}
 }
 
-// pollDelay is the next poll in ms: base ± 3 s of jitter.
-func (e *Engine) pollDelay(base int64) int64 {
-	var b [2]byte
-	_, _ = rand.Read(b[:])
-	j := int64(b[0])<<8 | int64(b[1])
-	return base - 3000 + j%6001
-}
-
 // Verifier checks the engine's own tokens.
 func (e *Engine) Verifier() *Verifier { return NewVerifier(e.Signer.Key.Public().(ed25519.PublicKey)) }
 
-// StatusOf answers a poll: the place's position and estimate, or its pass once admitted. A poll
-// faster than every 2 s gets the last answer again (and counts as a bot signal).
-func (e *Engine) StatusOf(ctx context.Context, saleID, queueToken, session, sub string) (*Status, error) {
+// StatusOf answers a poll with the queue token alone (review D-i: no core token, no session read):
+// the token is bound to the browser's session secret. A poll faster than every 2 s gets the last
+// answer again (and may count as a bot signal).
+func (e *Engine) StatusOf(ctx context.Context, saleID, queueToken, session, tab string) (*Status, error) {
 	if e.Signer == nil {
 		return nil, ErrBadToken
 	}
 	c, err := e.Verifier().Verify(queueToken, KindQueue, e.now(), false)
-	if err != nil || c.Sale != saleID || c.Sid != SessionHash(session) || c.Sub != sub {
+	if err != nil || c.Sale != saleID || c.Sid != SessionHash(session) {
 		return nil, ErrBadToken
 	}
 	sale, err := e.Sales.Lookup(ctx, saleID)
@@ -433,10 +514,11 @@ func (e *Engine) StatusOf(ctx context.Context, saleID, queueToken, session, sub 
 		return nil, err
 	}
 	now := e.now()
+	tab = tabOf(tab)
 	if sale.Settings.BotDefence && e.Scorer != nil {
-		_, _ = e.Scorer.Poll(ctx, k.Bot(c.QID), now.UnixMilli())
+		_, _ = e.Scorer.Poll(ctx, k.Bot(c.QID), tab, now.UnixMilli())
 	}
-	cacheKey := k.rl("st", c.QID)
+	cacheKey := k.rl("st", c.QID, shortSid(c.Sid))
 	if last, err := e.Redis.Get(ctx, cacheKey).Result(); err == nil {
 		var s Status
 		if json.Unmarshal([]byte(last), &s) == nil && now.Sub(s.ServerTime) < 2*time.Second && now.Sub(s.ServerTime) >= 0 {
@@ -444,7 +526,7 @@ func (e *Engine) StatusOf(ctx context.Context, saleID, queueToken, session, sub 
 			return &s, nil
 		}
 	}
-	s, err := e.status(ctx, sale, k, c.QID, c.Sub, c.Sid, now)
+	s, err := e.status(ctx, sale, k, c.QID, c.Sub, c.Sid, tab, now)
 	if err != nil {
 		return nil, err
 	}
@@ -453,49 +535,87 @@ func (e *Engine) StatusOf(ctx context.Context, saleID, queueToken, session, sub 
 	return s, nil
 }
 
+// passScript hands the place's pass for one session (review D-d): one place, a pass per session
+// (at most MaxSessionsPerPlace), issued once per session; collecting the first pass moves the
+// shopping place's end from the fetch window to the pass's own end.
+// KEYS: fan, active. ARGV: sid, token (or "" to read only), now ms, pass end ms, qid, max sessions.
+// Returns {state, token}: state ok | sign (no token yet: sign one) | ended | full.
+var passScript = redis.NewScript(`
+local f = redis.call('HMGET', KEYS[1], 'adm', 'pst', 'p:' .. ARGV[1], 'np')
+if not f[1] then return {'none', ''} end
+if f[2] == 'used' or f[2] == 'revoked' or tonumber(ARGV[3]) >= tonumber(ARGV[4]) then return {'ended', ''} end
+if f[3] then return {'ok', f[3]} end
+if ARGV[2] == '' then return {'sign', ''} end
+local n = tonumber(f[4] or '0')
+if n >= tonumber(ARGV[6]) then return {'full', ''} end
+redis.call('HSET', KEYS[1], 'p:' .. ARGV[1], ARGV[2], 'np', n + 1, 'pst', 'active', 'pf', ARGV[3])
+redis.call('ZADD', KEYS[2], 'XX', 'GT', ARGV[4], ARGV[5])
+return {'ok', ARGV[2]}
+`)
+
 // status works out a place's state at now.
-func (e *Engine) status(ctx context.Context, sale *sales.Sale, k Keys, qid, sub, sid string, now time.Time) (*Status, error) {
+func (e *Engine) status(ctx context.Context, sale *sales.Sale, k Keys, qid, sub, sid, tab string, now time.Time) (*Status, error) {
 	st := sale.Settings
 	out := &Status{SaleID: sale.ID, EventID: sale.EventID, OpensAt: st.OpensAt, PrequeueOpensAt: st.PrequeueOpensAt(), ServerTime: now, Paused: st.Paused}
 	statusHits.Inc()
 	pipe := e.Redis.Pipeline()
-	adm := pipe.HGet(ctx, k.Admitted(), qid)
+	fan := pipe.HMGet(ctx, k.Fan(qid), "adm", "pf", "pos", "score")
 	pre := pipe.ZScore(ctx, k.Pre(), qid)
 	rank := pipe.ZRank(ctx, k.Line(), qid)
+	score := pipe.ZScore(ctx, k.Line(), qid)
 	slow := pipe.ZRank(ctx, k.Slow(), qid)
 	lineLen := pipe.ZCard(ctx, k.Line())
-	state := pipe.Get(ctx, k.State())
-	pass := pipe.HMGet(ctx, k.Pass(qid), "state", "tok")
+	state := pipe.HMGet(ctx, k.State(), "state", "admc")
+	rate := pipe.LRange(ctx, k.Rate(), 0, 119)
 	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
-	switch {
-	case adm.Err() == nil:
-		at, _ := adm.Int64()
-		exp := time.UnixMilli(at).Add(PassLife)
-		pv := pass.Val()
-		if s := fmt.Sprint(pv[0]); s == "used" || s == "revoked" || !now.Before(exp) {
-			out.State = PlaceEnded
-			out.NextPollMs = 0
+	fv := fan.Val()
+	if fv[0] == nil && pre.Err() != nil && rank.Err() != nil && slow.Err() != nil {
+		if s := fmt.Sprint(state.Val()[0]); s == StateShuffling {
+			out.State = PlaceShuffling
+			out.NextPollMs = jitter(2*time.Second, 4*time.Second).Milliseconds()
 			return out, nil
 		}
-		tok := ""
-		if pv[1] != nil {
-			tok = fmt.Sprint(pv[1])
+		return nil, ErrBadToken // the place is gone (the store was reset): join again
+	}
+	defer func() {
+		if e.Scorer != nil && out.NextPollMs > 0 {
+			e.Scorer.Told(ctx, k.Bot(qid), tab, now.Add(time.Duration(out.NextPollMs)*time.Millisecond).UnixMilli())
 		}
-		if tok == "" {
-			tok = e.Signer.Sign(Claims{Kind: KindPass, Org: sale.OrganiserID, Evt: sale.EventID, Sale: sale.ID, Sub: sub, Sid: sid, QID: qid,
+	}()
+	switch {
+	case fv[0] != nil:
+		at, _ := strconv.ParseInt(fmt.Sprint(fv[0]), 10, 64)
+		exp := time.UnixMilli(at).Add(PassLife)
+		if fv[1] == nil && now.After(time.UnixMilli(at).Add(FetchWindow)) {
+			// Admitted but nobody collected the pass in time: the shopping place went on (review spec M3).
+			out.State = PlaceEnded
+			return out, nil
+		}
+		r, err := passScript.Run(ctx, e.Redis, []string{k.Fan(qid), k.Active()}, shortSid(sid), "", now.UnixMilli(), exp.UnixMilli(), qid, MaxSessionsPerPlace).StringSlice()
+		if err != nil {
+			return nil, err
+		}
+		tok := r[1]
+		switch r[0] {
+		case "ended", "full", "none":
+			out.State = PlaceEnded
+			return out, nil
+		case "sign":
+			signed := e.Signer.Sign(Claims{Kind: KindPass, Org: sale.OrganiserID, Evt: sale.EventID, Sale: sale.ID, Sub: sub, Sid: sid, QID: qid,
 				Iat: now.Unix(), Exp: exp.Unix()})
-			ok, err := e.Redis.HSetNX(ctx, k.Pass(qid), "tok", tok).Result()
+			r, err = passScript.Run(ctx, e.Redis, []string{k.Fan(qid), k.Active()}, shortSid(sid), signed, now.UnixMilli(), exp.UnixMilli(), qid, MaxSessionsPerPlace).StringSlice()
 			if err != nil {
 				return nil, err
 			}
-			if ok {
-				_ = e.Redis.HSet(ctx, k.Pass(qid), "state", "active", "sid", sid).Err()
-				_ = e.Redis.ExpireAt(ctx, k.Pass(qid), exp.Add(24*time.Hour)).Err()
+			if r[0] != "ok" {
+				out.State = PlaceEnded
+				return out, nil
+			}
+			tok = r[1]
+			if tok == signed {
 				passesC.Inc()
-			} else {
-				tok, _ = e.Redis.HGet(ctx, k.Pass(qid), "tok").Result()
 			}
 		}
 		out.State = PlaceAdmitted
@@ -508,30 +628,73 @@ func (e *Engine) status(ctx context.Context, sale *sales.Sale, k Keys, qid, sub,
 		if st.PhaseAt(now) == sales.Open {
 			out.State = PlaceShuffling
 		}
-		out.NextPollMs = e.pollDelay(10_000)
-		if d := st.OpensAt.Sub(now).Milliseconds(); d > 0 && d < out.NextPollMs {
-			out.NextPollMs = d + 500
+		out.NextPollMs = jitter(7*time.Second, 13*time.Second).Milliseconds()
+		if d := st.OpensAt.Sub(now); d > 0 && d.Milliseconds() < out.NextPollMs {
+			// The first poll after opening is spread over 2 to 15 s (review D-i): no stampede.
+			out.NextPollMs = (d + jitter(2*time.Second, 15*time.Second)).Milliseconds()
+		} else if out.State == PlaceShuffling {
+			out.NextPollMs = jitter(2*time.Second, 6*time.Second).Milliseconds()
 		}
 	case rank.Err() == nil || slow.Err() == nil:
 		ahead := rank.Val()
-		if rank.Err() != nil {
-			ahead = lineLen.Val() + slow.Val()
+		admc, _ := strconv.ParseInt(fmt.Sprint(state.Val()[1]), 10, 64)
+		moved := rank.Err() != nil || score.Val() >= penaltyBase
+		if moved {
+			// A suspect sees a normal, slowly moving place (review D-j): its draw position less
+			// everyone let in since, so it only ever goes down.
+			pos, _ := strconv.ParseInt(fmt.Sprint(fv[2]), 10, 64)
+			if pos <= 0 {
+				pos = lineLen.Val() + slow.Val()
+			}
+			ahead = max(1, pos-admc)
 		}
 		out.State = PlaceWaiting
 		out.Ahead = &ahead
-		est := ahead * 60 / int64(max(1, st.RatePerMinute))
-		out.EstimateSeconds = &est
-		out.NextPollMs = e.pollDelay(10_000)
+		if !st.Paused {
+			// Estimate from the admissions actually made in the last minute (review D-j).
+			if r := measuredRate(rate.Val(), now); r > 0 {
+				est := int64(float64(ahead) / r)
+				out.EstimateSeconds = &est
+			} else {
+				est := ahead * 60 / int64(max(1, st.RatePerMinute))
+				out.EstimateSeconds = &est
+			}
+		}
+		out.NextPollMs = jitter(7*time.Second, 13*time.Second).Milliseconds()
 		if ahead < int64(st.RatePerMinute)/6 {
-			out.NextPollMs = e.pollDelay(4_000) // near the front: look a little sooner
+			out.NextPollMs = jitter(2*time.Second, 6*time.Second).Milliseconds() // near the front
 		}
-	default:
-		if state.Val() == StateShuffling {
-			out.State = PlaceShuffling
-			out.NextPollMs = 2000
-			break
-		}
-		return nil, ErrBadToken // the place is gone (the store was reset): join again
 	}
 	return out, nil
+}
+
+// measuredRate is admissions per second over the last 60 s, from the admitter's per-tick record
+// ("<ms>:<count>", newest first); 0 when nothing was recorded yet.
+func measuredRate(ticks []string, now time.Time) float64 {
+	from := now.Add(-time.Minute).UnixMilli()
+	var n int64
+	oldest := now.UnixMilli()
+	seen := false
+	for _, t := range ticks {
+		at, c, ok := strings.Cut(t, ":")
+		if !ok {
+			continue
+		}
+		ms, _ := strconv.ParseInt(at, 10, 64)
+		if ms < from {
+			break
+		}
+		v, _ := strconv.ParseInt(c, 10, 64)
+		n += v
+		oldest = min(oldest, ms)
+		seen = true
+	}
+	if !seen {
+		return 0
+	}
+	span := max(1.0, float64(now.UnixMilli()-oldest)/1000)
+	if n == 0 {
+		return 0.0001 // admissions stalled (the shopping limit): a long, honest estimate
+	}
+	return float64(n) / span
 }

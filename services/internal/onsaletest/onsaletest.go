@@ -141,7 +141,7 @@ func (e *Env) Join(t *testing.T, sale *sales.Sale, f *Fan) *queue.Status {
 func (e *Env) Status(t *testing.T, sale *sales.Sale, f *Fan) *queue.Status {
 	t.Helper()
 	e.Clock.Add(2100 * time.Millisecond)
-	st, err := e.Engine.StatusOf(context.Background(), sale.ID, f.Token, f.Session, f.Buyer.ID)
+	st, err := e.Engine.StatusOf(context.Background(), sale.ID, f.Token, f.Session, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -97,3 +97,9 @@ const (
 	OTPResends   = "EPS-OTP-RESENDS"
 	QueueClosed  = "EPS-QUEUE-CLOSED"
 )
+
+// Step 5 review codes.
+const (
+	SaleStale      = "EPS-SALE-STALE"
+	SignInRequired = "EPS-SIGN-IN-REQUIRED"
+)

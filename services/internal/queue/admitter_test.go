@@ -26,8 +26,7 @@ func longLine(t *testing.T, env *onsaletest.Env, s *sales.Sale, n int) {
 			t.Fatal(err)
 		}
 	}
-	_ = env.Redis.Set(ctx, k.Tail(), n, 0).Err()
-	_ = env.Redis.Set(ctx, k.State(), queue.StateOpen, 0).Err()
+	_ = env.Redis.HSet(ctx, k.State(), "tail", n, "state", queue.StateOpen).Err()
 }
 
 func ticks(t *testing.T, env *onsaletest.Env, s *sales.Sale, n int) int64 {

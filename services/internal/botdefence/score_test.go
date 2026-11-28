@@ -29,7 +29,7 @@ func TestRefreshSpammingBot(t *testing.T) {
 	}
 	for i := 0; i < 40; i++ {
 		env.Clock.Add(200 * time.Millisecond)
-		if _, err := env.Engine.StatusOf(ctx, s.ID, st.QueueToken, f.Session, f.Buyer.ID); err != nil {
+		if _, err := env.Engine.StatusOf(ctx, s.ID, st.QueueToken, f.Session, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -52,7 +52,7 @@ func TestOrdinaryFan(t *testing.T) {
 	env.Join(t, s, f)
 	for i, d := range []int{9100, 11800, 8300, 12700, 10400, 7900, 10900, 9600, 12100, 8800, 1200, 900, 10300, 9900} {
 		env.Clock.Add(time.Duration(d) * time.Millisecond)
-		if _, err := env.Engine.StatusOf(ctx, s.ID, f.Token, f.Session, f.Buyer.ID); err != nil {
+		if _, err := env.Engine.StatusOf(ctx, s.ID, f.Token, f.Session, ""); err != nil {
 			t.Fatalf("poll %d: %v", i, err)
 		}
 	}

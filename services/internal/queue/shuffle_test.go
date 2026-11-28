@@ -100,7 +100,7 @@ func TestLatecomerJoinsBehind(t *testing.T) {
 	if got.State != queue.PlaceWaiting || got.Ahead == nil || *got.Ahead != 80000 {
 		t.Fatalf("latecomer %+v, want 80,000 ahead (position 80,001)", got)
 	}
-	if seed, _ := env.Redis.HGet(ctx, k.Shuffle(), "seed").Result(); len(seed) != 64 {
+	if seed, _ := env.Redis.HGet(ctx, k.State(), "seed").Result(); len(seed) != 64 {
 		t.Fatalf("seed %q not stored for the audit", seed)
 	}
 }
