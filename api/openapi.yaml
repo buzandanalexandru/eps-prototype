@@ -17,6 +17,9 @@ tags:
   - name: identity
   - name: snapshots
   - name: public
+  - name: checkout
+  - name: payments
+  - name: wallet
 paths:
   /healthz:
     get:
@@ -180,8 +183,438 @@ paths:
           $ref: "#/components/responses/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/shop/orders:
+    post:
+      operationId: createOrder
+      summary: Hold tickets and create an order
+      description: |
+        Holds the requested quantities from every pool the products draw on, all or nothing, for the
+        sale's hold length (design D-7), prices them from snapshot `version` and records the order in
+        state `held`. A buyer with a live order for the sale gets that order back (200) and nothing
+        more is taken. A repeat with the same Idempotency-Key and body returns the same order.
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "201":
+          description: The order, held.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        "200":
+          description: The buyer's existing live order for this sale (or the replayed answer).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listMyOrders
+      summary: The caller's orders across organisers, newest first
+      tags: [checkout]
+      responses:
+        "200":
+          description: Orders.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: An order's true state
+      description: |
+        For the order's buyer, or with a valid order link (`X-Order-Token`: a resume token until the
+        hold deadline, or a guest's 30-day view token). Paid is shown only after the provider confirmed.
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}/details:
+    put:
+      operationId: setOrderDetails
+      summary: Contact details and answers to the checkout questions
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderDetails"
+      responses:
+        "200":
+          description: The order with its details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}/payments:
+    post:
+      operationId: payOrder
+      summary: Pay an order (one Pay press)
+      description: |
+        Starts a payment attempt through the simulated providers (card on the provider's hosted page,
+        Apple Pay or Google Pay sheet, saved card) or pays from the EPS Wallet in one step. The
+        Idempotency-Key is created when the fan presses Pay and reused on retry and double click: a
+        repeat returns the same attempt, never a second charge (D-3).
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+        - $ref: "#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayRequest"
+      responses:
+        "200":
+          description: The order and, for provider payments, the page to open.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Cancel a held or payment-failed order (stock is freed at once)
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+      responses:
+        "200":
+          description: The cancelled order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}/instalments/simulate-next:
+    post:
+      operationId: simulateNextInstalment
+      summary: Demo action - move the plan's clock to its next due date
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+      responses:
+        "200":
+          description: The order and its plan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/orders/{orderId}/instalments/pay-overdue:
+    post:
+      operationId: payOverdueInstalment
+      summary: Pay an overdue instalment now with the plan's saved card
+      tags: [checkout]
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/OrderToken"
+      responses:
+        "200":
+          description: The order and its plan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/claims:
+    post:
+      operationId: claimOrders
+      summary: Add guest orders placed with the caller's verified email to the account
+      tags: [checkout]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimRequest"
+      responses:
+        "200":
+          description: The claimed orders.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/saved-cards:
+    get:
+      operationId: listSavedCards
+      summary: The caller's provider-saved cards for one organiser
+      tags: [payments]
+      parameters:
+        - $ref: "#/components/parameters/OrganiserQuery"
+      responses:
+        "200":
+          description: Saved cards (provider, label; never a card number).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SavedCardList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/saved-cards/{cardId}:
+    delete:
+      operationId: deleteSavedCard
+      summary: Delete a saved card and revoke its provider token
+      tags: [payments]
+      parameters:
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/OrganiserQuery"
+      responses:
+        "204":
+          description: Deleted.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/wallets:
+    get:
+      operationId: listWallets
+      summary: The caller's EPS Wallet balances, one per organiser (simulated money)
+      tags: [wallet]
+      responses:
+        "200":
+          description: Wallets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/wallets/{organiserId}:
+    get:
+      operationId: getWallet
+      summary: The caller's wallet at one organiser, with its history
+      tags: [wallet]
+      parameters:
+        - $ref: "#/components/parameters/OrganiserId"
+        - name: currency
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [RON, EUR]
+      responses:
+        "200":
+          description: The wallet.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wallet"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/wallets/{organiserId}/topups:
+    post:
+      operationId: topUpWallet
+      summary: Top up the wallet through the simulated providers
+      description: The balance rises only when the provider confirms; the same Idempotency-Key credits once.
+      tags: [wallet]
+      parameters:
+        - $ref: "#/components/parameters/OrganiserId"
+        - $ref: "#/components/parameters/IdempotencyKeyRequired"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopupRequest"
+      responses:
+        "200":
+          description: The top-up's attempt and the provider page to open.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopupResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/shop/wallets/{organiserId}/topups/{attemptId}:
+    get:
+      operationId: getTopup
+      summary: A top-up's state
+      tags: [wallet]
+      parameters:
+        - $ref: "#/components/parameters/OrganiserId"
+        - name: attemptId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The top-up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopupResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/payments/providers:
+    get:
+      operationId: getPaymentProviders
+      summary: The organiser's simulated providers - breaker state and live knobs
+      tags: [payments]
+      responses:
+        "200":
+          description: Both providers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/payments/providers/{provider}/knobs:
+    put:
+      operationId: setProviderKnobs
+      summary: Change a simulated provider's knobs for this organiser (owner or admin)
+      tags: [payments]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [a, b]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderKnobs"
+      responses:
+        "200":
+          description: Both providers after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/wallet/stand-payments:
+    post:
+      operationId: standPayment
+      summary: Charge a fan's wallet at a stand (simulated)
+      tags: [wallet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StandPaymentRequest"
+      responses:
+        "200":
+          description: The fan's wallet after the charge.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wallet"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/wallet/season-close:
+    post:
+      operationId: closeSeason
+      summary: Move every fan's unspent balance to next-season credit (owner or admin)
+      tags: [wallet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SeasonCloseRequest"
+      responses:
+        "200":
+          description: What moved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeasonCloseResult"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrganiserId:
+      name: organiserId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrganiserQuery:
+      name: organiserId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+    OrderToken:
+      name: X-Order-Token
+      in: header
+      required: false
+      description: A signed order link (resume or view token); the order's buyer does not need one.
+      schema:
+        type: string
+        maxLength: 400
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{8,100}$"
+    IdempotencyKeyRequired:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Created when the fan presses the button; reused on retry and double click.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]{8,100}$"
     EventId:
       name: eventId
       in: path
@@ -392,6 +825,554 @@ components:
           type: string
         code:
           type: string
-          description: Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`.
+          description: Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`, or a quotable checkout code such as `EPS-HOLD-SOLD-OUT` (design D-14).
         requestId:
           type: string
+        messageKey:
+          type: string
+          description: The shop label of a checkout code (EPS-PAY-DECLINED → err_pay_declined).
+        retryable:
+          type: boolean
+          description: Whether trying again can help.
+        data:
+          type: object
+          additionalProperties: true
+          description: Facts the screen needs (the product that sold out, the missing answers, ...).
+    CreateOrderRequest:
+      type: object
+      required: [eventId, version, items]
+      x-go-type: checkout.CreateRequest
+      x-go-type-import:
+        path: github.com/buzandanalexandru/eps-prototype/services/internal/checkout
+      properties:
+        eventId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+          description: The snapshot version the shop page showed; the order is priced from it.
+        locale:
+          type: string
+          enum: [ro, en]
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: object
+            required: [productId, qty]
+            properties:
+              productId:
+                type: string
+                format: uuid
+              qty:
+                type: integer
+                minimum: 1
+                maximum: 100
+              instance:
+                type: string
+                description: The day (YYYY-MM-DD) or slot start (YYYY-MM-DDTHH:MM) for day and slot products.
+    OrderDetails:
+      type: object
+      required: [name, email]
+      x-go-type: checkout.Details
+      x-go-type-import:
+        path: github.com/buzandanalexandru/eps-prototype/services/internal/checkout
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        email:
+          type: string
+          maxLength: 200
+        answers:
+          type: object
+          additionalProperties: true
+          description: Answers by question id (text, the option index, or true for a consent).
+    PayRequest:
+      type: object
+      required: [method]
+      properties:
+        method:
+          type: string
+          enum: [hosted_card, apple_pay, google_pay, saved_card, wallet]
+        savedCardId:
+          type: string
+        saveCard:
+          type: boolean
+        plan:
+          type: string
+          enum: [full, instalments]
+        returnUrl:
+          type: string
+          maxLength: 2000
+          description: Where the provider page sends the fan back (an origin the core allows).
+    ClaimRequest:
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+    ClaimResult:
+      type: object
+      required: [claimed]
+      properties:
+        claimed:
+          type: array
+          items:
+            type: string
+            format: uuid
+    TopupRequest:
+      type: object
+      required: [amountMinor, currency, method]
+      properties:
+        amountMinor:
+          type: integer
+          format: int64
+        currency:
+          type: string
+          enum: [RON, EUR]
+        method:
+          type: string
+          enum: [hosted_card, apple_pay, google_pay]
+        returnUrl:
+          type: string
+          maxLength: 2000
+        locale:
+          type: string
+          enum: [ro, en]
+    StandPaymentRequest:
+      type: object
+      required: [code, amountMinor]
+      properties:
+        code:
+          type: string
+          pattern: "^[A-Z0-9]{4}-[A-Z0-9]{4}$"
+          description: The wallet code the fan shows at the stand.
+        amountMinor:
+          type: integer
+          format: int64
+        label:
+          type: string
+          maxLength: 80
+    SeasonCloseRequest:
+      type: object
+      required: [expiresAt]
+      properties:
+        expiresAt:
+          type: string
+          format: date-time
+    SeasonCloseResult:
+      type: object
+      required: [fans, totalMinor]
+      properties:
+        fans:
+          type: integer
+        totalMinor:
+          type: integer
+          format: int64
+    ProviderKnobs:
+      type: object
+      properties:
+        failure_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        decline_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        latency_ms:
+          type: integer
+        latency_jitter_ms:
+          type: integer
+        outage:
+          type: boolean
+        outage_mode:
+          type: string
+          enum: [hang, "503"]
+        timeout_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        webhook_delay_ms:
+          type: integer
+        webhook_drop_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        challenge_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+    ProviderList:
+      type: object
+      required: [providers, preferred]
+      properties:
+        preferred:
+          type: string
+          enum: [a, b]
+        providers:
+          type: array
+          items:
+            type: object
+            required: [provider, state]
+            properties:
+              provider:
+                type: string
+                enum: [a, b]
+              state:
+                type: string
+                enum: [closed, open, half_open]
+              calls:
+                type: integer
+              failures:
+                type: integer
+              consecutiveFailures:
+                type: integer
+              openedAt:
+                type: string
+                format: date-time
+              knobs:
+                $ref: "#/components/schemas/ProviderKnobs"
+              reachable:
+                type: boolean
+    Money:
+      type: integer
+      format: int64
+      description: An amount in minor units (bani, cents).
+    OrderLine:
+      type: object
+      required: [lineNo, productId, name, qty, unitAllInMinor]
+      properties:
+        lineNo:
+          type: integer
+        productId:
+          type: string
+        name:
+          $ref: "#/components/schemas/L10n"
+        qty:
+          type: integer
+        instance:
+          type: string
+        priceStepIndex:
+          type: integer
+        unitAllInMinor:
+          $ref: "#/components/schemas/Money"
+        unitFaceMinor:
+          $ref: "#/components/schemas/Money"
+        unitFanFeeMinor:
+          $ref: "#/components/schemas/Money"
+    L10n:
+      type: object
+      required: [ro, en]
+      properties:
+        ro:
+          type: string
+        en:
+          type: string
+    Question:
+      type: object
+      required: [id, slot, kind, label, options, required]
+      properties:
+        id:
+          type: string
+        slot:
+          type: string
+          enum: [afterContact, consents]
+        kind:
+          type: string
+          enum: [text, choice, consent]
+        label:
+          $ref: "#/components/schemas/L10n"
+        options:
+          type: array
+          items:
+            $ref: "#/components/schemas/L10n"
+        required:
+          type: boolean
+    InstalmentPayment:
+      type: object
+      required: [n, dueOn, amountMinor]
+      properties:
+        n:
+          type: integer
+        dueOn:
+          type: string
+          format: date
+        amountMinor:
+          $ref: "#/components/schemas/Money"
+        state:
+          type: string
+          enum: [scheduled, charging, paid, overdue, cancelled]
+        graceUntil:
+          type: string
+          format: date
+    InstalmentOffer:
+      type: object
+      required: [depositMinor, payments, totalMinor]
+      properties:
+        depositMinor:
+          $ref: "#/components/schemas/Money"
+        totalMinor:
+          $ref: "#/components/schemas/Money"
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstalmentPayment"
+    InstalmentPlan:
+      type: object
+      required: [id, state, depositMinor, totalMinor, parts]
+      properties:
+        id:
+          type: string
+        state:
+          type: string
+          enum: [pending, active, completed, cancelled]
+        depositMinor:
+          $ref: "#/components/schemas/Money"
+        totalMinor:
+          $ref: "#/components/schemas/Money"
+        clockOffsetDays:
+          type: integer
+        savedCardLabel:
+          type: string
+        parts:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstalmentPayment"
+    PaymentAttempt:
+      type: object
+      required: [id, state, method, provider, amountMinor]
+      properties:
+        id:
+          type: string
+        state:
+          type: string
+          enum: [created, submitted, challenge_required, succeeded, declined, failed, unknown, refund_pending, refunded]
+        method:
+          type: string
+        provider:
+          type: string
+          enum: [a, b]
+        amountMinor:
+          $ref: "#/components/schemas/Money"
+        errorCode:
+          type: string
+        actionUrl:
+          type: string
+        purpose:
+          type: string
+          enum: [order, topup, instalment]
+    SavedCard:
+      type: object
+      required: [id, provider, label, brand]
+      properties:
+        id:
+          type: string
+        provider:
+          type: string
+        label:
+          type: string
+        brand:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    SavedCardList:
+      type: object
+      required: [cards]
+      properties:
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/SavedCard"
+    WalletMovement:
+      type: object
+      required: [kind, account, amountMinor, at]
+      properties:
+        kind:
+          type: string
+          enum: [topup, order_payment, stand_payment, season_close, reversal]
+        account:
+          type: string
+          enum: [fan_balance, fan_season_credit]
+        amountMinor:
+          $ref: "#/components/schemas/Money"
+        memo:
+          type: string
+        at:
+          type: string
+          format: date-time
+    Wallet:
+      type: object
+      required: [organiserId, currency, balanceMinor, creditMinor, code, history]
+      properties:
+        organiserId:
+          type: string
+        organiserName:
+          type: string
+        currency:
+          type: string
+        balanceMinor:
+          $ref: "#/components/schemas/Money"
+        creditMinor:
+          $ref: "#/components/schemas/Money"
+        creditExpiresAt:
+          type: string
+          format: date-time
+        code:
+          type: string
+          description: The wallet code a stand types in.
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/WalletMovement"
+    WalletList:
+      type: object
+      required: [wallets]
+      properties:
+        wallets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Wallet"
+    TopupResult:
+      type: object
+      required: [attempt]
+      properties:
+        attempt:
+          $ref: "#/components/schemas/PaymentAttempt"
+        actionUrl:
+          type: string
+        wallet:
+          $ref: "#/components/schemas/Wallet"
+    PaymentResult:
+      type: object
+      required: [order]
+      properties:
+        order:
+          $ref: "#/components/schemas/OrderView"
+        actionUrl:
+          type: string
+          description: The provider page to open (hosted card, wallet sheet or bank challenge).
+    OrderList:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderView"
+    OrderView:
+      type: object
+      required: [id, organiserId, eventId, snapshotVersion, state, currency, totalMinor, lines, holdExpiresAt, serverTime, history, questions, canPay, access, savedCards, buyerKind, payPlan, detailsGiven, answers]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organiserId:
+          type: string
+        eventId:
+          type: string
+        snapshotVersion:
+          type: integer
+        buyerKind:
+          type: string
+          enum: [account, guest]
+        buyerEmail:
+          type: string
+        buyerName:
+          type: string
+        locale:
+          type: string
+        currency:
+          type: string
+          enum: [RON, EUR]
+        state:
+          type: string
+          enum: [held, paying, payment_failed, paid, issued, expired, cancelled, refunded]
+        totalMinor:
+          $ref: "#/components/schemas/Money"
+        faceMinor:
+          $ref: "#/components/schemas/Money"
+        fanFeeMinor:
+          $ref: "#/components/schemas/Money"
+        holdExpiresAt:
+          type: string
+          format: date-time
+        serverTime:
+          type: string
+          format: date-time
+          description: The core's clock, so the timer counts down from the server deadline.
+        payPlan:
+          type: string
+          enum: [full, instalments]
+        answers:
+          type: object
+          additionalProperties: true
+        detailsGiven:
+          type: boolean
+        lastErrorCode:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        paidAt:
+          type: string
+          format: date-time
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLine"
+        history:
+          type: array
+          items:
+            type: object
+            required: [to, at]
+            properties:
+              from:
+                type: string
+              to:
+                type: string
+              reason:
+                type: string
+              at:
+                type: string
+                format: date-time
+        eventName:
+          $ref: "#/components/schemas/L10n"
+        questions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Question"
+        instalmentOffer:
+          $ref: "#/components/schemas/InstalmentOffer"
+        plan:
+          $ref: "#/components/schemas/InstalmentPlan"
+        payment:
+          $ref: "#/components/schemas/PaymentAttempt"
+        canPay:
+          type: boolean
+          description: The caller may pay now (held or payment failed, the hold live, buyer or a live resume link).
+        access:
+          type: string
+          enum: [buyer, link, expired_link]
+        resumeToken:
+          type: string
+          description: The signed resume link token, until the hold deadline (live orders only).
+        viewToken:
+          type: string
+          description: A guest's order-link token (30 days).
+        wallet:
+          type: object
+          description: The caller's wallet at this organiser (accounts only).
+          properties:
+            balanceMinor:
+              $ref: "#/components/schemas/Money"
+            creditMinor:
+              $ref: "#/components/schemas/Money"
+        savedCards:
+          type: array
+          items:
+            $ref: "#/components/schemas/SavedCard"

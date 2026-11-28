@@ -1,0 +1,35 @@
+{{- if .Values.payIngress.enabled }}
+{{- $host := printf "%s.%s.%s" .Values.payIngress.host .Values.global.env .Values.global.baseDomain }}
+# The simulated providers' hosted payment pages (step 4): pay.<env>.<domain>/a/pay/... goes to psp-a
+# and /b/pay/... to psp-b. Only these paths are public; the providers' API and knobs stay inside
+# the cluster (the core calls them by service name).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-pay" .Release.Name }}
+  labels:
+    app.kubernetes.io/name: pay
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/part-of: eps
+    eps.dev/env: {{ .Values.global.env | quote }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.global.ingress.clusterIssuer }}
+spec:
+  ingressClassName: {{ .Values.global.ingress.className }}
+  tls:
+    - hosts: [{{ $host | quote }}]
+      secretName: {{ printf "pay-%s-tls" .Values.global.env | trunc 63 | trimSuffix "-" }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          {{- range $p := list "a" "b" }}
+          - path: {{ printf "/%s/pay/" $p }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ printf "%s-psp-%s" $.Release.Name $p }}
+                port:
+                  name: http
+          {{- end }}
+{{- end }}

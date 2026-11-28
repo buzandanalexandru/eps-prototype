@@ -1,1 +1,1 @@
-{{- include "eps.service" (dict "name" "fakepsp" "ctx" .) }}
+{{- include "eps.service" (dict "name" (printf "psp-%s" .Values.providerId) "image" "fakepsp" "ctx" .) }}
