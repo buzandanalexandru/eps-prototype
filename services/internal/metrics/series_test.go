@@ -47,13 +47,13 @@ func TestSeriesAfterAPaidOrderWithoutPersonalData(t *testing.T) {
 	}
 	email := "ana-" + o["id"].(string)[:6] + "@sim.invalid"
 	body := scrape(t)
-	for _, series := range []string{"eps_orders_paid_total", "eps_tickets_sold_total", "eps_holds_created_total",
+	for _, series := range []string{`eps_orders_paid_total{rehearsal="false"}`, `eps_tickets_sold_total{rehearsal="false"}`, "eps_holds_created_total",
 		`eps_payment_attempts_total{provider="a",method="apple_pay",result="succeeded"}`, "eps_payments_succeeded_total"} {
 		if value(t, body, series) == "" {
 			t.Errorf("missing %s", series)
 		}
 	}
-	if value(t, body, "eps_orders_paid_total") == value(t, before, "eps_orders_paid_total") {
+	if paid := `eps_orders_paid_total{rehearsal="false"}`; value(t, body, paid) == value(t, before, paid) {
 		t.Error("the paid order was not counted")
 	}
 	for _, re := range []string{`eps_http_request_seconds_bucket\{service="core",route="[^"]+"`, `eps_queue_joins_total`, `eps_http_requests_total\{service="gateway"`} {
