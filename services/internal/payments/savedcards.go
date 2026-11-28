@@ -87,6 +87,16 @@ func (s *Service) DeleteSavedMethod(ctx context.Context, org, owner, id string) 
 	if err != nil {
 		return err
 	}
+	// A card an active instalment plan charges stays until the plan ends (review D-c).
+	var inUse int
+	if err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `select count(*) from sales.instalment_plans where saved_method_id = $1 and state = 'active'`, id).Scan(&inUse)
+	}); err != nil {
+		return err
+	}
+	if inUse > 0 {
+		return apperr.New(http.StatusConflict, apperr.SavedCardInUse, "This card pays an instalment plan and stays until the plan ends.", false)
+	}
 	if err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `update sales.saved_payment_methods set deleted_at = now() where id = $1 and owner_id = $2`, id, owner)
 		return err
@@ -103,10 +113,18 @@ func (s *Service) DeleteSavedMethod(ctx context.Context, org, owner, id string) 
 
 // ChargePart charges one instalment part with the plan's saved card (checkout.PartCharger).
 func (s *Service) ChargePart(ctx context.Context, p *checkout.Plan, n int) error {
+	overdue := func() error {
+		// No usable card (missing or revoked): a failed charge, the part is overdue with its grace
+		// (review D-c).
+		return db.WithTx(ctx, s.Pool, db.RoleCore, p.OrganiserID, func(tx pgx.Tx) error {
+			return checkout.PartResultTx(ctx, tx, p.OrganiserID, p.ID, n, false, s.Checkout.Clock())
+		})
+	}
 	if p.SavedMethodID == nil {
-		return errors.New("payments: plan has no saved card")
+		return overdue()
 	}
 	var a *Attempt
+	noCard := false
 	var token string
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, p.OrganiserID, func(tx pgx.Tx) error {
 		var amount int64
@@ -121,6 +139,10 @@ func (s *Service) ChargePart(ctx context.Context, p *checkout.Plan, n int) error
 		var provider, owner, currency, orderBuyer string
 		if err := tx.QueryRow(ctx, `select m.provider, m.token, m.owner_id, o.currency, o.buyer_id from sales.saved_payment_methods m
 			join sales.orders o on o.id = $2 where m.id = $1 and m.deleted_at is null`, *p.SavedMethodID, p.OrderID).Scan(&provider, &token, &owner, &currency, &orderBuyer); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				noCard = true
+				return nil
+			}
 			return err
 		}
 		tries++
@@ -135,6 +157,9 @@ func (s *Service) ChargePart(ctx context.Context, p *checkout.Plan, n int) error
 	})
 	if err != nil {
 		return err
+	}
+	if noCard {
+		return overdue()
 	}
 	_, err = s.submit(ctx, a, ChargeRequest{AmountMinor: a.AmountMinor, Currency: a.Currency, Method: SavedCard, Token: token, CustomerRef: a.BuyerID,
 		Merchant: a.OrganiserID, Metadata: map[string]string{"organiser_id": a.OrganiserID, "attempt_id": a.ID, "order_id": p.OrderID, "purpose": "instalment"}})

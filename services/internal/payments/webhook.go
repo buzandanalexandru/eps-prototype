@@ -121,18 +121,6 @@ func (h *Webhooks) Apply(ctx context.Context, provider string, ev webhookBody) e
 	if _, err := uuid.Parse(attemptID); err != nil {
 		return errors.New("webhook without an attempt")
 	}
-	var dup bool
-	err := db.WithTx(ctx, h.Svc.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		var n int
-		if err := tx.QueryRow(ctx, "select count(*) from sales.webhook_events where provider = $1 and event_id = $2", provider, ev.ID).Scan(&n); err != nil {
-			return err
-		}
-		dup = n > 0
-		return nil
-	})
-	if err != nil || dup {
-		return err
-	}
 	a, err := h.Svc.GetAttempt(ctx, org, attemptID)
 	if err != nil {
 		return err
@@ -140,11 +128,15 @@ func (h *Webhooks) Apply(ctx context.Context, provider string, ev webhookBody) e
 	if a.Provider != provider || a.ProviderKey != ev.Charge.IdempotencyKey {
 		return errors.New("webhook for another provider or charge")
 	}
-	if err := h.Svc.Apply(ctx, org, attemptID, ev.Charge); err != nil {
-		return err
-	}
+	// The event id is recorded first, in a transaction that stays open while the webhook is
+	// applied (review H1): a duplicate delivered meanwhile waits on the unique key and then has no
+	// effect; a failure rolls the record back so the provider's retry is applied.
 	return db.WithTx(ctx, h.Svc.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		_, err := tx.Exec(ctx, "insert into sales.webhook_events (organiser_id, provider, event_id) values ($1, $2, $3) on conflict do nothing", org, provider, ev.ID)
-		return err
+		tag, err := tx.Exec(ctx, "insert into sales.webhook_events (organiser_id, provider, event_id) values ($1, $2, $3) on conflict do nothing", org, provider, ev.ID)
+		if err != nil || tag.RowsAffected() == 0 {
+			return err
+		}
+		return h.Svc.Apply(ctx, org, attemptID, ev.Charge)
 	})
+}
 }
