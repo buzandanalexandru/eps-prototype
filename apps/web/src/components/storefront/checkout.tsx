@@ -94,15 +94,20 @@ export function Checkout({ labels, locale, base }: Props) {
     const id = sp.get("order");
     const t = sp.get("t") ?? undefined;
     if (id && /^[0-9a-f-]{36}$/.test(id)) {
-      setLink(t);
-      setOrderId(id);
+      (async () => {
+        const r = await shopApi<OrderView>(`orders/${id}`, { orderToken: t });
+        setLink(t);
+        setOrderId(id);
+        if (r.ok) show(r.data);
+        else setLoad({ state: "error", problem: r.problem });
+      })();
       return;
     }
     const event = sp.get("event") ?? "";
     const v = Number(sp.get("v"));
     const items = parseItems(sp.get("items"));
     if (!/^[0-9a-f-]{36}$/.test(event) || !Number.isInteger(v) || v < 1 || !items) {
-      setLoad({ state: "error", problem: { type: "", title: "", status: 422, code: "EPS-HOLD-INVALID", messageKey: "err_hold_invalid", requestId: "" } });
+      queueMicrotask(() => setLoad({ state: "error", problem: { type: "", title: "", status: 422, code: "EPS-HOLD-INVALID", messageKey: "err_hold_invalid", requestId: "" } }));
       return;
     }
     // One key per hand-off: a reload or a double click on Continue holds once.
@@ -132,11 +137,6 @@ export function Checkout({ labels, locale, base }: Props) {
       show(r.data);
     })();
   }, [locale, show]);
-
-  useEffect(() => {
-    if (!orderId) return;
-    void refresh();
-  }, [orderId, refresh]);
 
   // Poll every 2 seconds while the order can still change.
   const state = load.state === "ready" ? load.order.state : null;
@@ -324,6 +324,7 @@ function GuestLinks({ order, labels, viewHref }: { order: OrderView; labels: Sho
                 const r = await shopApi<{ claimed: string[] }>("claims", { method: "POST", body: { orderId: order.id } });
                 if (r.ok) setClaim("done");
                 else if (r.problem.code === "EPS-FORBIDDEN") {
+                  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
                   window.location.assign(`/sign-in?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
                 } else setClaim(r.problem);
               }}
