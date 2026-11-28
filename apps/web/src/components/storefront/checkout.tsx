@@ -694,7 +694,7 @@ function PlanView({ order, labels, locale, link, onChange }: ScreenProps) {
               <button type="button" className={secondary} disabled aria-describedby="change-card-soon" data-testid="change-card">
                 {labels.changeCard}
               </button>
-              <span id="change-card-soon" className="self-center rounded-full border px-2 py-0.5 text-xs font-semibold" data-testid="change-card-soon">
+              <span id="change-card-soon" className="self-center rounded-[var(--eps-radius)] border px-2 py-0.5 text-xs font-semibold" data-testid="change-card-soon">
                 {labels.comingSoon}
               </span>
             </>
