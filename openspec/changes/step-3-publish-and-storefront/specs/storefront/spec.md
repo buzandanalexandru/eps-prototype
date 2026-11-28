@@ -30,12 +30,12 @@ A request whose host is configured for a brand SHALL be served that brand's shop
 #### Scenario: Brand hostname
 - **WHEN** a request arrives for a hostname configured for Sunwave with path `/en`
 - **THEN** it shows the same page as `/s/sunwave/en` and its links point to the hostname
-Test: apps/web/tests/unit/storefront-routing.test.ts
+Test: apps/web/tests/unit/storefront-routing.test.ts, apps/web/tests/e2e/storefront-host.spec.ts
 
 #### Scenario: Unknown host
 - **WHEN** a request arrives for a hostname that no brand has
 - **THEN** it gets the platform 404 and no brand content
-Test: apps/web/tests/unit/storefront-routing.test.ts
+Test: apps/web/tests/unit/storefront-routing.test.ts, apps/web/tests/e2e/storefront-host.spec.ts
 
 ### Requirement: Shop pages render the published version
 The shop SHALL render its home, event and information pages from the live storefront version and the live sale snapshots, in the brand's tokens, and MUST NOT show anything from drafts.
@@ -51,7 +51,7 @@ Test: apps/web/tests/e2e/publish.spec.ts
 Test: apps/web/tests/e2e/storefront.spec.ts
 
 ### Requirement: Shop pages are cached until the next publish
-Shop pages SHALL be served from cache after their first render and MUST show the new version on the first request after a publish, without a deploy.
+Shop pages SHALL be served from cache after their first render (static pages kept at the edge until the brand's next publish, reading no cookies or headers) and MUST show the new version on the first request after a publish, without a deploy. Everything that depends on the time or on stock (current price step, "from" price, sales status, instalments for a purchase now) SHALL be worked out in the fan's browser.
 
 #### Scenario: Publish refreshes the shop
 - **WHEN** the organiser publishes a new hero title
@@ -60,8 +60,8 @@ Test: apps/web/tests/e2e/publish.spec.ts
 
 #### Scenario: Cache hit
 - **WHEN** a shop page is requested a second time with no publish in between
-- **THEN** it is served without querying the database
-Test: apps/web/tests/unit/storefront-cache.test.ts
+- **THEN** it is served from the cache, without rendering and without querying the database
+Test: apps/web/tests/unit/storefront-cache.test.ts, manual check on the deployed preview (second request answers x-vercel-cache HIT)
 
 ### Requirement: All-in prices everywhere
 Every price a fan sees in the shop SHALL be the all-in amount they will pay, taken from the live snapshot, including "from" prices, ticket grid prices, product details and picker totals. No fan-facing price MUST exclude a fee.
@@ -105,6 +105,11 @@ The shop SHALL show each product's live sale status (on sale, not yet on sale wi
 - **THEN** its card says "On sale from 1 Feb 2027" and it cannot be added
 Test: apps/web/tests/e2e/storefront.spec.ts
 
+#### Scenario: Answer for another version
+- **WHEN** the core already answers for a newer snapshot version than the cached page's
+- **THEN** the page keeps its own prices and statuses, does not mix in the newer ones, and asks again shortly
+Test: apps/web/tests/unit/ticket-picker.test.ts
+
 #### Scenario: Core unreachable
 - **WHEN** the availability request fails
 - **THEN** the page shows its content with prices and a "Tickets are temporarily unavailable, try again shortly" note, with no console errors
@@ -128,6 +133,21 @@ Test: apps/web/tests/unit/ticket-picker.test.ts
 - **THEN** "Continue" is disabled with "Camping needs a Galaxia ticket"
 Test: apps/web/tests/unit/ticket-picker.test.ts
 
+#### Scenario: Products sharing a pool
+- **WHEN** GA and GA Plus draw on the Arena pool and the core reports 3 left in it
+- **THEN** the picker allows at most 3 of the two together
+Test: apps/web/tests/unit/ticket-picker.test.ts
+
+#### Scenario: Sold-out day or slot
+- **WHEN** the core reports one day of a pick-a-day ticket sold out
+- **THEN** that day is shown sold out and cannot be chosen; other days can
+Test: apps/web/tests/unit/ticket-picker.test.ts
+
+#### Scenario: Checkout reads the hand-off itself
+- **WHEN** the checkout URL names unknown or hidden products, invalid days, duplicate lines or quantities above the limits
+- **THEN** the checkout shows only the event's visible products, merged and within the per-order and per-account limits, and a hidden product's id never appears in the shop's pages
+Test: apps/web/tests/unit/ticket-picker.test.ts, apps/web/tests/unit/storefront-prices.test.tsx
+
 #### Scenario: Time slot and day choice
 - **WHEN** a fan picks a padel slot or a pick-a-day Promenada ticket
 - **THEN** the picker asks for the date and start time or the day, and the selection carries that pool instance
@@ -147,4 +167,9 @@ The shop of a sample organiser SHALL show a visible sample-data banner in the ac
 #### Scenario: NIBIRU sample shop
 - **WHEN** a visitor opens the NIBIRU sample shop in Romanian
 - **THEN** a banner says "Date de exemplu" and the page carries a noindex directive
+Test: apps/web/tests/e2e/storefront.spec.ts
+
+#### Scenario: Sample artists
+- **WHEN** the NIBIRU line-up shows its placeholder artists
+- **THEN** each carries a "sample artist" label in the shop's language instead of a suffix in the name
 Test: apps/web/tests/e2e/storefront.spec.ts

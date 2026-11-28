@@ -19,9 +19,22 @@ Test: apps/web/tests/unit/snapshot-compile.test.ts
 - **THEN** the restored look is live and the new snapshot carries the current price, not the price at the time of the older version
 Test: apps/web/tests/unit/snapshot-compile.test.ts
 
+#### Scenario: Catalogue-only publish
+- **WHEN** the organiser changes a price and publishes again without changing the look (the draft revision is already published)
+- **THEN** no new storefront version is created and a new snapshot version with the new price is live
+Test: apps/web/tests/unit/snapshot-compile.test.ts
+
 #### Scenario: Design-only publish
 - **WHEN** the organiser publishes a change of colours only
 - **THEN** a new storefront version is live and no new snapshot version is created for unchanged events
+Test: apps/web/tests/unit/snapshot-compile.test.ts
+
+### Requirement: Events the shop no longer sells go off sale
+Publishing a brand's storefront SHALL take off sale every event of the brand that was on sale and is no longer sold by the new version, and the core MUST then sell nothing of it, not even under an earlier version, until a publish sells it again.
+
+#### Scenario: Event removed from the shop
+- **WHEN** the organiser removes Galaxia 2027's pages and sections and publishes
+- **THEN** Galaxia 2027 has no live snapshot, the core's published-only read returns nothing for it, and its shop and availability are not found
 Test: apps/web/tests/unit/snapshot-compile.test.ts
 
 ### Requirement: Publishing is refused when an event is not ready
@@ -59,7 +72,7 @@ Test: services/internal/snapshot/immutable_test.go
 Test: apps/web/tests/unit/snapshot-compile.test.ts
 
 ### Requirement: Snapshot contents are complete and self-contained
-A snapshot SHALL contain everything the on-sale engine and the published shop need without reading the catalogue: currency, time zone, fee policy, the event's slug, venue (name, address, coordinates), line-up, event days with opening hours, buying rules, pools with their day or slot instances and capacities, and products with type settings, pools, requirements, sales windows, per-order maxima, price steps and instalment settings.
+A snapshot SHALL contain everything the on-sale engine and the published shop need without reading the catalogue: currency, time zone, fee policy, the event's slug, venue, line-up (sample artists flagged), event days, buying rules (with the hold length and the shop's checkout questions), pools with their day or slot instances and capacities, and products with type settings, pools, requirements, sales windows, per-order maxima, price steps and instalment settings.
 
 #### Scenario: Day-scoped pool instances
 - **WHEN** a pool scoped to each day of a 74-day season is compiled
@@ -107,6 +120,21 @@ Test: services/internal/snapshot/store_test.go
 - **THEN** the core can load that version unchanged
 Test: services/internal/snapshot/store_test.go
 
+#### Scenario: Version above the live one
+- **WHEN** a request names a version above the event's live version
+- **THEN** the published-only read returns nothing
+Test: apps/web/tests/unit/snapshot-compile.test.ts
+
+#### Scenario: Copy in the cache not written by the core
+- **WHEN** Redis holds a copy whose content matches its own hash but carries no valid signature of the core's cache key
+- **THEN** the core ignores it, loads from the database and logs it
+Test: services/internal/snapshot/store_test.go
+
+#### Scenario: Requests for unknown events
+- **WHEN** many requests ask for an event without a live snapshot, or for one event at once on a cold cache
+- **THEN** the database is read once per few seconds for the unknown event and once for the concurrent misses
+Test: services/internal/snapshot/store_test.go
+
 ### Requirement: New versions reach the core promptly
 After a publish the control plane SHALL tell the core which snapshot version is live, and the core MUST serve the new version within 10 seconds even if that message is lost.
 
@@ -126,7 +154,12 @@ Test: services/internal/snapshot/store_test.go
 Test: services/internal/snapshot/store_test.go, services/internal/coreapi/snapshots_test.go
 
 ### Requirement: Public availability per event
-The core SHALL serve a public, short-cached availability answer per event from its live snapshot: for each visible product its sale status, current price step and all-in amount, and the remaining quantity only when few are left.
+The core SHALL serve a public, short-cached availability answer per event from its live snapshot: for each visible product its sale status, current price step and all-in amount, and the remaining quantity only when few are left; and for each pool instance (event pool, day or slot) that is sold out or has few left, its status and remaining quantity.
+
+#### Scenario: Sold-out day
+- **WHEN** one day of a day-scoped pool is fully taken and another has 10 of 8,000 left
+- **THEN** the answer lists the first as sold out with 0 and the second as on sale with 10, and no untouched day
+Test: services/internal/snapshot/availability_test.go
 
 #### Scenario: Before sales start
 - **WHEN** a product's sales window opens tomorrow
