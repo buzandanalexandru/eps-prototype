@@ -400,13 +400,16 @@ func (e *Engine) pollDelay(base int64) int64 {
 	return base - 3000 + j%6001
 }
 
+// Verifier checks the engine's own tokens.
+func (e *Engine) Verifier() *Verifier { return NewVerifier(e.Signer.Key.Public().(ed25519.PublicKey)) }
+
 // StatusOf answers a poll: the place's position and estimate, or its pass once admitted. A poll
 // faster than every 2 s gets the last answer again (and counts as a bot signal).
 func (e *Engine) StatusOf(ctx context.Context, saleID, queueToken, session, sub string) (*Status, error) {
 	if e.Signer == nil {
 		return nil, ErrBadToken
 	}
-	c, err := NewVerifier(e.Signer.Key.Public().(ed25519.PublicKey)).Verify(queueToken, KindQueue, e.now(), false)
+	c, err := e.Verifier().Verify(queueToken, KindQueue, e.now(), false)
 	if err != nil || c.Sale != saleID || c.Sid != SessionHash(session) || c.Sub != sub {
 		return nil, ErrBadToken
 	}
@@ -425,7 +428,7 @@ func (e *Engine) StatusOf(ctx context.Context, saleID, queueToken, session, sub 
 	cacheKey := k.rl("st", c.QID)
 	if last, err := e.Redis.Get(ctx, cacheKey).Result(); err == nil {
 		var s Status
-		if json.Unmarshal([]byte(last), &s) == nil {
+		if json.Unmarshal([]byte(last), &s) == nil && now.Sub(s.ServerTime) < 2*time.Second && now.Sub(s.ServerTime) >= 0 {
 			s.ServerTime = now
 			return &s, nil
 		}
