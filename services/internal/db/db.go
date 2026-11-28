@@ -76,12 +76,10 @@ func WithTx(ctx context.Context, b Beginner, role Role, organiserID string, fn f
 			_ = tx.Rollback(context.WithoutCancel(ctx))
 		}
 	}()
-	// The role is one of two constants, so it is safe to place in the statement.
-	if _, err = tx.Exec(ctx, "SET LOCAL ROLE "+string(role)); err != nil {
-		return fmt.Errorf("db: set role: %w", err)
-	}
-	if _, err = tx.Exec(ctx, "select set_config('app.organiser_id', $1, true)", organiserID); err != nil {
-		return fmt.Errorf("db: set organiser scope: %w", err)
+	// Role and organiser scope in one round trip (set_config('role', ..., true) is SET LOCAL ROLE);
+	// the role is one of the constants above.
+	if _, err = tx.Exec(ctx, "select set_config('role', $1, true), set_config('app.organiser_id', $2, true)", string(role), organiserID); err != nil {
+		return fmt.Errorf("db: set role and organiser scope: %w", err)
 	}
 	if err = fn(tx); err != nil {
 		return err

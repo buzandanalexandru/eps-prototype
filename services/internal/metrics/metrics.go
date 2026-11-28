@@ -32,10 +32,75 @@ type series struct {
 }
 
 var (
-	mu       sync.Mutex
-	counters = map[string]*series{}
-	gauges   = map[string]func() float64{}
+	mu         sync.Mutex
+	counters   = map[string]*series{}
+	gauges     = map[string]func() float64{}
+	histograms = map[string]*Histogram{}
 )
+
+// Histogram counts observations in fixed buckets (seconds).
+type Histogram struct {
+	name, help, labels string
+	bounds             []float64
+	mu                 sync.Mutex
+	counts             []int64
+	sum                float64
+	n                  int64
+}
+
+// DefaultLatencyBuckets are for calls that take milliseconds to seconds.
+var DefaultLatencyBuckets = []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+
+// NewHistogram returns the histogram for name and labels, creating it once.
+func NewHistogram(name, help string, bounds []float64, labelPairs ...string) *Histogram {
+	var b strings.Builder
+	for i := 0; i+1 < len(labelPairs); i += 2 {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, "%s=%q", labelPairs[i], labelPairs[i+1])
+	}
+	key := name + "{" + b.String() + "}"
+	mu.Lock()
+	defer mu.Unlock()
+	if h, ok := histograms[key]; ok {
+		return h
+	}
+	h := &Histogram{name: name, help: help, labels: b.String(), bounds: bounds, counts: make([]int64, len(bounds))}
+	histograms[key] = h
+	return h
+}
+
+// Observe records one value.
+func (h *Histogram) Observe(v float64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i, b := range h.bounds {
+		if v <= b {
+			h.counts[i]++
+		}
+	}
+	h.sum += v
+	h.n++
+}
+
+func (h *Histogram) write(b *strings.Builder) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	sep := ""
+	if h.labels != "" {
+		sep = ","
+	}
+	for i, bound := range h.bounds {
+		fmt.Fprintf(b, "%s_bucket{%s%sle=\"%g\"} %d\n", h.name, h.labels, sep, bound, h.counts[i])
+	}
+	fmt.Fprintf(b, "%s_bucket{%s%sle=\"+Inf\"} %d\n", h.name, h.labels, sep, h.n)
+	lb := ""
+	if h.labels != "" {
+		lb = "{" + h.labels + "}"
+	}
+	fmt.Fprintf(b, "%s_sum%s %g\n%s_count%s %d\n", h.name, lb, h.sum, h.name, lb, h.n)
+}
 
 // NewCounter returns the counter for name and labels (k1, v1, k2, v2, ...), creating it once.
 func NewCounter(name, help string, labelPairs ...string) *Counter {
@@ -57,7 +122,7 @@ func NewCounter(name, help string, labelPairs ...string) *Counter {
 	return s.c
 }
 
-// NewGauge registers a gauge read at scrape time.
+// NewGauge registers a gauge read at scrape time. The name may carry labels: name{k="v"}.
 func NewGauge(name string, f func() float64) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -93,8 +158,28 @@ func Handler() http.Handler {
 			names = append(names, n)
 		}
 		sort.Strings(names)
+		typed := map[string]bool{}
 		for _, n := range names {
-			fmt.Fprintf(&b, "# TYPE %s gauge\n%s %g\n", n, n, gauges[n]())
+			base, _, _ := strings.Cut(n, "{")
+			if !typed[base] {
+				fmt.Fprintf(&b, "# TYPE %s gauge\n", base)
+				typed[base] = true
+			}
+			fmt.Fprintf(&b, "%s %g\n", n, gauges[n]())
+		}
+		hkeys := make([]string, 0, len(histograms))
+		for k := range histograms {
+			hkeys = append(hkeys, k)
+		}
+		sort.Strings(hkeys)
+		htyped := map[string]bool{}
+		for _, k := range hkeys {
+			h := histograms[k]
+			if !htyped[h.name] {
+				fmt.Fprintf(&b, "# HELP %s %s\n# TYPE %s histogram\n", h.name, h.help, h.name)
+				htyped[h.name] = true
+			}
+			h.write(&b)
 		}
 		mu.Unlock()
 		fmt.Fprintf(&b, "# TYPE go_goroutines gauge\ngo_goroutines %d\n", runtime.NumGoroutine())

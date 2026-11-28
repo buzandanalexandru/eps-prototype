@@ -16,6 +16,9 @@ func guestOrder(t *testing.T, env *salestest.Env, sale *salestest.Sale, email st
 	if err != nil {
 		t.Fatal(err)
 	}
+	if out, err := env.Svc.Complete(context.Background(), sale.Org, o.ID, "pay-1", "test payment", nil); err != nil || !out.Paid {
+		t.Fatalf("pay: %v", err)
+	}
 	return o
 }
 
@@ -63,5 +66,22 @@ func TestClaimRefusedForAnotherEmail(t *testing.T) {
 	// Without a verified email nothing can be claimed.
 	if _, err := env.Svc.Claim(ctx, checkout.Buyer{ID: "user-x", Kind: "account"}, ""); code(err) != apperr.ClaimRefused {
 		t.Fatalf("unverified: %v", err)
+	}
+}
+
+// Review D-g: a guest's live hold is not claimable; only bought orders move.
+func TestClaimOnlyPaidOrders(t *testing.T) {
+	env := salestest.Setup(t)
+	ctx := context.Background()
+	sale := env.NewSale(t, 100, 100)
+	o := sale.Hold(t, salestest.Guest(), checkout.Item{ProductID: salestest.ProductGA, Qty: 1})
+	if _, err := env.Svc.SetDetails(ctx, o, checkout.Details{Name: "G", Email: "ana@example.test"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Svc.Claim(ctx, checkout.Buyer{ID: "user-ana", Kind: "account", Email: "ana@example.test"}, o.ID); code(err) != apperr.ClaimRefused {
+		t.Fatalf("claiming a held order: %v", err)
+	}
+	if got, _ := env.Svc.Claim(ctx, checkout.Buyer{ID: "user-ana", Kind: "account", Email: "ana@example.test"}, ""); len(got) != 0 {
+		t.Fatalf("claimed %v", got)
 	}
 }

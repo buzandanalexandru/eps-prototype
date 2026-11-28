@@ -26,7 +26,7 @@ func TestLatePaymentStockStillFree(t *testing.T) {
 	sale := env.NewSale(t, 10, 100)
 	o := sale.Hold(t, salestest.Buyer(), checkout.Item{ProductID: salestest.ProductGA, Qty: 2})
 	expire(t, env, sale, o)
-	out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "late webhook", nil)
+	out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "a1", "late webhook", nil)
 	if err != nil || !out.Paid || out.Refund {
 		t.Fatalf("late success: %+v %v", out, err)
 	}
@@ -46,7 +46,7 @@ func TestLatePaymentStockGone(t *testing.T) {
 	o := sale.Hold(t, salestest.Buyer(), checkout.Item{ProductID: salestest.ProductGA, Qty: 2})
 	expire(t, env, sale, o)
 	other := sale.Hold(t, salestest.Buyer(), checkout.Item{ProductID: salestest.ProductGA, Qty: 2})
-	out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "late webhook", nil)
+	out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "a1", "late webhook", nil)
 	if err != nil || out.Paid || !out.Refund {
 		t.Fatalf("late success on sold stock: %+v %v", out, err)
 	}

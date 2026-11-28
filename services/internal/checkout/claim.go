@@ -68,14 +68,19 @@ func (s *Service) Claim(ctx context.Context, b Buyer, orderID string) ([]string,
 			if o.BuyerKind != "guest" || o.BuyerEmail == nil || *o.BuyerEmail != email {
 				return apperr.New(http.StatusForbidden, apperr.ClaimRefused, "This order was placed with another email.", false)
 			}
+			// Only bought orders move (review D-g): a guest's live hold stays with the guest.
+			if o.State != Paid && o.State != Issued {
+				return apperr.New(http.StatusConflict, apperr.ClaimRefused, "Only paid orders can be added to an account.", false)
+			}
 			if _, err := tx.Exec(ctx, `update sales.orders set buyer_kind = 'account', buyer_id = $2, updated_at = now() where id = $1`, r.id, b.ID); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(ctx, `insert into sales.order_history (organiser_id, order_id, from_state, to_state, reason) values ($1, $2, $3, $3, 'claimed into an account')`, r.org, r.id, o.State); err != nil {
 				return err
 			}
-			// Saved cards of the guest (instalment plans) follow the order.
-			if _, err := tx.Exec(ctx, `update sales.saved_payment_methods set owner_id = $2 where owner_id = $1`, o.BuyerID, b.ID); err != nil {
+			// Only the card of this order's own plan follows it (review D-g).
+			if _, err := tx.Exec(ctx, `update sales.saved_payment_methods set owner_id = $2 where owner_id = $1
+				and id in (select saved_method_id from sales.instalment_plans where order_id = $3 and saved_method_id is not null)`, o.BuyerID, b.ID, r.id); err != nil {
 				return err
 			}
 			return emit(ctx, tx, o, "order.claimed", map[string]any{"from": "guest"})

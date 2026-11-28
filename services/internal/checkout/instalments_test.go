@@ -63,7 +63,7 @@ type decliningCharger struct{ env *salestest.Env }
 
 func (c decliningCharger) ChargePart(ctx context.Context, p *checkout.Plan, n int) error {
 	return db.WithTx(ctx, c.env.Pool, db.RoleCore, p.OrganiserID, func(tx pgx.Tx) error {
-		return checkout.PartResultTx(ctx, tx, p.OrganiserID, p.ID, n, false, c.env.Svc.Today())
+		return checkout.PartResultTx(ctx, tx, p.OrganiserID, p.ID, n, false, c.env.Svc.Clock())
 	})
 }
 

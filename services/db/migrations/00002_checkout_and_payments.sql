@@ -29,6 +29,9 @@ CREATE TABLE sales.orders (
     -- Units taken per pool instance ({"<instanceId>": qty}), the hold's draw on stock.
     draws               jsonb       NOT NULL,
     hold_expires_at     timestamptz NOT NULL,
+    -- The hold's own deadline (now + hold minutes at creation): a payment extends hold_expires_at
+    -- only while its attempt is open, and only up to this plus the attempt limit and grace.
+    hold_base_expires_at timestamptz NOT NULL,
     -- The inventory hold that carries the order's stock: the order id, or <id>_r<n> after a late
     -- payment re-took the stock.
     hold_ref            text        NOT NULL,
@@ -99,7 +102,7 @@ CREATE INDEX saved_methods_owner_idx ON sales.saved_payment_methods (organiser_i
 CREATE TABLE sales.wallet_accounts (
     id            uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     organiser_id  uuid        NOT NULL,
-    kind          text        NOT NULL CHECK (kind IN ('fan_balance', 'fan_season_credit', 'psp_clearing', 'organiser_sales', 'stand_sales')),
+    kind          text        NOT NULL CHECK (kind IN ('fan_balance', 'fan_season_credit', 'psp_clearing', 'organiser_sales', 'stand_sales', 'credit_breakage')),
     owner         text        NOT NULL CHECK (length(owner) BETWEEN 1 AND 200),
     currency      text        NOT NULL CHECK (currency IN ('RON', 'EUR')),
     balance_minor bigint      NOT NULL DEFAULT 0,
@@ -116,7 +119,7 @@ CREATE TABLE sales.wallet_accounts (
 CREATE TABLE sales.journal_entries (
     id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     organiser_id uuid        NOT NULL,
-    kind         text        NOT NULL CHECK (kind IN ('topup', 'order_payment', 'stand_payment', 'season_close', 'reversal')),
+    kind         text        NOT NULL CHECK (kind IN ('topup', 'order_payment', 'stand_payment', 'season_close', 'credit_expiry', 'reversal')),
     ref          text        NOT NULL DEFAULT '',
     memo         text        NOT NULL DEFAULT '',
     created_at   timestamptz NOT NULL DEFAULT now(),
@@ -152,6 +155,14 @@ CREATE TABLE sales.payment_attempts (
     method          text        NOT NULL CHECK (method IN ('hosted_card', 'apple_pay', 'google_pay', 'saved_card')),
     saved_method_id uuid,
     save_card       boolean     NOT NULL DEFAULT false,
+    -- The plan this attempt pays for (D-b): an instalment deposit, or the full amount.
+    plan            text        NOT NULL DEFAULT 'full' CHECK (plan IN ('full', 'instalments')),
+    -- For a deposit: the schedule offered when it was sent (rebuilt if it succeeds late).
+    offer           jsonb,
+    -- Why a failed attempt failed (provider_unavailable, timeout, ...); provider_unavailable is
+    -- checked once more with the provider by idempotency key (rechecked).
+    failure_reason  text,
+    rechecked       boolean     NOT NULL DEFAULT false,
     amount_minor    bigint      NOT NULL CHECK (amount_minor > 0),
     currency        text        NOT NULL CHECK (currency IN ('RON', 'EUR')),
     state           text        NOT NULL CHECK (state IN ('created', 'submitted', 'challenge_required', 'succeeded', 'declined', 'failed', 'unknown', 'refund_pending', 'refunded')),
@@ -208,8 +219,10 @@ CREATE TABLE sales.instalment_plans (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     organiser_id    uuid        NOT NULL,
     order_id        uuid        NOT NULL,
-    state           text        NOT NULL CHECK (state IN ('pending', 'active', 'completed', 'cancelled')),
+    state           text        NOT NULL CHECK (state IN ('pending', 'active', 'completed', 'cancelled', 'defaulted')),
     saved_method_id uuid,
+    -- Due dates are calendar dates in the event's time zone.
+    timezone        text        NOT NULL DEFAULT 'Europe/Bucharest',
     deposit_minor   bigint      NOT NULL CHECK (deposit_minor >= 0),
     total_minor     bigint      NOT NULL CHECK (total_minor > 0),
     -- "Simulate next due date" (demo): days the plan's clock is moved forward.
@@ -329,7 +342,8 @@ BEGIN
             USING (organiser_id = nullif(current_setting('app.organiser_id', true), '')::uuid)
             WITH CHECK (organiser_id = nullif(current_setting('app.organiser_id', true), '')::uuid)$p$, t);
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON sales.%I TO eps_core', t);
-        EXECUTE format('GRANT SELECT ON sales.%I TO eps_web', t);
+        -- The web app reads none of these (it reaches sales data through the core): no grant.
+        EXECUTE format('REVOKE ALL ON sales.%I FROM eps_web', t);
     END LOOP;
 END
 $$;
@@ -352,15 +366,19 @@ GRANT eps_sales_index TO CURRENT_USER WITH INHERIT FALSE, SET TRUE;
 GRANT USAGE ON SCHEMA sales TO eps_sales_index;
 GRANT SELECT (id, organiser_id, event_id, state, hold_expires_at, buyer_id, buyer_kind, buyer_email, created_at) ON sales.orders TO eps_sales_index;
 CREATE POLICY sales_index ON sales.orders FOR SELECT TO eps_sales_index USING (true);
-GRANT SELECT (id, organiser_id, state, updated_at, deadline_at, purpose) ON sales.payment_attempts TO eps_sales_index;
+GRANT SELECT (id, organiser_id, order_id, state, updated_at, deadline_at, purpose, failure_reason, rechecked) ON sales.payment_attempts TO eps_sales_index;
 CREATE POLICY sales_index ON sales.payment_attempts FOR SELECT TO eps_sales_index USING (true);
 GRANT SELECT (organiser_id, plan_id, n, due_on, state, grace_until) ON sales.instalment_parts TO eps_sales_index;
 CREATE POLICY sales_index ON sales.instalment_parts FOR SELECT TO eps_sales_index USING (true);
-GRANT SELECT (id, organiser_id, state, clock_offset_days) ON sales.instalment_plans TO eps_sales_index;
+GRANT SELECT (id, organiser_id, state, clock_offset_days, timezone) ON sales.instalment_plans TO eps_sales_index;
 CREATE POLICY sales_index ON sales.instalment_plans FOR SELECT TO eps_sales_index USING (true);
 GRANT SELECT (id, organiser_id, kind, owner, currency, balance_minor, code) ON sales.wallet_accounts TO eps_sales_index;
 CREATE POLICY sales_index ON sales.wallet_accounts FOR SELECT TO eps_sales_index USING (true);
-GRANT SELECT (seq, organiser_id, relayed_at) ON sales.outbox TO eps_sales_index;
+GRANT SELECT (seq, organiser_id, relayed_at, created_at) ON sales.outbox TO eps_sales_index;
+GRANT SELECT (created_at), DELETE ON sales.idempotency_keys TO eps_sales_index;
+CREATE POLICY sales_index ON sales.idempotency_keys FOR ALL TO eps_sales_index USING (true);
+GRANT SELECT (received_at), DELETE ON sales.webhook_events TO eps_sales_index;
+CREATE POLICY sales_index ON sales.webhook_events FOR ALL TO eps_sales_index USING (true);
 CREATE POLICY sales_index ON sales.outbox FOR SELECT TO eps_sales_index USING (true);
 
 -- +goose StatementBegin
@@ -374,12 +392,15 @@ AS $fn$ SELECT organiser_id FROM sales.orders WHERE id = p_order $fn$;
 -- +goose StatementBegin
 -- Held or payment-failed orders past their deadline (the hold sweeper).
 CREATE FUNCTION sales.due_holds(p_limit int)
-RETURNS TABLE (organiser_id uuid, order_id uuid)
+RETURNS TABLE (organiser_id uuid, order_id uuid, hold_expires_at timestamptz)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 AS $fn$
-    SELECT o.organiser_id, o.id FROM sales.orders o
-    WHERE o.state IN ('held', 'payment_failed') AND o.hold_expires_at <= now()
-    ORDER BY o.hold_expires_at LIMIT least(greatest(p_limit, 1), 1000)
+    SELECT o.organiser_id, o.id, o.hold_expires_at FROM sales.orders o
+    WHERE o.hold_expires_at <= now()
+      AND (o.state IN ('held', 'payment_failed')
+           OR (o.state = 'paying' AND NOT EXISTS (SELECT 1 FROM sales.payment_attempts a WHERE a.order_id = o.id
+                AND a.state IN ('created', 'submitted', 'challenge_required', 'unknown'))))
+    ORDER BY o.hold_expires_at LIMIT least(greatest(p_limit, 1), 5000)
 $fn$;
 -- +goose StatementEnd
 
@@ -397,15 +418,62 @@ $fn$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- Instalment parts due on or before today (moved by the plan's simulated clock).
-CREATE FUNCTION sales.due_instalment_parts(p_today date, p_limit int)
+-- Instalment parts due on or before today in the event's time zone (moved by the plan's
+-- simulated clock).
+CREATE FUNCTION sales.due_instalment_parts(p_now timestamptz, p_limit int)
 RETURNS TABLE (organiser_id uuid, plan_id uuid, n int)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 AS $fn$
     SELECT p.organiser_id, p.plan_id, p.n FROM sales.instalment_parts p
     JOIN sales.instalment_plans l ON l.organiser_id = p.organiser_id AND l.id = p.plan_id AND l.state = 'active'
-    WHERE p.state = 'scheduled' AND p.due_on <= p_today + l.clock_offset_days
+    WHERE p.state = 'scheduled' AND p.due_on <= (p_now AT TIME ZONE l.timezone)::date + l.clock_offset_days
     ORDER BY p.due_on LIMIT least(greatest(p_limit, 1), 1000)
+$fn$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- Active plans with an overdue part whose 7-day grace ended (the plan defaults).
+CREATE FUNCTION sales.defaulted_plans(p_now timestamptz, p_limit int)
+RETURNS TABLE (organiser_id uuid, plan_id uuid)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $fn$
+    SELECT DISTINCT l.organiser_id, l.id FROM sales.instalment_parts p
+    JOIN sales.instalment_plans l ON l.organiser_id = p.organiser_id AND l.id = p.plan_id AND l.state = 'active'
+    WHERE p.state = 'overdue' AND p.grace_until < (p_now AT TIME ZONE l.timezone)::date + l.clock_offset_days
+    LIMIT least(greatest(p_limit, 1), 1000)
+$fn$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- Attempts failed as provider_unavailable in the last 5 minutes and not yet checked again by key
+-- (a reset or a lost answer may still have charged).
+CREATE FUNCTION sales.recheck_attempts(p_limit int)
+RETURNS TABLE (organiser_id uuid, attempt_id uuid)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $fn$
+    SELECT a.organiser_id, a.id FROM sales.payment_attempts a
+    WHERE a.state = 'failed' AND a.failure_reason = 'provider_unavailable' AND NOT a.rechecked
+      AND a.updated_at > now() - interval '5 minutes' AND a.updated_at <= now() - interval '10 seconds'
+    LIMIT least(greatest(p_limit, 1), 1000)
+$fn$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- Purges client idempotency keys older than 24 hours and webhook ids older than 7 days.
+CREATE FUNCTION sales.purge_expired()
+RETURNS TABLE (idempotency_keys bigint, webhook_events bigint)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $fn$
+DECLARE
+    a bigint;
+    b bigint;
+BEGIN
+    DELETE FROM sales.idempotency_keys WHERE created_at < now() - interval '24 hours';
+    GET DIAGNOSTICS a = ROW_COUNT;
+    DELETE FROM sales.webhook_events WHERE received_at < now() - interval '7 days';
+    GET DIAGNOSTICS b = ROW_COUNT;
+    RETURN QUERY SELECT a, b;
+END
 $fn$;
 -- +goose StatementEnd
 
@@ -458,19 +526,25 @@ $fn$;
 REVOKE ALL ON FUNCTION sales.order_organiser(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.due_holds(int) FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.unresolved_attempts(interval, int) FROM PUBLIC;
-REVOKE ALL ON FUNCTION sales.due_instalment_parts(date, int) FROM PUBLIC;
+REVOKE ALL ON FUNCTION sales.due_instalment_parts(timestamptz, int) FROM PUBLIC;
+REVOKE ALL ON FUNCTION sales.defaulted_plans(timestamptz, int) FROM PUBLIC;
+REVOKE ALL ON FUNCTION sales.recheck_attempts(int) FROM PUBLIC;
+REVOKE ALL ON FUNCTION sales.purge_expired() FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.outbox_organisers(int) FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.orders_of_buyer(text, int) FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.guest_orders_by_email(text, int) FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.wallets_of_fan(text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION sales.order_organiser(uuid), sales.due_holds(int), sales.unresolved_attempts(interval, int),
-    sales.due_instalment_parts(date, int), sales.outbox_organisers(int), sales.orders_of_buyer(text, int),
+    sales.due_instalment_parts(timestamptz, int), sales.defaulted_plans(timestamptz, int), sales.recheck_attempts(int), sales.purge_expired(), sales.outbox_organisers(int), sales.orders_of_buyer(text, int),
     sales.guest_orders_by_email(text, int), sales.wallets_of_fan(text) TO eps_core;
 GRANT CREATE ON SCHEMA sales TO eps_sales_index;
 ALTER FUNCTION sales.order_organiser(uuid) OWNER TO eps_sales_index;
 ALTER FUNCTION sales.due_holds(int) OWNER TO eps_sales_index;
 ALTER FUNCTION sales.unresolved_attempts(interval, int) OWNER TO eps_sales_index;
-ALTER FUNCTION sales.due_instalment_parts(date, int) OWNER TO eps_sales_index;
+ALTER FUNCTION sales.due_instalment_parts(timestamptz, int) OWNER TO eps_sales_index;
+ALTER FUNCTION sales.defaulted_plans(timestamptz, int) OWNER TO eps_sales_index;
+ALTER FUNCTION sales.recheck_attempts(int) OWNER TO eps_sales_index;
+ALTER FUNCTION sales.purge_expired() OWNER TO eps_sales_index;
 ALTER FUNCTION sales.outbox_organisers(int) OWNER TO eps_sales_index;
 ALTER FUNCTION sales.orders_of_buyer(text, int) OWNER TO eps_sales_index;
 ALTER FUNCTION sales.guest_orders_by_email(text, int) OWNER TO eps_sales_index;
@@ -478,14 +552,27 @@ ALTER FUNCTION sales.wallets_of_fan(text) OWNER TO eps_sales_index;
 REVOKE CREATE ON SCHEMA sales FROM eps_sales_index;
 
 -- +goose StatementBegin
--- Wakes the relay (LISTEN outbox) as soon as a transaction that wrote events commits.
-CREATE FUNCTION sales.outbox_notify() RETURNS trigger
-LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp
+-- The outbox backlog: events not yet relayed and the age of the oldest (metrics).
+CREATE FUNCTION sales.outbox_backlog()
+RETURNS TABLE (pending bigint, oldest_seconds double precision)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 AS $fn$
-BEGIN
-    PERFORM pg_notify('outbox', '');
-    RETURN NULL;
-END
+    SELECT count(*), coalesce(extract(epoch FROM now() - min(created_at)), 0) FROM sales.outbox WHERE relayed_at IS NULL
 $fn$;
 -- +goose StatementEnd
-CREATE TRIGGER outbox_notify AFTER INSERT ON sales.outbox FOR EACH STATEMENT EXECUTE FUNCTION sales.outbox_notify();
+-- +goose StatementBegin
+-- Payment attempts with no outcome yet (metrics).
+CREATE FUNCTION sales.unresolved_count()
+RETURNS bigint
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $fn$
+    SELECT count(*) FROM sales.payment_attempts WHERE state IN ('created', 'submitted', 'challenge_required', 'unknown')
+$fn$;
+-- +goose StatementEnd
+REVOKE ALL ON FUNCTION sales.outbox_backlog() FROM PUBLIC;
+REVOKE ALL ON FUNCTION sales.unresolved_count() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sales.outbox_backlog(), sales.unresolved_count() TO eps_core;
+GRANT CREATE ON SCHEMA sales TO eps_sales_index;
+ALTER FUNCTION sales.outbox_backlog() OWNER TO eps_sales_index;
+ALTER FUNCTION sales.unresolved_count() OWNER TO eps_sales_index;
+REVOKE CREATE ON SCHEMA sales FROM eps_sales_index;

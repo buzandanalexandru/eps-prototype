@@ -77,4 +77,8 @@ const (
 	SavedCardRefused    = "EPS-SAVED-CARD-REFUSED"
 	Forbidden           = "EPS-FORBIDDEN"
 	Unavailable         = "EPS-UNAVAILABLE"
+	PricesChanged       = "EPS-PRICES-CHANGED"
+	RateLimited         = "EPS-RATE-LIMITED"
+	SavedCardInUse      = "EPS-SAVED-CARD-IN-USE"
+	PayCodeInvalid      = "EPS-PAY-CODE-INVALID"
 )

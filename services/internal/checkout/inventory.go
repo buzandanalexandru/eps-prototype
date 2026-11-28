@@ -36,14 +36,43 @@ type Inventory interface {
 	Extend(ctx context.Context, org, event, holdID string, deadline time.Time) error
 	// Commit turns a live hold into sold units, never taking sold units above capacity.
 	Commit(ctx context.Context, org, event, holdID string, capacity map[string]int64) error
-	// Release gives a live hold's units back; it reports whether it released anything.
-	Release(ctx context.Context, org, event, holdID string) (bool, error)
+	// Release gives a live hold's units back and says what the hold was: released now, already
+	// committed (a payment won), or not live (released before, or unknown).
+	Release(ctx context.Context, org, event, holdID string) (ReleaseResult, error)
+	// ReleaseMany releases several holds of one event in one step (the sweeper's batches).
+	ReleaseMany(ctx context.Context, org, event string, holdIDs []string) error
+	// HoldState is "held", "committed", "released", "returned" or "" (unknown).
+	HoldState(ctx context.Context, org, event, holdID string) (string, error)
+	// Unsell gives a committed hold's sold units back (a defaulted instalment plan).
+	Unsell(ctx context.Context, org, event, holdID string) error
 	// Used is units sold plus held per instance (for availability and the publish gate).
 	Used(ctx context.Context, org, event string, instances []string) (map[string]int64, error)
 	// Rebuild sets the counters and live holds of an event from the record of truth, unless they
 	// are already present.
 	Rebuild(ctx context.Context, org, event string, used, sold map[string]int64, holds []Hold) error
+	// Lock serialises rebuilds of one event across cores; it reports whether this caller got it.
+	Lock(ctx context.Context, org, event string, ttl time.Duration) (bool, func(), error)
 }
+
+// HoldIndex finds holds the orders no longer own (the orphan sweep).
+type HoldIndex interface {
+	// Due returns hold ids of an event whose deadline passed before `before`.
+	Due(ctx context.Context, org, event string, before time.Time, limit int64) ([]string, error)
+	// Events lists the organiser/event pairs that ever held stock.
+	Events(ctx context.Context) ([][2]string, error)
+	// Forget drops a hold from the index.
+	Forget(ctx context.Context, org, event, holdID string) error
+}
+
+// ReleaseResult is what Release found.
+type ReleaseResult int
+
+// Release results.
+const (
+	ReleaseNotLive ReleaseResult = iota
+	ReleaseDone
+	ReleaseCommitted
+)
 
 // ErrShort means an instance had no room (or a commit would sell above capacity).
 type ErrShort struct{ Instance string }
@@ -116,9 +145,11 @@ redis.call('ZADD', KEYS[3], ARGV[1], ARGV[3 + n*2])
 return {'OK'}
 `)
 
-// KEYS: hold, expiry index. ARGV: hold id
+// KEYS: hold, expiry index. ARGV: hold id. Returns 1 released, 2 committed, 0 not live.
 var releaseScript = redis.NewScript(`
-if redis.call('HGET', KEYS[1], 'state') ~= 'held' then return 0 end
+local st = redis.call('HGET', KEYS[1], 'state')
+if st == 'committed' then return 2 end
+if st ~= 'held' then return 0 end
 local n = tonumber(redis.call('HGET', KEYS[1], 'n'))
 for i = 1, n do
   local k = redis.call('HGET', KEYS[1], 'k' .. i)
@@ -128,6 +159,37 @@ end
 redis.call('HSET', KEYS[1], 'state', 'released')
 redis.call('EXPIRE', KEYS[1], 86400)
 redis.call('ZREM', KEYS[2], ARGV[1])
+return 1
+`)
+
+// KEYS: expiry index, holds... ARGV: hold ids (same order). Releases every live hold given.
+var releaseManyScript = redis.NewScript(`
+for j = 2, #KEYS do
+  if redis.call('HGET', KEYS[j], 'state') == 'held' then
+    local n = tonumber(redis.call('HGET', KEYS[j], 'n'))
+    for i = 1, n do
+      redis.call('DECRBY', redis.call('HGET', KEYS[j], 'k' .. i), tonumber(redis.call('HGET', KEYS[j], 'q' .. i)))
+    end
+    redis.call('HSET', KEYS[j], 'state', 'released')
+    redis.call('EXPIRE', KEYS[j], 86400)
+  end
+  redis.call('ZREM', KEYS[1], ARGV[j - 1])
+end
+return 1
+`)
+
+// KEYS: hold. Gives a committed hold's units back (used and sold).
+var unsellScript = redis.NewScript(`
+if redis.call('HGET', KEYS[1], 'state') ~= 'committed' then return 0 end
+local n = tonumber(redis.call('HGET', KEYS[1], 'n'))
+for i = 1, n do
+  local k = redis.call('HGET', KEYS[1], 'k' .. i)
+  local q = tonumber(redis.call('HGET', KEYS[1], 'q' .. i))
+  redis.call('DECRBY', k, q)
+  local sk = string.gsub(k, ':inv%-used:', ':inv-sold:', 1)
+  redis.call('DECRBY', sk, q)
+end
+redis.call('HSET', KEYS[1], 'state', 'returned')
 return 1
 `)
 
@@ -305,14 +367,78 @@ func capacityFor(capacity map[string]int64, part string) int64 {
 	return 0
 }
 
-func (r *RedisInventory) Release(ctx context.Context, org, event, holdID string) (bool, error) {
+func (r *RedisInventory) Release(ctx context.Context, org, event, holdID string) (ReleaseResult, error) {
 	hold, err := r.key(org, event, "hold", holdID)
 	if err != nil {
-		return false, err
+		return ReleaseNotLive, err
 	}
 	exp, _ := r.key(org, event, "holds-exp")
 	n, err := releaseScript.Run(ctx, r.Redis, []string{hold, exp}, holdID).Int()
-	return n == 1, err
+	switch n {
+	case 1:
+		return ReleaseDone, err
+	case 2:
+		return ReleaseCommitted, err
+	}
+	return ReleaseNotLive, err
+}
+
+func (r *RedisInventory) ReleaseMany(ctx context.Context, org, event string, holdIDs []string) error {
+	if len(holdIDs) == 0 {
+		return nil
+	}
+	exp, err := r.key(org, event, "holds-exp")
+	if err != nil {
+		return err
+	}
+	keys := []string{exp}
+	args := make([]any, 0, len(holdIDs))
+	for _, id := range holdIDs {
+		k, err := r.key(org, event, "hold", id)
+		if err != nil {
+			return err
+		}
+		keys = append(keys, k)
+		args = append(args, id)
+	}
+	return releaseManyScript.Run(ctx, r.Redis, keys, args...).Err()
+}
+
+func (r *RedisInventory) HoldState(ctx context.Context, org, event, holdID string) (string, error) {
+	k, err := r.key(org, event, "hold", holdID)
+	if err != nil {
+		return "", err
+	}
+	st, err := r.Redis.HGet(ctx, k, "state").Result()
+	if errors.Is(err, redis.Nil) {
+		return "", nil
+	}
+	return st, err
+}
+
+func (r *RedisInventory) Unsell(ctx context.Context, org, event, holdID string) error {
+	k, err := r.key(org, event, "hold", holdID)
+	if err != nil {
+		return err
+	}
+	return unsellScript.Run(ctx, r.Redis, []string{k}).Err()
+}
+
+func (r *RedisInventory) Lock(ctx context.Context, org, event string, ttl time.Duration) (bool, func(), error) {
+	k, err := r.key(org, event, "inv-rebuild-lock")
+	if err != nil {
+		return false, func() {}, err
+	}
+	ok, err := r.Redis.SetNX(ctx, k, "1", ttl).Result()
+	return ok, func() { _ = r.Redis.Del(context.WithoutCancel(ctx), k).Err() }, err
+}
+
+func (r *RedisInventory) Forget(ctx context.Context, org, event, holdID string) error {
+	k, err := r.key(org, event, "holds-exp")
+	if err != nil {
+		return err
+	}
+	return r.Redis.ZRem(ctx, k, holdID).Err()
 }
 
 func (r *RedisInventory) Used(ctx context.Context, org, event string, instances []string) (map[string]int64, error) {

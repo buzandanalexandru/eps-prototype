@@ -33,22 +33,3 @@ func TestCheckoutTotalIsTheShopsAllInPrice(t *testing.T) {
 	}
 }
 
-// Orders are priced from the snapshot version they name, even after a newer publish.
-func TestPricedFromTheNamedVersion(t *testing.T) {
-	env := salestest.Setup(t)
-	sale := env.NewSale(t, 100, 100)
-	v1 := sale.Version
-	sale.Publish(t, func(doc map[string]any) {
-		ga := doc["products"].([]any)[0].(map[string]any)
-		ga["priceSteps"] = []any{map[string]any{"index": 0, "mode": "by_date", "fromAt": nil, "afterSold": nil, "faceMinor": 59900, "allInMinor": 61398, "fanFeeMinor": 1498, "organiserNetMinor": 59900}}
-	})
-	req := sale.Request(checkout.Item{ProductID: salestest.ProductGA, Qty: 1})
-	req.Version = v1
-	o, _, err := env.Svc.CreateOrder(context.Background(), salestest.Buyer(), req, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if o.TotalMinor != 55248 || o.SnapshotVersion != v1 {
-		t.Fatalf("order of v%d priced %d", o.SnapshotVersion, o.TotalMinor)
-	}
-}

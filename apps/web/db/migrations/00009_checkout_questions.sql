@@ -28,3 +28,8 @@ CREATE POLICY organiser_isolation ON control.checkout_questions
 -- The web app creates and removes questions; the core reads them under the order's organiser scope.
 REVOKE UPDATE ON control.checkout_questions FROM eps_web;
 GRANT SELECT ON control.checkout_questions TO eps_core;
+
+-- The core checks a provider return address against a brand's configured hostnames and a wallet's
+-- currency against the organiser's brands (step 4 review): only these columns, under RLS.
+GRANT SELECT (organiser_id, hostname, brand_id) ON control.brand_hostnames TO eps_core;
+GRANT SELECT (id, organiser_id, currency, name) ON control.brands TO eps_core;

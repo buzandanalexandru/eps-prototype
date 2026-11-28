@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/apperr"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
@@ -38,9 +39,9 @@ var allowedFrom = map[string][]string{
 	Paid:          {Paying, Held, PaymentFailed, Expired, Cancelled}, // the last two only for a late payment that re-took its stock
 	PaymentFailed: {Paying},
 	Expired:       {Held, PaymentFailed},
-	Cancelled:     {Held, PaymentFailed},
+	Cancelled:     {Held, PaymentFailed, Paid, Issued}, // paid and issued: only a defaulted instalment plan
 	Issued:        {Paid},
-	Refunded:      {Paying, PaymentFailed, Expired, Cancelled},
+	Refunded:      {Paying, PaymentFailed, Expired, Cancelled, Paid}, // paid: only when its stock could not be committed (wallet)
 }
 
 // CanMove reports whether the transition table allows from → to.
@@ -101,6 +102,7 @@ type Order struct {
 	OrganiserNetMinor int64            `json:"-"` // the organiser's side, never shown to fans
 	Draws             map[string]int64 `json:"-"`
 	HoldExpiresAt     time.Time        `json:"holdExpiresAt"`
+	HoldBaseExpiresAt time.Time        `json:"-"`
 	HoldRef           string           `json:"-"`
 	PayPlan           string           `json:"payPlan"`
 	Answers           map[string]any   `json:"answers"`
@@ -126,6 +128,8 @@ type Service struct {
 	Links *Links
 	Log   *slog.Logger
 	Now   func() time.Time
+
+	rebuilds singleflight.Group
 }
 
 func (s *Service) now() time.Time {
@@ -162,13 +166,13 @@ func (s *Service) OrganiserOf(ctx context.Context, orderID string) (string, erro
 }
 
 const orderCols = `id::text, organiser_id::text, event_id::text, snapshot_version, buyer_kind, buyer_id, buyer_email, buyer_name, locale, currency, state,
-	total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_ref, pay_plan, answers, details_given, last_error_code, created_at, paid_at`
+	total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, pay_plan, answers, details_given, last_error_code, created_at, paid_at`
 
 func scanOrder(row pgx.Row) (*Order, error) {
 	var o Order
 	var draws, answers []byte
 	err := row.Scan(&o.ID, &o.OrganiserID, &o.EventID, &o.SnapshotVersion, &o.BuyerKind, &o.BuyerID, &o.BuyerEmail, &o.BuyerName, &o.Locale, &o.Currency, &o.State,
-		&o.TotalMinor, &o.FaceMinor, &o.FanFeeMinor, &o.OrganiserNetMinor, &draws, &o.HoldExpiresAt, &o.HoldRef, &o.PayPlan, &answers, &o.DetailsGiven, &o.LastErrorCode, &o.CreatedAt, &o.PaidAt)
+		&o.TotalMinor, &o.FaceMinor, &o.FanFeeMinor, &o.OrganiserNetMinor, &draws, &o.HoldExpiresAt, &o.HoldBaseExpiresAt, &o.HoldRef, &o.PayPlan, &answers, &o.DetailsGiven, &o.LastErrorCode, &o.CreatedAt, &o.PaidAt)
 	if err != nil {
 		return nil, err
 	}

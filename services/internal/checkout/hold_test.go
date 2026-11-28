@@ -82,7 +82,7 @@ func TestCapacityLoweredBelowTaken(t *testing.T) {
 	paid := 0
 	refunded := 0
 	for _, o := range held {
-		out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "test payment", nil)
+		out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "pay-"+o.ID[:8], "test payment", nil)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -16,7 +16,7 @@ import (
 func beginPaying(t *testing.T, env *salestest.Env, org, orderID string) {
 	t.Helper()
 	err := db.WithTx(context.Background(), env.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		_, _, err := env.Svc.BeginPayingTx(context.Background(), tx, orderID)
+		_, _, err := env.Svc.BeginPayingTx(context.Background(), tx, orderID, "full")
 		return err
 	})
 	if err != nil {
@@ -31,7 +31,7 @@ func TestAllowedPathToIssued(t *testing.T) {
 	sale := env.NewSale(t, 100, 100)
 	o := sale.Hold(t, salestest.Buyer(), checkout.Item{ProductID: salestest.ProductGA, Qty: 1})
 	beginPaying(t, env, sale.Org, o.ID)
-	if out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "provider confirmed", nil); err != nil || !out.Paid {
+	if out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "a1", "provider confirmed", nil); err != nil || !out.Paid {
 		t.Fatalf("complete: %+v %v", out, err)
 	}
 	if err := env.Svc.Issue(ctx, sale.Org, o.ID); err != nil {
@@ -92,7 +92,7 @@ func TestRacingTransitions(t *testing.T) {
 		go func() { defer wg.Done(); _, _ = env.Svc.Expire(ctx, sale.Org, o.ID) }()
 		go func() {
 			defer wg.Done()
-			if _, err := env.Svc.Complete(ctx, sale.Org, o.ID, "late success", nil); err != nil {
+			if _, err := env.Svc.Complete(ctx, sale.Org, o.ID, "a1", "late success", nil); err != nil {
 				t.Log("complete:", err)
 			}
 		}()

@@ -19,6 +19,8 @@ import (
 // Offer is the instalment plan a buyer can choose for an order (D-10): a deposit now and the
 // monthly payments that still fit before the event, capped per buyer from today.
 type Offer struct {
+	// Timezone is the event's: due dates are calendar dates there.
+	Timezone     string            `json:"timezone,omitempty"`
 	DepositMinor int64             `json:"depositMinor"`
 	Payments     []pricing.Payment `json:"payments"`
 	TotalMinor   int64             `json:"totalMinor"`
@@ -62,16 +64,24 @@ func OfferFor(snap *snapshot.Snapshot, o *Order, now time.Time) *Offer {
 	if err != nil {
 		return nil
 	}
-	tz := snap.Timezone
+	tz := snap.Event.Timezone
 	if tz == "" {
-		tz = snap.Event.Timezone
+		tz = snap.Timezone
+	}
+	if tz == "" {
+		tz = pricing.DefaultTimeZone
 	}
 	sch, _, err := pricing.InstalmentSchedule(pricing.ScheduleInput{AllInMinor: o.TotalMinor, DepositMinor: deposit, MonthlyCount: count, DayOfMonth: day,
 		From: now, EventStartsAt: starts, TimeZone: tz, CapToFit: true})
-	if err != nil {
-		return nil
+	if err != nil || sch.DepositMinor <= 0 {
+		return nil // a plan needs a deposit and parts above zero (review L3)
 	}
-	return &Offer{DepositMinor: sch.DepositMinor, Payments: sch.Payments, TotalMinor: sch.TotalMinor}
+	for _, p := range sch.Payments {
+		if p.AmountMinor <= 0 {
+			return nil
+		}
+	}
+	return &Offer{Timezone: tz, DepositMinor: sch.DepositMinor, Payments: sch.Payments, TotalMinor: sch.TotalMinor}
 }
 
 // Part is one scheduled payment of a plan.
@@ -94,6 +104,7 @@ type Plan struct {
 	TotalMinor      int64   `json:"totalMinor"`
 	SavedMethodID   *string `json:"-"`
 	ClockOffsetDays int     `json:"clockOffsetDays"`
+	Timezone        string  `json:"-"`
 	Parts           []Part  `json:"parts"`
 }
 
@@ -107,8 +118,12 @@ func CreatePlanTx(ctx context.Context, tx pgx.Tx, o *Order, offer *Offer) (strin
 	if _, err := tx.Exec(ctx, `delete from sales.instalment_plans where order_id = $1 and state = 'pending'`, o.ID); err != nil {
 		return "", err
 	}
-	err := tx.QueryRow(ctx, `insert into sales.instalment_plans (organiser_id, order_id, state, deposit_minor, total_minor) values ($1, $2, 'pending', $3, $4) returning id::text`,
-		o.OrganiserID, o.ID, offer.DepositMinor, offer.TotalMinor).Scan(&id)
+	tz := offer.Timezone
+	if tz == "" {
+		tz = pricing.DefaultTimeZone
+	}
+	err := tx.QueryRow(ctx, `insert into sales.instalment_plans (organiser_id, order_id, state, deposit_minor, total_minor, timezone) values ($1, $2, 'pending', $3, $4, $5) returning id::text`,
+		o.OrganiserID, o.ID, offer.DepositMinor, offer.TotalMinor, tz).Scan(&id)
 	if err != nil {
 		return "", err
 	}
@@ -124,7 +139,8 @@ func CreatePlanTx(ctx context.Context, tx pgx.Tx, o *Order, offer *Offer) (strin
 	return id, nil
 }
 
-// ActivatePlanTx makes a pending plan active with the card the provider saved for it.
+// ActivatePlanTx makes a pending plan active with the card the provider saved for it. Callers
+// activate only when the succeeding attempt is the deposit attempt (review D-b).
 func ActivatePlanTx(ctx context.Context, tx pgx.Tx, orderID, savedMethodID string) error {
 	var sm *string
 	if savedMethodID != "" {
@@ -147,9 +163,9 @@ func (s *Service) PlanOf(ctx context.Context, org, orderID string) (*Plan, error
 
 func planTx(ctx context.Context, tx pgx.Tx, where string, arg any) (*Plan, error) {
 	var p Plan
-	err := tx.QueryRow(ctx, `select id::text, organiser_id::text, order_id::text, state, deposit_minor, total_minor, saved_method_id::text, clock_offset_days
+	err := tx.QueryRow(ctx, `select id::text, organiser_id::text, order_id::text, state, deposit_minor, total_minor, saved_method_id::text, clock_offset_days, timezone
 		from sales.instalment_plans where `+where+` order by created_at desc limit 1`, arg).
-		Scan(&p.ID, &p.OrganiserID, &p.OrderID, &p.State, &p.DepositMinor, &p.TotalMinor, &p.SavedMethodID, &p.ClockOffsetDays)
+		Scan(&p.ID, &p.OrganiserID, &p.OrderID, &p.State, &p.DepositMinor, &p.TotalMinor, &p.SavedMethodID, &p.ClockOffsetDays, &p.Timezone)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -182,12 +198,11 @@ func (s *Service) PlanByID(ctx context.Context, org, planID string) (*Plan, erro
 	return p, err
 }
 
-// Today is the local date the instalment clock reads (Europe/Bucharest).
-func (s *Service) Today() string { return pricing.LocalDate(s.now(), pricing.DefaultTimeZone) }
+// Now is the instalment clock (the service's).
+func (s *Service) Clock() time.Time { return s.now() }
 
 // SimulateNextDue moves a plan's clock so its next scheduled part is due today (demo action).
 func (s *Service) SimulateNextDue(ctx context.Context, org, orderID string) (*Plan, error) {
-	today, _ := time.Parse(time.DateOnly, s.Today())
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		p, err := planTx(ctx, tx, "order_id = $1", orderID)
 		if err != nil {
@@ -196,6 +211,7 @@ func (s *Service) SimulateNextDue(ctx context.Context, org, orderID string) (*Pl
 		if p == nil || p.State != "active" {
 			return apperr.New(http.StatusConflict, apperr.OrderState, "This order has no active instalment plan.", false)
 		}
+		today, _ := time.Parse(time.DateOnly, pricing.LocalDate(s.now(), p.Timezone))
 		for _, pt := range p.Parts {
 			if pt.State != "scheduled" {
 				continue
@@ -237,7 +253,7 @@ func (r *InstalmentRunner) RunOnce(ctx context.Context) (int, error) {
 	}
 	var list []due
 	err := db.WithTx(ctx, r.Svc.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, "select organiser_id::text, plan_id::text, n from sales.due_instalment_parts($1::date, 200)", r.Svc.Today())
+		rows, err := tx.Query(ctx, "select organiser_id::text, plan_id::text, n from sales.due_instalment_parts($1, 200)", r.Svc.now())
 		if err != nil {
 			return err
 		}
@@ -286,8 +302,8 @@ func (r *InstalmentRunner) Run(ctx context.Context, interval time.Duration) {
 }
 
 // PartResultTx records the outcome of a part's charge: paid, or overdue with a 7-day grace period
-// (on the plan's clock). A plan whose parts are all paid is completed.
-func PartResultTx(ctx context.Context, tx pgx.Tx, org, planID string, n int, ok bool, today string) error {
+// (on the plan's clock, in the event's time zone). A plan whose parts are all paid is completed.
+func PartResultTx(ctx context.Context, tx pgx.Tx, org, planID string, n int, ok bool, now time.Time) error {
 	if ok {
 		if _, err := tx.Exec(ctx, `update sales.instalment_parts set state = 'paid', paid_at = now(), grace_until = null where plan_id = $1 and n = $2`, planID, n); err != nil {
 			return err
@@ -298,8 +314,8 @@ func PartResultTx(ctx context.Context, tx pgx.Tx, org, planID string, n int, ok 
 		}
 	} else {
 		if _, err := tx.Exec(ctx, `update sales.instalment_parts p set state = 'overdue',
-			grace_until = coalesce(p.grace_until, ($3::date + l.clock_offset_days + $4::int))
-			from sales.instalment_plans l where l.id = p.plan_id and p.plan_id = $1 and p.n = $2`, planID, n, today, GraceDays); err != nil {
+			grace_until = coalesce(p.grace_until, (($3::timestamptz AT TIME ZONE l.timezone)::date + l.clock_offset_days + $4::int))
+			from sales.instalment_plans l where l.id = p.plan_id and p.plan_id = $1 and p.n = $2`, planID, n, now, GraceDays); err != nil {
 			return err
 		}
 	}
@@ -309,4 +325,78 @@ func PartResultTx(ctx context.Context, tx pgx.Tx, org, planID string, n int, ok 
 	}
 	_, err := outbox.Write(ctx, tx, outbox.Event{Topic: outbox.TopicOrders, Type: typ, OrganiserID: org, Payload: map[string]any{"planId": planID, "part": n}})
 	return err
+}
+
+// DefaultRunner ends plans whose overdue part was not paid within its grace (review D-c): the
+// order is cancelled and its stock released, the plan is defaulted and its remaining parts
+// cancelled. What was paid (deposit and paid parts) is kept, as the organiser's terms say; the
+// prototype refunds nothing (recorded in design D-16).
+type DefaultRunner struct {
+	Svc *Service
+	Log *slog.Logger
+}
+
+// RunOnce defaults every plan past its grace and returns how many.
+func (r *DefaultRunner) RunOnce(ctx context.Context) (int, error) {
+	type ref struct{ org, plan string }
+	var list []ref
+	err := db.WithTx(ctx, r.Svc.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, "select organiser_id::text, plan_id::text from sales.defaulted_plans($1, 200)", r.Svc.now())
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var x ref
+			if err := rows.Scan(&x.org, &x.plan); err != nil {
+				return err
+			}
+			list = append(list, x)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, x := range list {
+		if err := r.Svc.DefaultPlan(ctx, x.org, x.plan); err != nil {
+			if r.Log != nil {
+				r.Log.Warn("plan default failed", "plan", x.plan, "error", err.Error())
+			}
+			continue
+		}
+		n++
+	}
+	return n, nil
+}
+
+// DefaultPlan defaults one plan: plan defaulted, open parts cancelled, order cancelled, stock back.
+func (s *Service) DefaultPlan(ctx context.Context, org, planID string) error {
+	var o *Order
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		p, err := planTx(ctx, tx, "id = $1", planID)
+		if err != nil || p == nil || p.State != "active" {
+			return err
+		}
+		if o, err = LoadTx(ctx, tx, p.OrderID, true); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `update sales.instalment_plans set state = 'defaulted' where id = $1`, planID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `update sales.instalment_parts set state = 'cancelled' where plan_id = $1 and state in ('scheduled', 'overdue', 'charging')`, planID); err != nil {
+			return err
+		}
+		_, moved, err := Transition(ctx, tx, o.ID, Cancelled, "instalment plan defaulted after its grace period", "")
+		if err != nil || !moved {
+			o = nil
+			return err
+		}
+		return emit(ctx, tx, o, "order.cancelled", map[string]any{"reason": "instalment_default", "planId": planID})
+	})
+	if err != nil || o == nil {
+		return err
+	}
+	return s.Inv.Unsell(ctx, org, o.EventID, o.HoldRef)
 }

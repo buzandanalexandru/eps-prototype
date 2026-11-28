@@ -3,6 +3,7 @@ package checkout
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -29,12 +30,32 @@ type Question struct {
 // MaxQuestions is how many questions and consents a checkout asks (D9).
 const MaxQuestions = 5
 
-// Questions are the questions of the order's snapshot version, in slot order.
+// Questions are the live version's questions (review D-a), in slot order; the order's own
+// version when the event went off sale.
 func (s *Service) Questions(ctx context.Context, o *Order) ([]Question, error) {
-	snap, err := s.Snaps.LoadVersion(ctx, o.EventID, o.SnapshotVersion)
+	snap, err := s.Snaps.Load(ctx, o.EventID)
+	if errors.Is(err, snapshot.ErrNotFound) {
+		snap, err = s.Snaps.LoadVersion(ctx, o.EventID, o.SnapshotVersion)
+	}
 	if err != nil {
 		return nil, err
 	}
+	return s.QuestionsOf(ctx, snap, o.OrganiserID)
+}
+
+// QuestionsOf reads a snapshot's questions.
+func (s *Service) QuestionsOf(ctx context.Context, snap *snapshot.Snapshot, org string) ([]Question, error) {
+	var out []Question
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		var err error
+		out, err = QuestionsTx(ctx, tx, snap)
+		return err
+	})
+	return out, err
+}
+
+// QuestionsTx reads a snapshot's questions inside a transaction of its organiser.
+func QuestionsTx(ctx context.Context, tx pgx.Tx, snap *snapshot.Snapshot) ([]Question, error) {
 	type slotted struct{ id, slot string }
 	var ids []slotted
 	for _, id := range snap.Rules.CheckoutQuestions.AfterContact {
@@ -47,7 +68,7 @@ func (s *Service) Questions(ctx context.Context, o *Order) ([]Question, error) {
 		return []Question{}, nil
 	}
 	byID := map[string]Question{}
-	err = db.WithTx(ctx, s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
+	err := func() error {
 		list := make([]string, len(ids))
 		for i, x := range ids {
 			list[i] = x.id
@@ -68,7 +89,7 @@ func (s *Service) Questions(ctx context.Context, o *Order) ([]Question, error) {
 			byID[q.ID] = q
 		}
 		return rows.Err()
-	})
+	}()
 	if err != nil {
 		return nil, err
 	}

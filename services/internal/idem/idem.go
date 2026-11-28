@@ -74,6 +74,16 @@ func Begin(ctx context.Context, pool *pgxpool.Pool, org, scope, key, hash string
 			return ErrMismatch
 		}
 		if status == nil {
+			// A request that never finished (its process died) stops blocking after a minute
+			// (review M3): the key is taken over by this request.
+			tag, err := tx.Exec(ctx, `update sales.idempotency_keys set created_at = now() where organiser_id = $1 and scope = $2 and key = $3
+				and status is null and created_at < now() - interval '60 seconds'`, org, scope, key)
+			if err != nil {
+				return err
+			}
+			if tag.RowsAffected() == 1 {
+				return nil
+			}
 			return ErrInProgress
 		}
 		out = &Stored{Status: *status, Response: resp}
@@ -96,7 +106,8 @@ func Finish(ctx context.Context, pool *pgxpool.Pool, org, scope, key string, sta
 
 // Abort forgets a key whose request failed in a way worth retrying.
 func Abort(ctx context.Context, pool *pgxpool.Pool, org, scope, key string) {
-	_ = db.WithTx(context.WithoutCancel(ctx), pool, db.RoleCore, org, func(tx pgx.Tx) error {
+	ctx = context.WithoutCancel(ctx)
+	_ = db.WithTx(ctx, pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		_, err := tx.Exec(ctx, `delete from sales.idempotency_keys where organiser_id = $1 and scope = $2 and key = $3 and status is null`, org, scope, key)
 		return err
 	})

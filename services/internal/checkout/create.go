@@ -209,7 +209,8 @@ func (s *Service) CreateOrder(ctx context.Context, b Buyer, req CreateRequest, i
 		switch {
 		case err == nil:
 			_ = idem.Finish(ctx, s.Pool, org, scope, idemKey, http.StatusCreated, stored{OrderID: o.ID})
-		case errors.As(err, &p) && !p.Retryable:
+		case errors.As(err, &p) && !p.Retryable && p.Code != apperr.HoldSoldOut:
+			// Sold out is not kept under the key (review M3): stock may come back.
 			_ = idem.Finish(ctx, s.Pool, org, scope, idemKey, p.Status, stored{Problem: p})
 		default:
 			idem.Abort(ctx, s.Pool, org, scope, idemKey)
@@ -240,17 +241,9 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 	if req.Version < 1 || req.Version > live.Version {
 		return nil, false, invalid("unknown snapshot version")
 	}
+	// Prices come only from the live snapshot (review D-a): a page of an earlier version is told
+	// the prices changed, with the live version and its total, and never priced from it.
 	priced := live
-	if req.Version != live.Version {
-		var err error
-		priced, err = s.Snaps.LoadVersion(ctx, req.EventID, req.Version)
-		if errors.Is(err, snapshot.ErrNotFound) {
-			return nil, false, invalid("unknown snapshot version")
-		}
-		if err != nil {
-			return nil, false, err
-		}
-	}
 	if len(req.Items) == 0 || len(req.Items) > 50 {
 		return nil, false, invalid("an order has 1 to 50 lines")
 	}
@@ -356,12 +349,17 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 				With("max", *live.Rules.MaxPerAccount).With("have", have)
 		}
 	}
+	if req.Version != live.Version {
+		return nil, false, apperr.New(http.StatusUnprocessableEntity, apperr.PricesChanged, "Prices changed, please review.", true).
+			With("version", live.Version).With("totalMinor", total)
+	}
 	id := uuid.NewString()
 	deadline := now.Add(time.Duration(HoldMinutes(live.Rules)) * time.Minute).Truncate(time.Millisecond)
 	caps := Capacities(live)
 	if err := s.reserve(ctx, Hold{OrganiserID: org, EventID: req.EventID, ID: id, Draws: draws, Deadline: deadline}, caps); err != nil {
 		var short *ErrShort
 		if errors.As(err, &short) {
+			soldOuts.Inc()
 			name := productDrawing(live, order2products(lines), short.Instance)
 			return nil, false, apperr.New(http.StatusConflict, apperr.HoldSoldOut, "Not enough tickets left.", false).With("instanceId", short.Instance).With("productId", name)
 		}
@@ -377,8 +375,8 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 	err = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		dj, _ := json.Marshal(draws)
 		if _, err := tx.Exec(ctx, `insert into sales.orders (id, organiser_id, event_id, snapshot_version, buyer_kind, buyer_id, buyer_email, locale, currency, state,
-			total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_ref, created_at)
-			values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, 'held', $10, $11, $12, $13, $14, $15, $1::text, $16)`,
+			total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, created_at)
+			values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, 'held', $10, $11, $12, $13, $14, $15, $15, $1::text, $16)`,
 			id, org, req.EventID, req.Version, b.Kind, b.ID, o.BuyerEmail, locale, live.Currency, total, face, fanFee, net, dj, deadline, now); err != nil {
 			return err
 		}
@@ -465,8 +463,27 @@ func (s *Service) reserve(ctx context.Context, h Hold, caps map[string]int64) er
 	return err
 }
 
-// Rebuild loads an event's counters and live holds into the inventory from the orders.
+// Rebuild loads an event's counters and live holds into the inventory from the orders. One core
+// at a time per event (review D-j): the others wait for its result.
 func (s *Service) Rebuild(ctx context.Context, org, eventID string) error {
+	_, err, _ := s.rebuilds.Do(org+"/"+eventID, func() (any, error) {
+		for i := 0; i < 50; i++ {
+			got, unlock, err := s.Inv.Lock(ctx, org, eventID, 10*time.Second)
+			if err != nil {
+				return nil, err
+			}
+			if got {
+				defer unlock()
+				return nil, s.rebuild(ctx, org, eventID)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		return nil, errors.New("checkout: inventory rebuild is taking too long")
+	})
+	return err
+}
+
+func (s *Service) rebuild(ctx context.Context, org, eventID string) error {
 	used := map[string]int64{}
 	sold := map[string]int64{}
 	var holds []Hold

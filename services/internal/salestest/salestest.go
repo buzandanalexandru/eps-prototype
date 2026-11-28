@@ -43,6 +43,7 @@ type Env struct {
 	Store *snapshot.Store
 	Svc   *checkout.Service
 	Log   *slog.Logger
+	Index checkout.HoldIndex
 }
 
 // Sale is one organiser's published event.
@@ -68,8 +69,9 @@ func Setup(t *testing.T) *Env {
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	store := snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MemTTL: time.Millisecond, RedisTTL: time.Millisecond, MissingTTL: time.Millisecond, MACKey: []byte("test-key")})
-	svc := &checkout.Service{Pool: pool, Inv: &checkout.RedisInventory{Redis: rdb}, Snaps: store, Links: &checkout.Links{Key: []byte("link-key")}, Log: log}
-	return &Env{Pool: pool, Redis: rdb, Store: store, Svc: svc, Log: log}
+	inv := &checkout.RedisInventory{Redis: rdb}
+	svc := &checkout.Service{Pool: pool, Inv: inv, Snaps: store, Links: &checkout.Links{Key: []byte("link-key")}, Log: log}
+	return &Env{Pool: pool, Redis: rdb, Store: store, Svc: svc, Log: log, Index: inv}
 }
 
 func str(s string) *string { return &s }
