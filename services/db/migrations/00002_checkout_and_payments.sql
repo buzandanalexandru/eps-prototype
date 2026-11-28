@@ -29,6 +29,9 @@ CREATE TABLE sales.orders (
     -- Units taken per pool instance ({"<instanceId>": qty}), the hold's draw on stock.
     draws               jsonb       NOT NULL,
     hold_expires_at     timestamptz NOT NULL,
+    -- The inventory hold that carries the order's stock: the order id, or <id>_r<n> after a late
+    -- payment re-took the stock.
+    hold_ref            text        NOT NULL,
     pay_plan            text        NOT NULL DEFAULT 'full' CHECK (pay_plan IN ('full', 'instalments')),
     answers             jsonb       NOT NULL DEFAULT '{}'::jsonb,
     details_given       boolean     NOT NULL DEFAULT false,
