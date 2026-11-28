@@ -52,6 +52,10 @@ func clientKey(ctx context.Context) string {
 		return ""
 	}
 	if c.ClientIP != "" && len(c.ClientIP) <= 64 && !strings.ContainsAny(c.ClientIP, " {}") {
+		if c.Sim {
+			// A simulator's synthetic address never shares a real client's limits (step 6).
+			return "sim-" + strings.ReplaceAll(c.ClientIP, ":", "_")
+		}
 		return "ip-" + strings.ReplaceAll(c.ClientIP, ":", "_")
 	}
 	return "sub-" + strings.ReplaceAll(c.Subject, ":", "_")
@@ -103,6 +107,8 @@ type raw struct {
 	status  int
 	body    any
 	problem bool
+	// retryAfter sets Retry-After (seconds) on a problem (EPS-BUSY: step 6).
+	retryAfter int
 }
 
 func (r raw) write(w http.ResponseWriter) error {
@@ -116,6 +122,9 @@ func (r raw) write(w http.ResponseWriter) error {
 	}
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Cache-Control", "no-store")
+	if r.retryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(r.retryAfter))
+	}
 	w.WriteHeader(r.status)
 	return json.NewEncoder(w).Encode(r.body)
 }
@@ -170,7 +179,11 @@ func problemRaw(ctx context.Context, p *apperr.Problem) raw {
 		d := map[string]any(p.Data)
 		doc.Data = &d
 	}
-	return raw{status: p.Status, body: doc, problem: true}
+	out := raw{status: p.Status, body: doc, problem: true}
+	if n, ok := p.Data["retryAfter"].(int); ok && n > 0 {
+		out.retryAfter = n
+	}
+	return out
 }
 
 func unavailable(ctx context.Context) raw {
@@ -185,7 +198,11 @@ func buyerOf(ctx context.Context) (checkout.Buyer, bool) {
 		return checkout.Buyer{}, false
 	}
 	if c.Kind == auth.KindGuest {
-		return checkout.Buyer{ID: c.Subject, Kind: "guest"}, true
+		b := checkout.Buyer{ID: c.Subject, Kind: "guest"}
+		if c.Sim {
+			b.Sim = &checkout.SimBuyer{Rehearsal: c.Rehearsal, Run: c.Run}
+		}
+		return b, true
 	}
 	return checkout.Buyer{ID: c.Subject, Kind: "account", Email: c.Email}, true
 }

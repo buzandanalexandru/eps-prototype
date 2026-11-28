@@ -18,6 +18,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/botdefence"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/sales"
 )
@@ -35,7 +36,7 @@ type Gate struct {
 	Checkout *checkout.Service
 	// Secret keys the stored cap identity hashes (review sec L4).
 	Secret []byte
-	Now      func() time.Time
+	Now    func() time.Time
 }
 
 var _ checkout.Gate = (*Gate)(nil)
@@ -45,6 +46,17 @@ func (g *Gate) now() time.Time {
 		return g.Now()
 	}
 	return time.Now()
+}
+
+var degradeRefused = metrics.NewCounter("eps_degrade_refused_total", "New holds refused because the sale is in degraded mode.")
+
+// BusyRetrySeconds is the retry time of the busy answer.
+const BusyRetrySeconds = 30
+
+// Busy is the honest answer of degraded mode (503 EPS-BUSY, retry in 30 seconds).
+func Busy() *apperr.Problem {
+	return apperr.New(http.StatusServiceUnavailable, apperr.Busy, "We are very busy. The shop will reopen shortly; your place is kept and tickets are not lost by waiting.", true).
+		With("retryAfter", BusyRetrySeconds)
 }
 
 // PassRequired is the answer that sends the fan to the waiting room (never a block: the waiting
@@ -58,6 +70,10 @@ func PassRequired(saleID, eventID string) *apperr.Problem {
 // (D-6's "checkout with another session's pass", narrowed by review D-d): a person's own second
 // browser, an expired or an ended pass is never scored, and a missing or forged pass names no place.
 func (g *Gate) badPass(ctx context.Context, sale *sales.Sale, err error, sub string) {
+	// Every refused pass counts on the sale's state hash (field "prj": the live dashboard, step 6).
+	if k, e := queue.KeysOf(sale.OrganiserID, sale.EventID, sale.ID); e == nil && g.Redis != nil {
+		_ = g.Redis.HIncrBy(ctx, k.State(), "prj", 1).Err()
+	}
 	var r *queue.Rejected
 	if g.Scorer == nil || !sale.Settings.BotDefence || !errors.As(err, &r) || r.Claims == nil || r.Reason != queue.RejectSession || r.Claims.Sub == sub {
 		return
@@ -101,6 +117,9 @@ func (g *Gate) BeforeHold(ctx context.Context, h checkout.GateHold) (*checkout.G
 		return nil, err
 	}
 	if len(list) == 0 {
+		if h.Buyer.Sim != nil {
+			return nil, checkout.SimRefused()
+		}
 		return nil, nil // no sale moments: step 4's checkout as it was
 	}
 	now := g.now()
@@ -108,6 +127,15 @@ func (g *Gate) BeforeHold(ctx context.Context, h checkout.GateHold) (*checkout.G
 	if !ok {
 		next := sales.Next(list, now)
 		return nil, PassRequired(next.ID, h.EventID).With("opensAt", next.Settings.OpensAt)
+	}
+	// A simulated fan holds only on the rehearsal its token names (step 6, design D-3).
+	if h.Buyer.Sim != nil && (sale.Rehearsal == nil || sale.EventID != h.Buyer.Sim.Rehearsal) {
+		return nil, checkout.SimRefused()
+	}
+	// Degraded mode (D-9): no new holds; held orders keep their timers and can still pay.
+	if sale.Degraded {
+		degradeRefused.Inc()
+		return nil, Busy()
 	}
 	st := sale.Settings
 	c, err := g.Passes.Check(ctx, h.Buyer.Pass, h.Buyer.Session, h.Buyer.ID, h.Org, h.EventID, sale.ID, now, false)

@@ -656,6 +656,145 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organiser/sales/{saleId}/degrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Turn degraded mode on or off (owner or admin)
+         * @description Degraded mode (step 6, E11): new holds are refused with EPS-BUSY (503, Retry-After 30), the
+         *     waiting room admits no one while keeping every place, held orders can still pay, and the
+         *     shop's availability answer says degraded so event pages show the busy message. Takes
+         *     effect within 10 seconds each way.
+         */
+        patch: operations["setSaleDegraded"];
+        trace?: never;
+    };
+    "/v1/organiser/sales/{saleId}/rehearsals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The live rehearsals of a sale moment, with the simulator's limits */
+        get: operations["listRehearsals"];
+        put?: never;
+        /** Copy a sale moment into a rehearsal with its own event id and stock (owner or admin) */
+        post: operations["createRehearsal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/sales/{saleId}/rehearsal/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace a rehearsal with a fresh one (full stock, empty queue); refused during a run */
+        post: operations["resetRehearsal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/sales/{saleId}/simulations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The latest runs on a rehearsal */
+        get: operations["listSimulations"];
+        put?: never;
+        /**
+         * Start a simulator run on a rehearsal (owner or admin)
+         * @description Refused for a sale that is not a rehearsal, with knobs out of range (EPS-SIM-INVALID naming
+         *     the field), and while a run is active for the organiser or the sale (EPS-SIM-ACTIVE naming
+         *     it) or anywhere in the environment (EPS-SIM-BUSY). A rehearsal that already had a run is
+         *     replaced by a fresh one first, so every run starts with full stock and an empty queue.
+         */
+        post: operations["startSimulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/simulations/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One run with its latest report and, once ended, its summary */
+        get: operations["getSimulation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/simulations/{runId}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a run (its traffic ends within 15 seconds) */
+        post: operations["stopSimulation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/live/{saleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The live on-sale frames of a sale as server-sent events (gateway; the sale's organiser only)
+         * @description Opened by the dashboard straight from the browser with an organiser core token in the
+         *     Authorization header (fetch, not EventSource). Sends `retry: 2000`, an `event: history`
+         *     with up to 900 compact points, the latest frame, then one `event: frame` per second with
+         *     `id` = its timestamp, and a comment every 15 seconds.
+         */
+        get: operations["liveStream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -726,6 +865,78 @@ export interface components {
             updatedBy: string;
             history?: components["schemas"]["SaleVersion"][];
             queue?: components["schemas"]["QueueCounts"];
+            degraded?: boolean;
+            /** Format: date-time */
+            degradedAt?: string;
+            rehearsal?: components["schemas"]["RehearsalOf"];
+        };
+        /** @description Set on a rehearsal (step 6): the sale moment and the snapshot version it copies. */
+        RehearsalOf: {
+            /** Format: uuid */
+            sourceEventId: string;
+            /** Format: uuid */
+            sourceSaleId: string;
+            snapshotVersion: number;
+        };
+        RehearsalList: {
+            rehearsals: components["schemas"]["SaleView"][];
+            limits: components["schemas"]["SimulationLimits"];
+        };
+        SimulationLimits: {
+            maxFans: number;
+            maxDurationSeconds: number;
+        };
+        SimulationKnobs: {
+            fans?: number;
+            botShare?: number;
+            prequeueShare?: number;
+            /** @enum {string} */
+            arrival?: "spike" | "flat";
+            opensInSeconds?: number;
+            qtyMix?: {
+                [key: string]: number;
+            };
+            paymentMix?: {
+                [key: string]: number;
+            };
+            abandonRate?: number;
+            declineRate?: number;
+            pollSeconds?: number;
+            providerA?: {
+                /** @enum {string} */
+                mode?: "none" | "outage" | "failure_rate";
+                atSeconds?: number;
+                forSeconds?: number;
+                failureRate?: number;
+            };
+            durationSeconds?: number;
+        };
+        SimulationRun: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            saleId: string;
+            /** Format: uuid */
+            eventId: string;
+            /** @enum {string} */
+            state: "pending" | "starting" | "running" | "finishing" | "done" | "failed" | "stopped";
+            knobs: components["schemas"]["SimulationKnobs"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            opensAt?: string;
+            /** Format: date-time */
+            endedAt?: string;
+            stopRequested?: boolean;
+            /** Format: date-time */
+            outageOnAt?: string;
+            /** Format: date-time */
+            outageOffAt?: string;
+            /** @description The simulator's latest ground truth (counts and latencies only). */
+            report?: Record<string, never>;
+            /** @description The run's summary once it ended. */
+            summary?: Record<string, never>;
+            error?: string;
         };
         SaleList: {
             sales: components["schemas"]["SaleView"][];
@@ -753,6 +964,10 @@ export interface components {
             ahead?: number;
             estimateSeconds?: number;
             paused: boolean;
+            /** @description The organiser switched the sale to degraded mode (no admissions; places kept). */
+            degraded?: boolean;
+            /** @description The sale is a rehearsal with simulated fans (step 6). */
+            rehearsal?: boolean;
             /** @description The signed pass (once admitted), sent as X-EPS-Pass on checkout calls. */
             pass?: string;
             /** @description Unix milliseconds. */
@@ -862,6 +1077,8 @@ export interface components {
             /** Format: date-time */
             generatedAt: string;
             products: components["schemas"]["ProductAvailability"][];
+            /** @description A current sale of the event is in degraded mode (the shop shows the busy message). */
+            degraded?: boolean;
             /**
              * @description Pool instances (an event pool, a day `<poolId>@<date>` or a slot `<poolId>@<date>T<HH:MM>`)
              *     that units were taken from and that are sold out or have few left. Instances not listed
@@ -1124,6 +1341,8 @@ export interface components {
             orders: components["schemas"]["OrderView"][];
         };
         OrderView: {
+            /** @description A rehearsal order (step 6, simulated fans; kept out of reports). */
+            rehearsal?: boolean;
             /** Format: uuid */
             id: string;
             organiserId: string;
@@ -1210,6 +1429,7 @@ export interface components {
         };
     };
     parameters: {
+        RunId: string;
         SaleId: string;
         /** @description The waiting room's signed pass (required on sales with a waiting room). */
         Pass: string;
@@ -2211,6 +2431,225 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QueueStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    setSaleDegraded: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    degraded: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The sale. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listRehearsals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rehearsals. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RehearsalList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createRehearsal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rehearsal. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    resetRehearsal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The fresh rehearsal. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listSimulations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The runs, newest first. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        runs: components["schemas"]["SimulationRun"][];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    startSimulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SimulationKnobs"];
+            };
+        };
+        responses: {
+            /** @description The run (pending). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSimulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    stopSimulation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimulationRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    liveStream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The stream. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             default: components["responses"]["Problem"];

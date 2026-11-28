@@ -185,6 +185,14 @@ export default async function SalesPage({ params, searchParams }: { params: Prom
                   </a>
                   <CopyButton value={link} />
                 </div>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <a href={`/studio/sales/${d.id}/live`} className="font-semibold underline" data-testid="sale-live-link">
+                    {t("liveDashboard")}
+                  </a>
+                  <a href={`/studio/sales/${d.id}/simulator`} className="font-semibold underline" data-testid="sale-simulator-link">
+                    {t("rehearse")}
+                  </a>
+                </div>
                 {admin && (
                   <>
                     <div className="flex flex-wrap gap-2">

@@ -3,6 +3,7 @@ package payments
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -81,16 +82,41 @@ func (b *Breaker) now() time.Time {
 	return time.Now()
 }
 
-func (b *Breaker) stateKey(org, provider string) string {
-	k, _ := redisx.Key(org, "", "pay-breaker", provider)
+// Scope is the breaker's (and the provider merchant's) scope: the organiser, or "<organiser>/<event>"
+// for a rehearsal (step 6, design D-1), so a rehearsed outage never opens the organiser's breaker.
+func Scope(org, rehearsalEvent string) string {
+	if rehearsalEvent == "" {
+		return org
+	}
+	return org + "/" + rehearsalEvent
+}
+
+// MerchantOf is the merchant account a scope pays under at the providers: the organiser id, or
+// "rh-<event>" for a rehearsal (at most 64 characters).
+func MerchantOf(scope string) string {
+	if _, ev, ok := strings.Cut(scope, "/"); ok {
+		return "rh-" + ev
+	}
+	return scope
+}
+
+func splitScope(scope string) (org, event string) {
+	org, event, _ = strings.Cut(scope, "/")
+	return org, event
+}
+
+func (b *Breaker) stateKey(scope, provider string) string {
+	org, ev := splitScope(scope)
+	k, _ := redisx.Key(org, ev, "pay-breaker", provider)
 	return k
 }
 
-func (b *Breaker) bucketKeys(org, provider string) []string {
+func (b *Breaker) bucketKeys(scope, provider string) []string {
 	now := b.now().Unix()
+	org, ev := splitScope(scope)
 	out := make([]string, 0, WindowSeconds)
 	for s := now - WindowSeconds + 1; s <= now; s++ {
-		k, _ := redisx.Key(org, "", "pay-win", provider, strconv.FormatInt(s, 10))
+		k, _ := redisx.Key(org, ev, "pay-win", provider, strconv.FormatInt(s, 10))
 		out = append(out, k)
 	}
 	return out
@@ -251,9 +277,10 @@ func (b *Breaker) Record(ctx context.Context, org, provider string, ok bool) {
 	b.changed(ctx, org, provider, res[0], res[1])
 }
 
-func (b *Breaker) changed(ctx context.Context, org, provider, from, to string) {
+func (b *Breaker) changed(ctx context.Context, scope, provider, from, to string) {
 	countChange(provider, to)
 	if b.OnChange != nil {
+		org, _ := splitScope(scope)
 		b.OnChange(ctx, org, provider, from, to)
 	}
 }

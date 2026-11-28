@@ -103,3 +103,12 @@ const (
 	SaleStale      = "EPS-SALE-STALE"
 	SignInRequired = "EPS-SIGN-IN-REQUIRED"
 )
+
+// Step 6 codes: the simulator, rehearsals and degraded mode.
+const (
+	SimInvalid = "EPS-SIM-INVALID"
+	SimActive  = "EPS-SIM-ACTIVE"
+	SimBusy    = "EPS-SIM-BUSY"
+	SimRefused = "EPS-SIM-REFUSED"
+	Busy       = "EPS-BUSY"
+)

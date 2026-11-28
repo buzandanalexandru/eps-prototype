@@ -30,8 +30,10 @@ func Logger(name string) *slog.Logger {
 	if os.Getenv("LOG_LEVEL") == "debug" {
 		level = slog.LevelDebug
 	}
-	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})).
+	l := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})).
 		With("service", name, "commit", version.Commit)
+	slog.SetDefault(l) // packages without a logger of their own (health) log the same JSON lines
+	return l
 }
 
 // Env returns an environment variable or a default.

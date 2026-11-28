@@ -32,4 +32,9 @@ describe("availability route", () => {
     vi.stubGlobal("fetch", async () => Response.json({ ...body, eventId: "0e000000-0000-4000-8000-000000000001" }));
     expect((await call()).status).toBe(503);
   });
+
+  it("passes degraded mode on to the shop (step 6)", async () => {
+    vi.stubGlobal("fetch", async () => Response.json({ eventId: EVENT, version: 1, generatedAt: "2026-12-05T10:00:00Z", products: [], instances: [], degraded: true }));
+    expect((await (await call()).json()).degraded).toBe(true);
+  });
 });

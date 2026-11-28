@@ -14,3 +14,8 @@ gateway:
 worker:
   replicas: 1
   database: { enabled: true, maxConns: 2 }
+# Step 6: a smaller Prometheus per pull request.
+prometheus:
+  resources:
+    requests: { cpu: 20m, memory: 96Mi }
+    limits: { cpu: 250m, memory: 256Mi }

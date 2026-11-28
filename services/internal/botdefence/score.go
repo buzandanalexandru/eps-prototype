@@ -153,22 +153,33 @@ type Scorer struct {
 	Redis *redis.Client
 }
 
-func (s *Scorer) counted(n int, err error) (int, error) {
+func (s *Scorer) counted(ctx context.Context, key string, n int, err error) (int, error) {
 	if n < 0 {
-		suspects.Inc()
+		s.flagged(ctx, key)
 		n = -n
 	}
 	return n, err
 }
 
+// flagged counts a place that crossed the suspect threshold, in total and on its sale's state
+// hash (field "sus", step 6: the live dashboard's bots flagged per sale).
+func (s *Scorer) flagged(ctx context.Context, key string) {
+	suspects.Inc()
+	if i := strings.Index(key, "}:qf:"); i > 0 {
+		_ = s.Redis.HIncrBy(ctx, key[:i+2]+"qs", "sus", 1).Err()
+	}
+}
+
 // Add records a signal and returns the score.
 func (s *Scorer) Add(ctx context.Context, key string, sig Signal) (int, error) {
-	return s.counted(addScript.Run(ctx, s.Redis, []string{key}, sig.Name, sig.Points, sig.Cap, SuspectAt).Int())
+	n, err := addScript.Run(ctx, s.Redis, []string{key}, sig.Name, sig.Points, sig.Cap, SuspectAt).Int()
+	return s.counted(ctx, key, n, err)
 }
 
 // Raise sets a signal to at least its points (the address signals).
 func (s *Scorer) Raise(ctx context.Context, key string, sig Signal) (int, error) {
-	return s.counted(setScript.Run(ctx, s.Redis, []string{key}, sig.Name, sig.Points, SuspectAt).Int())
+	n, err := setScript.Run(ctx, s.Redis, []string{key}, sig.Name, sig.Points, SuspectAt).Int()
+	return s.counted(ctx, key, n, err)
 }
 
 // Poll records a status poll of a tab at nowMs and returns the score.
@@ -176,7 +187,7 @@ func (s *Scorer) Poll(ctx context.Context, key, tab string, nowMs int64) (int, e
 	before, _ := s.Score(ctx, key)
 	n, err := pollScript.Run(ctx, s.Redis, []string{key}, nowMs, tab).Int()
 	if err == nil && before < SuspectAt && n >= SuspectAt {
-		suspects.Inc()
+		s.flagged(ctx, key)
 	}
 	return n, err
 }

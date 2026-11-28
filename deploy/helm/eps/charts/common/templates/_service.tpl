@@ -41,6 +41,7 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
       divisor: "1"
 - name: CORE_TOKEN_ISSUERS
   value: {{ .ctx.Values.global.tokenIssuers | default (printf "urn:eps:web:%s" .ctx.Values.global.env) | quote }}
+{{- if not .ctx.Values.noRedis }}
 # Redis requires a password (REDIS_PASSWORD, hex) and the core signs its cached copies with
 # SNAPSHOT_CACHE_KEY: both from the runtime secret CI creates once per environment.
 - name: REDIS_PASSWORD
@@ -57,6 +58,7 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
       name: {{ .ctx.Values.global.runtimeSecret }}
       key: SNAPSHOT_CACHE_KEY
       optional: true
+{{- end }}
 - name: CORS_ALLOWED_ORIGINS
   value: {{ .ctx.Values.global.corsAllowedOrigins | quote }}
 - name: EPS_ENV
@@ -85,6 +87,25 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
       name: {{ $.ctx.Values.global.runtimeSecret }}
       key: {{ $k }}
       optional: false
+{{- end }}
+{{- end }}
+{{- with .ctx.Values.simKeys }}
+# Step 6, the simulator's keys from eps-runtime: SIM_TOKEN_PRIVATE_KEY (the simulator only) signs
+# simulated fans' tokens, SIM_TOKEN_PUBLIC_KEY (core, gateway) verifies them on rehearsals only,
+# SIM_CONTROL_TOKEN guards the core's internal simulator API.
+{{- range $k := . }}
+- name: {{ $k }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $.ctx.Values.global.runtimeSecret }}
+      key: {{ $k }}
+      optional: false
+{{- end }}
+{{- end }}
+{{- with .ctx.Values.extraEnv }}
+{{- range $k, $v := . }}
+- name: {{ $k }}
+  value: {{ tpl (toString $v) $.ctx | quote }}
 {{- end }}
 {{- end }}
 {{- with .ctx.Values.queueJoinsPerMinute }}
@@ -165,6 +186,8 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: /metrics
+        # Step 6: the on-sale services are scraped every 2 s, the others every 15 s.
+        eps.dev/scrape-interval: {{ ($v.scrapeInterval | default "15s") | quote }}
         {{- with .ctx.Values.global.rolloutId }}
         # Restarts the pods when CI rewrites the database secret (new branch or new password).
         eps.dev/rollout: {{ . | quote }}
@@ -182,6 +205,11 @@ spec:
               containerPort: 8080
             - name: metrics
               containerPort: 9090
+            {{- with $v.internalPort }}
+            # Step 6: the core's simulator API (in the cluster only; no ingress routes to it).
+            - name: internal
+              containerPort: {{ . }}
+            {{- end }}
           env:
             {{- include "eps.env" . | nindent 12 }}
           # Readiness turns false on SIGTERM; the sleep lets endpoints and the ingress drop the pod
@@ -222,6 +250,11 @@ spec:
     - name: http
       port: 80
       targetPort: http
+    {{- with $v.internalPort }}
+    - name: internal
+      port: {{ . }}
+      targetPort: internal
+    {{- end }}
 {{- if not (and $v.pdb (eq ($v.pdb.enabled | toString) "false")) }}
 ---
 apiVersion: policy/v1

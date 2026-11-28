@@ -26,6 +26,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/live"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/onsale"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/outbox"
@@ -33,6 +34,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/redisx"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/simulation"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wire"
 )
@@ -58,7 +60,7 @@ func main() {
 	rdb := service.Redis(log)
 	checks := []health.Checker{health.Postgres(pool), health.Redis(rdb)}
 	if pool != nil && rdb != nil {
-		snaps := snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
+		snaps := snapshot.NewStore(snapshot.RehearsalSource{Inner: snapshot.DBSource{Pool: pool}, Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
 		svc, _ := wire.Build(pool, rdb, snaps, log)
 		// Loops with their own pools (falling back to the shared one).
 		with := func(name string, def int32) (*wire.Services, *pgxpool.Pool) {
@@ -102,6 +104,19 @@ func main() {
 			go (&onsale.Audit{Redis: rdb, Pool: pool, Log: log}).Run(lctx, 2*time.Second)
 			salesSvc := wire.SalesService(pool, rdb, snaps)
 			go every(lctx, time.Minute, func() { _, _ = salesSvc.RefreshActive(lctx) })
+			// Step 6: the live dashboard's frames (every second, watched sales only) and the clean-up
+			// of ended rehearsals' Redis data (every 30 s).
+			agg := &live.Aggregator{Redis: rdb, Pool: pool, Sales: salesSvc, Snaps: snaps, Inv: inv, Breaker: &payments.Breaker{Redis: rdb}, Log: log}
+			if u := os.Getenv("PROMETHEUS_URL"); u != "" {
+				agg.Prom = &live.Prom{BaseURL: u}
+			}
+			go agg.Run(lctx, nil)
+			cleaner := &simulation.Cleaner{Pool: pool, Redis: rdb, Sales: salesSvc, Log: log}
+			go every(lctx, 30*time.Second, func() {
+				if _, err := cleaner.RunOnce(lctx); err != nil {
+					log.Warn("rehearsal clean-up", "error", err.Error())
+				}
+			})
 		})
 		registerGauges(ctx, pool)
 		// Stub issuer (step 7 replaces it): order.paid → issued.

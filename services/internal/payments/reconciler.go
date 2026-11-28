@@ -120,7 +120,7 @@ func (r *Reconciler) recheck(ctx context.Context, org, id string) (bool, error) 
 	if !ok {
 		return false, nil
 	}
-	ch, err := pv.FindByKey(ctx, a.OrganiserID, a.ProviderKey)
+	ch, err := pv.FindByKey(ctx, a.Merchant(), a.ProviderKey)
 	if err != nil {
 		return false, nil // no such charge (as expected) or no answer
 	}
@@ -144,18 +144,18 @@ func (r *Reconciler) one(ctx context.Context, org, id string) (bool, error) {
 	}
 	// Past its limit while the provider's breaker is open: no call, the attempt is failed (a
 	// late success still pays or is refunded).
-	if s.now().After(a.DeadlineAt) && s.Breaker.Read(ctx, org, a.Provider).State == Open {
+	if s.now().After(a.DeadlineAt) && s.Breaker.Read(ctx, a.Scope(), a.Provider).State == Open {
 		err := s.expireAttempt(ctx, a, "timeout")
 		return err == nil, err
 	}
-	if s.Breaker.Read(ctx, org, a.Provider).State == Open {
+	if s.Breaker.Read(ctx, a.Scope(), a.Provider).State == Open {
 		return false, nil // asked again once the provider is back
 	}
 	var ch Charge
 	if a.ChargeID != nil {
 		ch, err = pv.Get(ctx, *a.ChargeID)
 	} else {
-		ch, err = pv.FindByKey(ctx, a.OrganiserID, a.ProviderKey)
+		ch, err = pv.FindByKey(ctx, a.Merchant(), a.ProviderKey)
 	}
 	switch {
 	case err == nil:

@@ -7,7 +7,7 @@ import { priceAt, statusByTime, type Availability, type InstanceAvailability } f
 
 export type Load = { state: "loading" } | { state: "ok"; data: AvailabilityState } | { state: "stale" } | { state: "failed" };
 
-export type Answer = { version?: unknown; products?: unknown; instances?: unknown };
+export type Answer = { version?: unknown; products?: unknown; instances?: unknown; degraded?: unknown };
 
 /** The island's state for an answer body (null: no usable answer). */
 export function readAnswer(body: Answer | null, version: number): Load {
@@ -15,7 +15,14 @@ export function readAnswer(body: Answer | null, version: number): Load {
   if (body.version !== version) return { state: "stale" };
   const products = body.products as (Availability & { productId: string })[];
   const instances = (Array.isArray(body.instances) ? body.instances : []) as InstanceAvailability[];
-  return { state: "ok", data: { products: Object.fromEntries(products.map((p) => [p.productId, p])), instances: Object.fromEntries(instances.map((i) => [i.instanceId, i])) } };
+  return {
+    state: "ok",
+    data: {
+      products: Object.fromEntries(products.map((p) => [p.productId, p])),
+      instances: Object.fromEntries(instances.map((i) => [i.instanceId, i])),
+      ...(body.degraded === true ? { degraded: true } : {}),
+    },
+  };
 }
 
 /** The availability the picker uses: the core's answer, the page's own facts when versions differ, or none. */

@@ -233,7 +233,10 @@ type Outcome struct {
 // payment is still completed.
 func (s *Service) capsFor(ctx context.Context, eventID string, draws map[string]int64) (map[string]int64, error) {
 	out := map[string]int64{}
-	live, err := s.Snaps.Load(ctx, eventID)
+	live, err := preloaded(ctx, eventID)
+	if live == nil && err == nil {
+		live, err = s.Snaps.Load(ctx, eventID)
+	}
 	if err != nil && !errors.Is(err, snapshot.ErrNotFound) {
 		return nil, err
 	}
@@ -249,6 +252,36 @@ func (s *Service) capsFor(ctx context.Context, eventID string, draws map[string]
 		}
 	}
 	return out, nil
+}
+
+type liveKey struct{}
+
+type liveSnap struct {
+	event string
+	snap  *snapshot.Snapshot
+	err   error
+}
+
+// preloaded is the live snapshot loaded before a transaction began (Complete), so the load never
+// needs a second connection while the transaction holds one (step 6: a pool-exhaustion deadlock
+// under a simulated crowd, when many paid transactions waited on one snapshot load).
+func preloaded(ctx context.Context, eventID string) (*snapshot.Snapshot, error) {
+	if l, ok := ctx.Value(liveKey{}).(*liveSnap); ok && l.event == eventID {
+		if l.snap == nil && l.err == nil {
+			return nil, snapshot.ErrNotFound
+		}
+		return l.snap, l.err
+	}
+	return nil, nil
+}
+
+// eventOfOrder reads an order's event (a short transaction of its own).
+func (s *Service) eventOfOrder(ctx context.Context, org, orderID string) (string, error) {
+	var ev string
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, "select event_id::text from sales.orders where id = $1", orderID).Scan(&ev)
+	})
+	return ev, err
 }
 
 // takeStock commits an order's stock: its own hold, or (when that hold ended) the same stock taken
@@ -306,6 +339,14 @@ func shortRef(ref string) string {
 func (s *Service) Complete(ctx context.Context, org, orderID, ref, reason string, also func(tx pgx.Tx, o *Order) error) (Outcome, error) {
 	var out Outcome
 	releaseRef, releaseEvent := "", ""
+	// The live snapshot is loaded before the transaction (see preloaded).
+	if ev, err := s.eventOfOrder(ctx, org, orderID); err == nil {
+		snap, lerr := s.Snaps.Load(ctx, ev)
+		if errors.Is(lerr, snapshot.ErrNotFound) {
+			snap, lerr = nil, nil
+		}
+		ctx = context.WithValue(ctx, liveKey{}, &liveSnap{event: ev, snap: snap, err: lerr})
+	}
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		o, err := LoadTx(ctx, tx, orderID, true)
 		if err != nil {
@@ -387,6 +428,9 @@ func (s *Service) Complete(ctx context.Context, org, orderID, ref, reason string
 		_, _ = s.Inv.Release(ctx, org, releaseEvent, releaseRef)
 	}
 	out.Order, err = s.GetIn(ctx, org, orderID)
+	if err == nil && out.Paid && !out.AlreadyPaid && out.Order != nil {
+		CountPaid(out.Order)
+	}
 	if err == nil && s.Ended != nil && out.Order != nil && out.Order.SaleID != nil {
 		switch {
 		case out.Paid && !out.AlreadyPaid:
@@ -432,7 +476,23 @@ func (s *Service) MarkPaidTx(ctx context.Context, tx pgx.Tx, orderID, reason str
 		return nil, err
 	}
 	o.State = Paid
+	CountPaid(o)
 	return o, nil
+}
+
+var (
+	ordersPaid  = metrics.NewCounter("eps_orders_paid_total", "Orders paid.")
+	ticketsSold = metrics.NewCounter("eps_tickets_sold_total", "Tickets in paid orders.")
+)
+
+// CountPaid counts a paid order and its tickets (step 6, D-5).
+func CountPaid(o *Order) {
+	ordersPaid.Inc()
+	n := 0
+	for _, l := range o.Lines {
+		n += l.Qty
+	}
+	ticketsSold.Add(int64(n))
 }
 
 // CommitStock commits a paid order's stock (after MarkPaidTx committed). The stock may be taken

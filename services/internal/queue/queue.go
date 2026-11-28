@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -246,6 +247,8 @@ type JoinInput struct {
 	UA      string
 	IP      string
 	Tab     string // the page's tab id (polling is scored per tab)
+	// SimRehearsal is the rehearsal event a simulator token names ("" for every other token).
+	SimRehearsal string
 }
 
 // Status is what the waiting room shows.
@@ -259,10 +262,13 @@ type Status struct {
 	Ahead           *int64    `json:"ahead,omitempty"`
 	EstimateSeconds *int64    `json:"estimateSeconds,omitempty"`
 	Paused          bool      `json:"paused"`
-	Pass            string    `json:"pass,omitempty"`
-	PassExpiresAt   *int64    `json:"passExpiresAt,omitempty"`
-	NextPollMs      int64     `json:"nextPollMs"`
-	ServerTime      time.Time `json:"serverTime"`
+	// Step 6: degraded mode (no admissions, places kept) and a rehearsal with simulated fans.
+	Degraded      bool      `json:"degraded,omitempty"`
+	Rehearsal     bool      `json:"rehearsal,omitempty"`
+	Pass          string    `json:"pass,omitempty"`
+	PassExpiresAt *int64    `json:"passExpiresAt,omitempty"`
+	NextPollMs    int64     `json:"nextPollMs"`
+	ServerTime    time.Time `json:"serverTime"`
 }
 
 // ErrRateLimited means too many joins from one address (429 with Retry-After).
@@ -332,7 +338,12 @@ func (e *Engine) Join(ctx context.Context, saleID string, in JoinInput) (*Status
 		return nil, err
 	}
 	now := e.now()
-	base := &Status{SaleID: sale.ID, EventID: sale.EventID, OpensAt: st.OpensAt, PrequeueOpensAt: st.PrequeueOpensAt(), ServerTime: now}
+	// A simulated fan joins only the rehearsal its token names (step 6, design D-3).
+	if in.SimRehearsal != "" && (sale.Rehearsal == nil || sale.EventID != in.SimRehearsal) {
+		return nil, apperr.New(http.StatusForbidden, apperr.SimRefused, "Simulated fans may only join their own rehearsal.", false)
+	}
+	base := &Status{SaleID: sale.ID, EventID: sale.EventID, OpensAt: st.OpensAt, PrequeueOpensAt: st.PrequeueOpensAt(), ServerTime: now,
+		Degraded: sale.Degraded, Rehearsal: sale.Rehearsal != nil}
 	if st.PhaseAt(now) == sales.Before {
 		base.State = PlaceBefore
 		// Come back at the opening of the pre-queue, spread over a few seconds (review D-i).
@@ -556,7 +567,8 @@ return {'ok', ARGV[2]}
 // status works out a place's state at now.
 func (e *Engine) status(ctx context.Context, sale *sales.Sale, k Keys, qid, sub, sid, tab string, now time.Time) (*Status, error) {
 	st := sale.Settings
-	out := &Status{SaleID: sale.ID, EventID: sale.EventID, OpensAt: st.OpensAt, PrequeueOpensAt: st.PrequeueOpensAt(), ServerTime: now, Paused: st.Paused}
+	out := &Status{SaleID: sale.ID, EventID: sale.EventID, OpensAt: st.OpensAt, PrequeueOpensAt: st.PrequeueOpensAt(), ServerTime: now, Paused: st.Paused,
+		Degraded: sale.Degraded, Rehearsal: sale.Rehearsal != nil}
 	statusHits.Inc()
 	pipe := e.Redis.Pipeline()
 	fan := pipe.HMGet(ctx, k.Fan(qid), "adm", "pf", "pos", "score")
@@ -650,7 +662,7 @@ func (e *Engine) status(ctx context.Context, sale *sales.Sale, k Keys, qid, sub,
 		}
 		out.State = PlaceWaiting
 		out.Ahead = &ahead
-		if !st.Paused {
+		if !st.Paused && !sale.Degraded {
 			// Estimate from the admissions actually made in the last minute (review D-j).
 			if r := measuredRate(rate.Val(), now); r > 0 {
 				est := int64(float64(ahead) / r)

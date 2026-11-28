@@ -63,6 +63,14 @@ type Buyer struct {
 	// X-EPS-Session), required on sales with a waiting room.
 	Pass    string
 	Session string
+	// Sim is set for a simulated fan (step 6): its token names one rehearsal event and its run.
+	Sim *SimBuyer
+}
+
+// SimBuyer is what a simulator token allows.
+type SimBuyer struct {
+	Rehearsal string // the rehearsal event id
+	Run       string
 }
 
 // Line is one priced order line.
@@ -116,15 +124,18 @@ type Order struct {
 	PaidAt            *time.Time       `json:"paidAt,omitempty"`
 	// Step 5: the sale moment, the queue place whose pass held it, the cap identity (a hash) and
 	// the sale's cap per person, and whether a one-time code is asked before payment.
-	SaleID       *string        `json:"saleId,omitempty"`
-	PassQID      *string        `json:"-"`
-	CapIdentity  *string        `json:"-"`
-	CapPerPerson *int           `json:"-"`
-	CapTickets   *int           `json:"-"`
-	OTPRequired  bool           `json:"otpRequired"`
-	OTPVerified  *time.Time     `json:"otpVerifiedAt,omitempty"`
-	Lines        []Line         `json:"lines"`
-	History      []HistoryEntry `json:"history"`
+	SaleID       *string    `json:"saleId,omitempty"`
+	PassQID      *string    `json:"-"`
+	CapIdentity  *string    `json:"-"`
+	CapPerPerson *int       `json:"-"`
+	CapTickets   *int       `json:"-"`
+	OTPRequired  bool       `json:"otpRequired"`
+	OTPVerified  *time.Time `json:"otpVerifiedAt,omitempty"`
+	// Step 6: a rehearsal order (kept out of reports) and the simulator run that made it.
+	Rehearsal bool           `json:"rehearsal"`
+	SimRunID  *string        `json:"-"`
+	Lines     []Line         `json:"lines"`
+	History   []HistoryEntry `json:"history"`
 }
 
 // SnapshotSource is the published sale terms (snapshot.Store).
@@ -186,14 +197,14 @@ func (s *Service) OrganiserOf(ctx context.Context, orderID string) (string, erro
 
 const orderCols = `id::text, organiser_id::text, event_id::text, snapshot_version, buyer_kind, buyer_id, buyer_email, buyer_name, locale, currency, state,
 	total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, pay_plan, answers, details_given, last_error_code, created_at, paid_at,
-	sale_id::text, pass_qid, cap_identity, cap_per_person, cap_tickets, otp_required, otp_verified_at`
+	sale_id::text, pass_qid, cap_identity, cap_per_person, cap_tickets, otp_required, otp_verified_at, rehearsal, sim_run_id::text`
 
 func scanOrder(row pgx.Row) (*Order, error) {
 	var o Order
 	var draws, answers []byte
 	err := row.Scan(&o.ID, &o.OrganiserID, &o.EventID, &o.SnapshotVersion, &o.BuyerKind, &o.BuyerID, &o.BuyerEmail, &o.BuyerName, &o.Locale, &o.Currency, &o.State,
 		&o.TotalMinor, &o.FaceMinor, &o.FanFeeMinor, &o.OrganiserNetMinor, &draws, &o.HoldExpiresAt, &o.HoldBaseExpiresAt, &o.HoldRef, &o.PayPlan, &answers, &o.DetailsGiven, &o.LastErrorCode, &o.CreatedAt, &o.PaidAt,
-		&o.SaleID, &o.PassQID, &o.CapIdentity, &o.CapPerPerson, &o.CapTickets, &o.OTPRequired, &o.OTPVerified)
+		&o.SaleID, &o.PassQID, &o.CapIdentity, &o.CapPerPerson, &o.CapTickets, &o.OTPRequired, &o.OTPVerified, &o.Rehearsal, &o.SimRunID)
 	if err != nil {
 		return nil, err
 	}

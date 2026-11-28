@@ -72,6 +72,9 @@ type Availability struct {
 	GeneratedAt time.Time              `json:"generatedAt"`
 	Products    []ProductAvailability  `json:"products"`
 	Instances   []InstanceAvailability `json:"instances"`
+	// Degraded: a current sale of the event is in degraded mode (step 6): the shop shows the busy
+	// message in place of its buy controls.
+	Degraded bool `json:"degraded,omitempty"`
 }
 
 // fewLeft is the rule for showing a remaining count: at most 50, or at most 5% of capacity.
@@ -202,6 +205,8 @@ type AvailabilityService struct {
 	Redis *redis.Client
 	TTL   time.Duration
 	Now   func() time.Time
+	// Degraded reports whether a current sale of the event is degraded (nil: never).
+	Degraded func(ctx context.Context, org, eventID string) bool
 }
 
 // AvailabilityTTL is how long an answer is reused (and the Cache-Control max-age).
@@ -251,6 +256,9 @@ func (a *AvailabilityService) Get(ctx context.Context, eventID string) (Availabi
 		}
 	}
 	out := ComputeHeld(snap, used, held, sold, now())
+	if a.Degraded != nil {
+		out.Degraded = a.Degraded(ctx, snap.OrganiserID, eventID)
+	}
 	if a.Redis != nil && kerr == nil {
 		if b, err := json.Marshal(out); err == nil {
 			_ = a.Redis.Set(ctx, key, a.Store.Sign("availability", key, string(b))+"."+string(b), ttl).Err()

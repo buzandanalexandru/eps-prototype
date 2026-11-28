@@ -128,6 +128,10 @@ func (s *Server) GetAvailability(ctx context.Context, req api.GetAvailabilityReq
 			PriceStepIndex: p.PriceStepIndex, AllInMinor: p.AllInMinor, Remaining: p.Remaining,
 		})
 	}
+	if a.Degraded {
+		d := true
+		out.Degraded = &d
+	}
 	cc := "public, max-age=2"
 	return api.GetAvailability200JSONResponse{Body: out, Headers: api.GetAvailability200ResponseHeaders{CacheControl: &cc}}, nil
 }
