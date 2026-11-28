@@ -1,8 +1,8 @@
 // The waiting room's browser side (step 5, design D-2 and D-4): the session secret a pass is bound
-// Used by the waiting room page and the checkout island.
 // to (kept in localStorage, so every tab of this browser shares one place), the queue token and
 // the pass per sale and event, and the proof of work the join sends: SHA-256 of
 // "<sale>:<sha256(session) hex>:<nonce>" with 16 leading zero bits (about 50 ms on a phone).
+// Used by the waiting room page and the checkout island.
 
 const SESSION_KEY = "eps-session";
 
