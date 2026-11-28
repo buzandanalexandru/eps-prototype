@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/coreapi"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
@@ -59,7 +60,7 @@ func Build(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, log *sl
 		_, _ = rand.Read(b)
 		linkKey = b
 	}
-	co := &checkout.Service{Pool: pool, Inv: &checkout.RedisInventory{Redis: rdb}, Snaps: snaps, Links: &checkout.Links{Key: linkKey}, Log: log}
+	co := &checkout.Service{Pool: pool, Inv: &inventory.Sharded{Redis: rdb}, Snaps: snaps, Links: &checkout.Links{Key: linkKey}, Log: log}
 	client := &http.Client{Timeout: 10 * time.Second, Transport: payments.SharedTransport}
 	apiKey := os.Getenv("PSP_API_KEY")
 	urls := map[string]string{"a": env("PSP_A_URL", "http://localhost:8091"), "b": env("PSP_B_URL", "http://localhost:8092")}

@@ -19,6 +19,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/redisx"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/testdb"
@@ -69,7 +70,7 @@ func Setup(t *testing.T) *Env {
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	store := snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MemTTL: time.Millisecond, RedisTTL: time.Millisecond, MissingTTL: time.Millisecond, MACKey: []byte("test-key")})
-	inv := &checkout.RedisInventory{Redis: rdb}
+	inv := &inventory.Sharded{Redis: rdb}
 	svc := &checkout.Service{Pool: pool, Inv: inv, Snaps: store, Links: &checkout.Links{Key: []byte("link-key")}, Log: log}
 	return &Env{Pool: pool, Redis: rdb, Store: store, Svc: svc, Log: log, Index: inv}
 }

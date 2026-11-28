@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
@@ -65,7 +66,7 @@ func main() {
 		inst, _ := with("INSTALMENTS", 1)
 		_, relayPool := with("RELAY", 1)
 		host, _ := os.Hostname()
-		inv := &checkout.RedisInventory{Redis: rdb}
+		inv := &inventory.Sharded{Redis: rdb}
 		go (&checkout.Sweeper{Svc: sweep.Checkout, Log: log, Index: inv}).Run(ctx, time.Second)
 		go (&payments.Reconciler{Svc: recon.Payments, Log: log}).Run(ctx, 5*time.Second)
 		go (&checkout.InstalmentRunner{Svc: inst.Checkout, Charger: inst.Payments, Log: log}).Run(ctx, 5*time.Second)
