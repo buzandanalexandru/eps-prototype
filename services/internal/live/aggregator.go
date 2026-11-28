@@ -341,7 +341,8 @@ func (a *Aggregator) Build(ctx context.Context, saleID string, now time.Time, sy
 		st.totals = st.totals[1:]
 	}
 	// The suggestion counts consecutive frames over the limits; it never flips the switch.
-	if over(sys) {
+	// While degraded the count starts again: the load it measures is the one the switch limits.
+	if over(sys) && !f.Degraded {
 		st.high++
 	} else {
 		st.high = 0

@@ -23,7 +23,8 @@ type Prom struct {
 const (
 	qGatewayRPS = `sum(rate(eps_http_requests_total{service="gateway"}[30s]))`
 	qCoreP95    = `histogram_quantile(0.95, sum by (le) (rate(eps_http_request_seconds_bucket{service="core"}[30s])))`
-	qCoreErrors = `sum(rate(eps_http_requests_total{service="core",code="5xx"}[30s])) / clamp_min(sum(rate(eps_http_requests_total{service="core"}[30s])), 1e-9)`
+	// Deliberate refusals (degraded mode's EPS-BUSY) are not errors (review D-d).
+	qCoreErrors = `clamp_min(sum(rate(eps_http_requests_total{service="core",code="5xx"}[30s])) - sum(rate(eps_degrade_refused_total[30s]) or vector(0)), 0) / clamp_min(sum(rate(eps_http_requests_total{service="core"}[30s])), 1e-9)`
 	qPods       = `count by (app) (up{app=~"gateway|core|worker"} == 1)`
 )
 

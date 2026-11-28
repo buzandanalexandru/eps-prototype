@@ -126,3 +126,39 @@ func TestDegradedQueueKeepsPlaces(t *testing.T) {
 		t.Fatalf("positions while degraded: %v", ahead)
 	}
 }
+
+// Review D-d: degraded mode stops new admissions, not the fans already admitted: a pass that ran
+// out inside a degraded window gets that window's length again, and no more.
+func TestPassesOutliveADegradedWindow(t *testing.T) {
+	s := simtest.Start(t)
+	ev, sale := s.RealSale(t, 100, 20)
+	ctx := context.Background()
+	fan := simtest.NewBrowser(s.FanToken(t, "192.0.2.41"))
+	fan.Admit(t, s, sale.ID)
+	if _, err := s.Sales.SetDegraded(ctx, ev.Org, sale.ID, "test", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Sales.SetDegraded(ctx, ev.Org, sale.ID, "test", false); err != nil {
+		t.Fatal(err)
+	}
+	// A 4-minute window from 5 to 9 minutes after admission, before the pass (10 minutes) ran out:
+	// at 12 minutes it still holds (10 + 4 = 14), at 15 it does not.
+	now := time.Now()
+	if _, err := s.Pool.Exec(ctx, `update sales.sales set degraded_window_start = $2, degraded_window_end = $3 where id = $1`,
+		sale.ID, now.Add(5*time.Minute), now.Add(9*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s.Sales.Refresh(ctx, ev.Org, ev.Event)
+	time.Sleep(1100 * time.Millisecond)
+	s.Gate.Now = func() time.Time { return now.Add(12 * time.Minute) }
+	defer func() { s.Gate.Now = nil }()
+	if code, out := fan.Hold(t, s, ev.Event, ev.Version, 1); code != http.StatusCreated {
+		t.Fatalf("a pass within its degraded grace: %d %v", code, out)
+	}
+	fan2 := simtest.NewBrowser(s.FanToken(t, "192.0.2.42"))
+	fan2.Admit(t, s, sale.ID)
+	s.Gate.Now = func() time.Time { return now.Add(15 * time.Minute) }
+	if code, out := fan2.Hold(t, s, ev.Event, ev.Version, 1); code != http.StatusForbidden || out["code"] != apperr.PassRequired {
+		t.Fatalf("a pass past its grace: %d %v", code, out)
+	}
+}

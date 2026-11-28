@@ -55,8 +55,21 @@ const BusyRetrySeconds = 30
 
 // Busy is the honest answer of degraded mode (503 EPS-BUSY, retry in 30 seconds).
 func Busy() *apperr.Problem {
-	return apperr.New(http.StatusServiceUnavailable, apperr.Busy, "We are very busy. The shop will reopen shortly; your place is kept and tickets are not lost by waiting.", true).
+	return apperr.New(http.StatusServiceUnavailable, apperr.Busy, "We are very busy. Your place in the queue is kept; buying resumes when the load eases.", true).
 		With("retryAfter", BusyRetrySeconds)
+}
+
+// graceInDegraded reports an expired pass whose time ran inside the sale's last degraded window and
+// which, given that window's length again, is still within its life (review D-d: degraded mode
+// stops new admissions, never the fans already admitted).
+func graceInDegraded(err error, sale *sales.Sale, now time.Time) bool {
+	var r *queue.Rejected
+	if err == nil || !errors.As(err, &r) || r.Reason != queue.RejectExpired || r.Claims == nil || sale.DegradedFrom == nil || sale.DegradedTo == nil {
+		return false
+	}
+	exp := time.Unix(r.Claims.Exp, 0)
+	from, to := *sale.DegradedFrom, *sale.DegradedTo
+	return exp.After(from) && now.Before(exp.Add(to.Sub(from)))
 }
 
 // PassRequired is the answer that sends the fan to the waiting room (never a block: the waiting
@@ -139,6 +152,10 @@ func (g *Gate) BeforeHold(ctx context.Context, h checkout.GateHold) (*checkout.G
 	}
 	st := sale.Settings
 	c, err := g.Passes.Check(ctx, h.Buyer.Pass, h.Buyer.Session, h.Buyer.ID, h.Org, h.EventID, sale.ID, now, false)
+	if graceInDegraded(err, sale, now) {
+		// The pass ran out while degraded mode held everyone back: it gets that long again (D-d).
+		c, err = g.Passes.Check(ctx, h.Buyer.Pass, h.Buyer.Session, h.Buyer.ID, h.Org, h.EventID, sale.ID, now, true)
+	}
 	if err != nil {
 		var r *queue.Rejected
 		if errors.As(err, &r) {

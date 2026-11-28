@@ -199,7 +199,11 @@ func (s *Service) SetDegraded(ctx context.Context, org, saleID, by string, on bo
 		return nil, err
 	}
 	err = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `update sales.sales set degraded = $2, degraded_at = clock_timestamp(), degraded_by = $3 where id = $1 and deleted_at is null`, saleID, on, by); err != nil {
+		// Turning it off records the window that ended (passes that ran out inside it get its length).
+		if _, err := tx.Exec(ctx, `update sales.sales set degraded = $2, degraded_at = clock_timestamp(), degraded_by = $3,
+			degraded_window_start = case when degraded and not $2 then degraded_at else degraded_window_start end,
+			degraded_window_end = case when degraded and not $2 then clock_timestamp() else degraded_window_end end
+			where id = $1 and deleted_at is null`, saleID, on, by); err != nil {
 			return err
 		}
 		typ := "sale.degraded_off"

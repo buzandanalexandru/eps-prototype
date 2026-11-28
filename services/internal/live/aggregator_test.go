@@ -185,6 +185,25 @@ func TestDegradeSuggestion(t *testing.T) {
 	if f, _ := s.Agg.Build(ctx, sale.ID, now.Add(31*time.Second), &live.System{CoreP95Ms: &fast}); f.Suggest {
 		t.Fatal("suggestion should reset when latency is back")
 	}
+	// While degraded the count starts again (review D-d): after switching off it takes 30 slow
+	// frames once more.
+	for i := 32; i < 62; i++ {
+		_, _ = s.Agg.Build(ctx, sale.ID, now.Add(time.Duration(i)*time.Second), sys)
+	}
+	if _, err := s.Sales.SetDegraded(ctx, sale.OrganiserID, sale.ID, "test", true); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if f, _ := s.Agg.Build(ctx, sale.ID, now.Add(62*time.Second), sys); f.Suggest || !f.Degraded {
+		t.Fatalf("degraded frame: suggest %v degraded %v", f.Suggest, f.Degraded)
+	}
+	if _, err := s.Sales.SetDegraded(ctx, sale.OrganiserID, sale.ID, "test", false); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if f, _ := s.Agg.Build(ctx, sale.ID, now.Add(63*time.Second), sys); f.Suggest {
+		t.Fatal("the count must start again after degraded mode")
+	}
 }
 
 // Rates are the change of the totals over the last minute.

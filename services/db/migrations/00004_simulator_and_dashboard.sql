@@ -19,6 +19,9 @@ CREATE INDEX sales_rehearsal_idx ON sales.sales (organiser_id, rehearsal_of_even
 ALTER TABLE sales.sales ADD COLUMN degraded boolean NOT NULL DEFAULT false;
 ALTER TABLE sales.sales ADD COLUMN degraded_at timestamptz;
 ALTER TABLE sales.sales ADD COLUMN degraded_by text;
+-- The last degraded window (review D-d): a pass that ran out inside it gets that long again.
+ALTER TABLE sales.sales ADD COLUMN degraded_window_start timestamptz;
+ALTER TABLE sales.sales ADD COLUMN degraded_window_end timestamptz;
 
 -- Rehearsal orders and the run that made them (from the simulator's token); kept out of reports.
 ALTER TABLE sales.orders ADD COLUMN rehearsal boolean NOT NULL DEFAULT false;
