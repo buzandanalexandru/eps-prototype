@@ -32,6 +32,7 @@ export async function StudioHeader({ studio }: { studio: Studio }) {
     ["/studio/venues", t("nav.venues")],
     ["/studio/team", t("nav.team")],
     ["/studio/fees", t("nav.fees")],
+    ["/studio/payments", t("nav.payments")],
   ] as const;
   return (
     <div className="mb-6 space-y-3 border-b pb-3">

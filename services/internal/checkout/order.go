@@ -71,7 +71,7 @@ type Line struct {
 	UnitAllInMinor        int64         `json:"unitAllInMinor"`
 	UnitFaceMinor         int64         `json:"unitFaceMinor"`
 	UnitFanFeeMinor       int64         `json:"unitFanFeeMinor"`
-	UnitOrganiserNetMinor int64         `json:"unitOrganiserNetMinor"`
+	UnitOrganiserNetMinor int64         `json:"-"`
 }
 
 // HistoryEntry is one state change.
@@ -98,8 +98,8 @@ type Order struct {
 	TotalMinor        int64            `json:"totalMinor"`
 	FaceMinor         int64            `json:"faceMinor"`
 	FanFeeMinor       int64            `json:"fanFeeMinor"`
-	OrganiserNetMinor int64            `json:"organiserNetMinor"`
-	Draws             map[string]int64 `json:"draws"`
+	OrganiserNetMinor int64            `json:"-"` // the organiser's side, never shown to fans
+	Draws             map[string]int64 `json:"-"`
 	HoldExpiresAt     time.Time        `json:"holdExpiresAt"`
 	HoldRef           string           `json:"-"`
 	PayPlan           string           `json:"payPlan"`
