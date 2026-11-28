@@ -13,6 +13,13 @@ const nextConfig: NextConfig = {
     },
   },
   poweredByHeader: false,
+  experimental: {
+    // Shop pages are static (cached until publish), so they cannot carry a per-request nonce:
+    // their scripts are pinned by Subresource Integrity instead (design D3.6).
+    sri: { algorithm: "sha256" },
+    // Two root layouts (platform and shop): one 404 for addresses that match no route.
+    globalNotFound: true,
+  },
 };
 
 export default withNextIntl(nextConfig);

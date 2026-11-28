@@ -1,9 +1,9 @@
 "use client";
-// The published shop's ticket grid (design D3.6 to D3.8): the cards render on the server with the
-// snapshot's all-in prices, then this island asks the core for live availability (through our own
-// origin, short-cached) and runs the ticket picker. Without an answer the page still shows every
-// price, with buying paused. The page HTML never holds live stock, so it can be cached.
-import { useEffect, useMemo, useState } from "react";
+// The published shop's ticket grid (design D3.6 to D3.8). The cached page carries the snapshot's
+// facts; this island works out the present (price step, sales status, instalments), asks the core
+// for live availability through our own origin and runs the ticket picker. Without an answer the
+// page still shows every price, with buying paused. The page HTML never holds live stock.
+import { useMemo, useState } from "react";
 import type { ShopEvent, ShopProduct } from "@/lib/storefront/catalogue";
 import { fill, type ShopLabels } from "@/lib/storefront/labels";
 import {
@@ -11,69 +11,66 @@ import {
   blockedReason,
   canContinue,
   checkoutHref,
+  choiceSoldOut,
   instanceFor,
   maxFor,
   missingRequirements,
   removeOne,
   statusOf,
   total,
-  unitPrice,
-  type Availability,
+  type AvailabilityState,
   type Line,
   type PickerCtx,
 } from "@/lib/storefront/picker";
+import { fromPriceAt, instalmentsAt, priceAt, statusByTime } from "@/lib/storefront/sale-view";
 import type { Locale } from "@/lib/storefront/schema";
-import { AllInPrice, Money, PriceNotes, shopDate } from "./all-in-price";
+import { AllInPrice, Money, PriceNotes, money, shopDate } from "./all-in-price";
+import { useAvailability, useNow, type Load } from "./availability";
 
-type Props = { event: ShopEvent; labels: ShopLabels; locale: Locale; base: string; showPerks: boolean; now: string };
+type Props = { event: ShopEvent; labels: ShopLabels; locale: Locale; base: string; showPerks: boolean };
 
 const card = "rounded-[var(--eps-radius)] border border-[color-mix(in_srgb,var(--eps-on-surface)_15%,transparent)] bg-[color-mix(in_srgb,var(--eps-on-surface)_4%,var(--eps-surface))]";
 const btn = "inline-flex min-h-11 items-center justify-center rounded-[var(--eps-radius)] px-5 py-2 text-sm font-semibold";
 const stepBtn = "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--eps-radius)] border-2 border-[var(--eps-primary)] text-lg font-bold text-[var(--eps-primary)] disabled:cursor-not-allowed disabled:opacity-40";
+const select = "min-h-11 rounded-[var(--eps-radius)] border border-[color-mix(in_srgb,var(--eps-on-surface)_30%,transparent)] bg-[var(--eps-surface)] px-2";
 
 const tx = (v: { ro: string; en: string }, l: Locale) => (v[l] || v[l === "ro" ? "en" : "ro"] || "").trim();
 
-type Load = { state: "loading" } | { state: "ok"; data: Record<string, Availability> } | { state: "failed" };
-
-function useAvailability(eventId: string): Load {
-  const [load, setLoad] = useState<Load>({ state: "loading" });
-  useEffect(() => {
-    let stop = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const run = async () => {
-      let next: Load = { state: "failed" };
-      try {
-        const res = await fetch(`/api/public/events/${eventId}/availability`, { headers: { accept: "application/json" } });
-        if (res.ok) {
-          const body = (await res.json()) as { products?: (Availability & { productId: string })[] };
-          if (Array.isArray(body.products)) next = { state: "ok", data: Object.fromEntries(body.products.map((p) => [p.productId, p])) };
-        }
-      } catch {
-        // network failure: buying stays paused, the page keeps its prices
-      }
-      if (stop) return;
-      setLoad(next);
-      // Refresh while the page is open; retry sooner after a failure.
-      timer = setTimeout(run, next.state === "ok" ? 30_000 : 10_000);
-    };
-    void run();
-    return () => {
-      stop = true;
-      if (timer) clearTimeout(timer);
-    };
-  }, [eventId]);
-  return load;
+/** The availability the picker uses: the core's answer, the page's own facts when the core answered for another version, or none. */
+function stateOf(load: Load, ev: ShopEvent, now: Date): AvailabilityState | null {
+  if (load.state === "ok") return load.data;
+  if (load.state !== "stale") return null;
+  return {
+    products: Object.fromEntries(ev.products.map((p) => [p.id, { status: statusByTime(p.sale, now), allInMinor: priceAt(p, now).allInMinor, priceStepIndex: priceAt(p, now).stepIndex }])),
+    instances: {},
+  };
 }
 
-export function ShopTickets({ event, labels, locale, base, showPerks, now }: Props) {
-  const load = useAvailability(event.id);
+/** The event's "from" price, worked out in the browser (it depends on the time and on availability). */
+export function FromPrice({ event, labels, locale }: { event: ShopEvent; labels: ShopLabels; locale: Locale }) {
+  const now = useNow(event.sale?.renderedAt ?? event.startsAt);
+  const load = useAvailability(event.id, event.sale?.version ?? 0);
+  const from = fromPriceAt(event, now, stateOf(load, event, now)?.products);
+  if (!from) return null;
+  return (
+    <span data-testid="from-price">
+      {from.upcoming
+        ? fill(labels.upcomingFrom, { price: money(from.allInMinor, event.currency, locale), date: shopDate(from.upcoming, locale, event.timezone) })
+        : fill(labels.fromPrice, { price: money(from.allInMinor, event.currency, locale) })}
+    </span>
+  );
+}
+
+export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
+  const now = useNow(event.sale?.renderedAt ?? event.startsAt);
+  const load = useAvailability(event.id, event.sale?.version ?? 0);
   const [lines, setLines] = useState<Line[]>([]);
   const [choice, setChoice] = useState<Record<string, { day: string; time: string }>>({});
   const [limitHit, setLimitHit] = useState<string | null>(null);
-  const ctx: PickerCtx = useMemo(() => ({ event, availability: load.state === "ok" ? load.data : null, now: new Date(now) }), [event, load, now]);
+  const ctx: PickerCtx = useMemo(() => ({ event, availability: stateOf(load, event, now), now }), [event, load, now]);
   const sum = total(lines, ctx);
   const missing = missingRequirements(lines, event);
-  const paused = load.state !== "ok";
+  const paused = !ctx.availability;
 
   const instanceOf = (p: ShopProduct) => {
     const c = choice[p.id];
@@ -91,15 +88,15 @@ export function ShopTickets({ event, labels, locale, base, showPerks, now }: Pro
         {event.products.map((p) => {
           const sale = p.sale!;
           const status = statusOf(p, ctx);
-          const a = ctx.availability?.[p.id];
+          const a = ctx.availability?.products[p.id];
+          const price = priceAt(p, now, a);
           const inst = instanceOf(p);
           const qty = lines.filter((l) => l.productId === p.id && l.instance === inst).reduce((n, l) => n + l.qty, 0);
           const allQty = lines.filter((l) => l.productId === p.id).reduce((n, l) => n + l.qty, 0);
           const blocked = blockedReason(lines, p, inst, ctx);
           const opens = a?.opensAt ?? sale.salesFrom;
           const name = tx(p.name, locale);
-          const priceNow = unitPrice(p, ctx);
-          const step = a ? sale.steps[a.priceStepIndex] : undefined;
+          const chosenDay = choice[p.id]?.day ?? (sale.days.length === 1 ? sale.days[0] : "");
           return (
             <li key={p.id} className={`${card} flex min-w-0 flex-col gap-3 p-5`} data-testid="ticket-card" data-product={p.id} data-status={status}>
               <h3 className="font-[family-name:var(--eps-font-heading)] text-xl font-semibold break-words">{name}</h3>
@@ -111,8 +108,16 @@ export function ShopTickets({ event, labels, locale, base, showPerks, now }: Pro
                 </ul>
               )}
               <div className="mt-auto space-y-2">
-                <AllInPrice allInMinor={priceNow} fanFeeMinor={step?.fanFeeMinor ?? p.fanFeeMinor} currency={event.currency} locale={locale} labels={labels} showFee />
-                <PriceNotes sale={sale} currency={event.currency} locale={locale} labels={labels} timeZone={event.timezone} />
+                <AllInPrice allInMinor={price.allInMinor} fanFeeMinor={price.fanFeeMinor} currency={event.currency} locale={locale} labels={labels} showFee />
+                <PriceNotes
+                  sale={sale}
+                  stepIndex={price.stepIndex}
+                  instalments={instalmentsAt(sale, price.allInMinor, now, event.startsAt, event.timezone)}
+                  currency={event.currency}
+                  locale={locale}
+                  labels={labels}
+                  timeZone={event.timezone}
+                />
                 <p className="text-sm font-semibold" data-testid="ticket-status">
                   {status === "not_yet" && opens
                     ? fill(labels.onSaleFrom, { date: shopDate(opens, locale, event.timezone) })
@@ -129,17 +134,21 @@ export function ShopTickets({ event, labels, locale, base, showPerks, now }: Pro
                 <label className="flex flex-col gap-1 text-sm">
                   <span>{labels.chooseDay}</span>
                   <select
-                    className="min-h-11 rounded-[var(--eps-radius)] border border-[color-mix(in_srgb,var(--eps-on-surface)_30%,transparent)] bg-[var(--eps-surface)] px-2"
+                    className={select}
                     value={choice[p.id]?.day ?? ""}
                     onChange={(e) => setChoice({ ...choice, [p.id]: { day: e.target.value, time: choice[p.id]?.time ?? "" } })}
                     data-testid="choose-day"
                   >
                     <option value="">{labels.choose}</option>
-                    {sale.days.map((d) => (
-                      <option key={d} value={d}>
-                        {shopDate(`${d}T12:00:00Z`, locale, "UTC")}
-                      </option>
-                    ))}
+                    {sale.days.map((d) => {
+                      const full = sale.choice === "day" && choiceSoldOut(p, d, ctx);
+                      return (
+                        <option key={d} value={d} disabled={full} data-sold-out={full || undefined}>
+                          {shopDate(`${d}T12:00:00Z`, locale, "UTC")}
+                          {full ? ` · ${labels.soldOut}` : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </label>
               )}
@@ -147,17 +156,22 @@ export function ShopTickets({ event, labels, locale, base, showPerks, now }: Pro
                 <label className="flex flex-col gap-1 text-sm">
                   <span>{labels.chooseTime}</span>
                   <select
-                    className="min-h-11 rounded-[var(--eps-radius)] border border-[color-mix(in_srgb,var(--eps-on-surface)_30%,transparent)] bg-[var(--eps-surface)] px-2"
+                    className={select}
                     value={choice[p.id]?.time ?? ""}
                     onChange={(e) => setChoice({ ...choice, [p.id]: { day: choice[p.id]?.day ?? "", time: e.target.value } })}
                     data-testid="choose-time"
                   >
                     <option value="">{labels.choose}</option>
-                    {sale.slots.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
+                    {sale.slots.map((t) => {
+                      const q = chosenDay ? instanceFor(p, chosenDay, t) : null;
+                      const full = !!q && choiceSoldOut(p, q, ctx);
+                      return (
+                        <option key={t} value={t} disabled={full} data-sold-out={full || undefined}>
+                          {t}
+                          {full ? ` · ${labels.soldOut}` : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </label>
               )}
@@ -185,14 +199,9 @@ export function ShopTickets({ event, labels, locale, base, showPerks, now }: Pro
                   +
                 </button>
               </div>
-              {limitHit === p.id && allQty >= maxFor(p, ctx) && (
+              {limitHit === p.id && (
                 <p role="status" className="text-sm font-semibold" data-testid="limit">
-                  {fill(labels.limitReached, { n: maxFor(p, ctx) })}
-                </p>
-              )}
-              {limitHit === p.id && allQty < maxFor(p, ctx) && event.sale?.maxPerAccount && (
-                <p role="status" className="text-sm font-semibold" data-testid="limit">
-                  {fill(labels.limitReached, { n: event.sale.maxPerAccount })}
+                  {fill(labels.limitReached, { n: blocked === "account_limit" && event.sale?.maxPerAccount ? event.sale.maxPerAccount : Math.min(maxFor(p, ctx), Math.max(allQty, 0) || maxFor(p, ctx)) })}
                 </p>
               )}
             </li>
@@ -210,7 +219,7 @@ export function ShopTickets({ event, labels, locale, base, showPerks, now }: Pro
               {fill(labels.needsTicket, { product: tx(m.name, locale), event: tx(event.name, locale) })}
             </p>
           ))}
-          {paused && load.state === "loading" && <p className="text-xs text-[var(--eps-muted)]">{labels.checking}</p>}
+          {load.state === "loading" && <p className="text-xs text-[var(--eps-muted)]">{labels.checking}</p>}
         </div>
         {canContinue(lines, ctx) ? (
           <a href={checkoutHref(base, event, lines)} className={`${btn} bg-[var(--eps-primary)] text-[var(--eps-on-primary)]`} data-testid="continue">

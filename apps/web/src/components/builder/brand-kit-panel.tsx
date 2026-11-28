@@ -10,7 +10,7 @@ import { acceptSuggestion, checkContrast, paletteFromPixels } from "@/lib/storef
 import { FONT_IDS, FONTS } from "@/lib/storefront/fonts";
 import { MODES, PALETTE_KEYS, RADII, type Palette, type StorefrontDocument, type Tokens } from "@/lib/storefront/schema";
 import { ImagePicker } from "./image-picker";
-import { deleteAssetAction, listAssetsAction, type AssetView } from "@/app/studio/builder/actions";
+import { deleteAssetAction, listAssetsAction, type AssetView } from "@/app/(platform)/studio/builder/actions";
 
 type SetDoc = (fn: (d: StorefrontDocument) => StorefrontDocument) => void;
 

@@ -2,7 +2,7 @@
 // day and slot choices, the running all-in total and the hand-off URL (design D3.8).
 import { describe, expect, it } from "vitest";
 import { shopEventFromSnapshot } from "@/lib/storefront/shop-view";
-import { addOne, blockedReason, canContinue, checkoutHref, instanceFor, missingRequirements, parseItems, removeOne, total, type Availability, type Line, type PickerCtx } from "@/lib/storefront/picker";
+import { addOne, blockedReason, choiceSoldOut, normaliseSelection, canContinue, checkoutHref, instanceFor, missingRequirements, parseItems, removeOne, total, type Availability, type AvailabilityState, type Line, type PickerCtx } from "@/lib/storefront/picker";
 import type { SaleSnapshot } from "@/lib/snapshot/types";
 import { galaxiaSnapshot, GA, CAMPING } from "./snapshot-fixture";
 
@@ -10,8 +10,8 @@ const NOW = new Date("2026-12-05T10:00:00Z");
 const onSale = (snap: SaleSnapshot): Record<string, Availability> =>
   Object.fromEntries(snap.products.map((p) => [p.productId, { status: "on_sale" as const, allInMinor: p.priceSteps[0].allInMinor, priceStepIndex: 0 }]));
 
-function ctxOf(snap: SaleSnapshot, availability: Record<string, Availability> | null = onSale(snap)): PickerCtx {
-  return { event: shopEventFromSnapshot(snap, null, NOW), availability, now: NOW };
+function ctxOf(snap: SaleSnapshot, products: Record<string, Availability> | null = onSale(snap), instances: AvailabilityState["instances"] = {}): PickerCtx {
+  return { event: shopEventFromSnapshot(snap, null, NOW), availability: products ? { products, instances } : null, now: NOW };
 }
 
 describe("ticket picker", () => {
@@ -96,5 +96,49 @@ describe("ticket picker", () => {
     expect(parseItems("not-a-uuid:1")).toBeNull();
     expect(parseItems(`${GA}:0`)).toBeNull();
     expect(parseItems(`${GA}:1:2027-07-16T25:00`)).toBeNull();
+  });
+
+  it("products sharing a pool share what is left in it", () => {
+    const snap = galaxiaSnapshot();
+    snap.rules.maxPerAccount = null;
+    const plus = { ...snap.products[0], productId: "0d000000-0000-4000-8000-0000000000b1", name: { ro: "GA+", en: "GA+" } };
+    snap.products.splice(1, 0, plus);
+    const arena = snap.pools[0].poolId;
+    const ctx = ctxOf(snap, onSale(snap), { [arena]: { instanceId: arena, status: "on_sale", remaining: 3 } });
+    const [ga, gaPlus] = [GA, plus.productId].map((id) => ctx.event.products.find((p) => p.id === id)!);
+    let lines: Line[] = [];
+    lines = addOne(addOne(lines, ga, null, ctx), ga, null, ctx);
+    lines = addOne(addOne(lines, gaPlus, null, ctx), gaPlus, null, ctx);
+    expect(lines.reduce((n, l) => n + l.qty, 0)).toBe(3);
+    expect(blockedReason(lines, gaPlus, null, ctx)).toBe("limit");
+  });
+
+  it("a sold-out day or slot cannot be chosen; the others can", () => {
+    const snap = galaxiaSnapshot();
+    const day = { ...snap.pools[0], poolId: "0c000000-0000-4000-8000-0000000000d1", scope: "day" as const, instances: [{ instanceId: "x", date: "2027-07-15", slotStart: null, capacity: 8000 }] };
+    snap.pools.push(day);
+    snap.products.push({ ...snap.products[0], productId: "0d000000-0000-4000-8000-0000000000d1", type: "day_ticket", config: { day: null }, poolIds: [day.poolId], instalments: null });
+    const full = `${day.poolId}@2027-07-15`;
+    const ctx = ctxOf(snap, onSale(snap), { [full]: { instanceId: full, status: "sold_out", remaining: 0 } });
+    const pick = ctx.event.products.find((p) => p.id.endsWith("d1"))!;
+    expect(choiceSoldOut(pick, "2027-07-15", ctx)).toBe(true);
+    expect(choiceSoldOut(pick, "2027-07-16", ctx)).toBe(false);
+    expect(blockedReason([], pick, "2027-07-15", ctx)).toBe("sold_out");
+    expect(addOne([], pick, "2027-07-16", ctx)).toEqual([{ productId: pick.id, instance: "2027-07-16", qty: 1 }]);
+  });
+
+  it("the checkout's reading of a hand-off trusts nothing: unknown products, bad instances, duplicates and limits", () => {
+    const snap = galaxiaSnapshot();
+    const ev = shopEventFromSnapshot(snap, null, NOW);
+    const lines = normaliseSelection(ev, [
+      { productId: GA, instance: null, qty: 5 },
+      { productId: GA, instance: null, qty: 5 }, // merged, then capped at 6 per order and 6 per account
+      { productId: "0d000000-0000-4000-8000-0000000000ff", instance: null, qty: 1 }, // unknown
+      { productId: CAMPING, instance: null, qty: 2 },
+    ]);
+    expect(lines).toEqual([
+      { productId: GA, instance: null, qty: 6 },
+      { productId: CAMPING, instance: null, qty: 2 },
+    ]);
   });
 });

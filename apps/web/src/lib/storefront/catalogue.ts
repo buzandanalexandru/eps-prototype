@@ -15,27 +15,27 @@ export type ShopProduct = {
   sale?: ShopSaleProduct;
 };
 
-/** What the published shop's ticket picker and price notes need about one product (design D3.7, D3.8). */
+/**
+ * What the published shop's ticket picker and price notes need about one product (design D3.7,
+ * D3.8). Only facts from the snapshot: everything that depends on the time (the step in force, the
+ * sales status, instalments for a purchase now) is worked out in the browser (sale-view.ts), so the
+ * page itself can be cached until the next publish.
+ */
 export type ShopSaleProduct = {
-  stepIndex: number;
-  /** All-in amount and fee of every price step, in ladder order. */
-  steps: { allInMinor: number; fanFeeMinor: number }[];
-  mode: "by_date" | "by_sales";
-  /** A date ladder's next step after the one in force now (all-in, and when it starts). */
-  next: { allInMinor: number; fromAt: string } | null;
+  steps: { mode: "by_date" | "by_sales"; fromAt: string | null; afterSold: number | null; allInMinor: number; fanFeeMinor: number }[];
   salesFrom: string | null;
   salesUntil: string | null;
   maxPerOrder: number;
-  /** Add-ons: at least one of these products must be in the order. */
+  /** Add-ons: at least one of these (visible) products must be in the order. */
   requires: string[];
   isTicket: boolean;
+  poolIds: string[];
   /** What the buyer picks: nothing, a day (day pools), or a day and a start time (slot pools). */
   choice: "none" | "day" | "slot";
   days: string[];
   slots: string[];
   firstStart: string | null;
-  /** Instalments for a purchase now, capped per buyer: deposit, then `count` payments (the last may differ). */
-  instalments: { depositMinor: number; count: number; eachMinor: number; lastMinor: number; totalMinor: number } | null;
+  plan: { depositMinor: number | null; depositBps: number | null; monthlyCount: number; dayOfMonth: number } | null;
 };
 
 export type ShopEvent = {
@@ -49,10 +49,17 @@ export type ShopEvent = {
   /** `map`: the stored static map image (/assets/maps/...), or null when none is stored yet. */
   venue: { name: string; address: string; lat: number | null; lng: number | null; map: string | null } | null;
   days: { date: string; opens: string; closes: string }[];
-  lineup: { date: string; artist: string; stage: string; starts: string }[];
+  lineup: { date: string; artist: string; stage: string; starts: string; sample?: boolean }[];
   products: ShopProduct[];
-  /** Published shops only: the live snapshot this view was built from. */
-  sale?: { snapshotId: string; version: number; maxPerAccount: number | null };
+  /** Published shops only: the live snapshot this view was built from, and its pools' capacities. */
+  sale?: {
+    snapshotId: string;
+    version: number;
+    maxPerAccount: number | null;
+    pools: { poolId: string; scope: "event" | "day" | "slot"; capacity: number }[];
+    /** When the page was rendered (cached pages show it until the browser works out the present). */
+    renderedAt: string;
+  };
 };
 
 export type ShopCatalogue = Record<string, ShopEvent>;

@@ -4,6 +4,7 @@
 import { formatMoney, type Currency } from "@/lib/pricing/money";
 import type { ShopSaleProduct } from "@/lib/storefront/catalogue";
 import { fill, type ShopLabels } from "@/lib/storefront/labels";
+import { nextDateStep, type instalmentsAt } from "@/lib/storefront/sale-view";
 import type { Locale } from "@/lib/storefront/schema";
 
 /** An amount as the fan reads it: "552,48 RON" in Romanian, "RON 552.48" in English. */
@@ -46,16 +47,26 @@ export function AllInPrice(props: {
   );
 }
 
-/** Ladder notes and the instalment summary of a product, from its snapshot price steps. */
-export function PriceNotes({ sale, currency, locale, labels, timeZone }: { sale: ShopSaleProduct; currency: Currency; locale: Locale; labels: ShopLabels; timeZone: string }) {
+/** Ladder notes and the instalment summary of a product at a moment, from its snapshot price steps. */
+export function PriceNotes({ sale, stepIndex, instalments, currency, locale, labels, timeZone }: {
+  sale: ShopSaleProduct;
+  stepIndex: number;
+  instalments: ReturnType<typeof instalmentsAt>;
+  currency: Currency;
+  locale: Locale;
+  labels: ShopLabels;
+  timeZone: string;
+}) {
   const ladder = sale.steps.length > 1;
-  const i = sale.instalments;
+  const next = nextDateStep(sale, stepIndex);
+  const mode = sale.steps[stepIndex]?.mode;
+  const i = instalments;
   return (
     <div className="space-y-1 text-xs text-[var(--eps-muted)]">
-      {ladder && sale.mode === "by_date" && sale.next && (
-        <p data-testid="ladder-next">{fill(labels.priceRises, { price: money(sale.next.allInMinor, currency, locale), date: shopDate(sale.next.fromAt, locale, timeZone) })}</p>
+      {ladder && mode === "by_date" && next && (
+        <p data-testid="ladder-next">{fill(labels.priceRises, { price: money(next.allInMinor, currency, locale), date: shopDate(next.fromAt, locale, timeZone) })}</p>
       )}
-      {ladder && sale.mode === "by_sales" && <p data-testid="ladder-sales">{labels.mayRise}</p>}
+      {ladder && mode === "by_sales" && <p data-testid="ladder-sales">{labels.mayRise}</p>}
       {ladder && <p data-testid="ladder-note">{labels.ladderNote}</p>}
       {i && (
         <div data-testid="instalments">

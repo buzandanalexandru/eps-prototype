@@ -74,7 +74,7 @@ export type SnapshotEvent = {
   timezone: string;
   venue: { name: string; address: string; lat: number | null; lng: number | null } | null;
   days: { date: string; opens: string; closes: string }[];
-  lineup: { date: string; artist: string; stage: string; starts: string }[];
+  lineup: { date: string; artist: string; stage: string; starts: string; sample: boolean }[];
 };
 
 export type SaleSnapshot = {
@@ -90,7 +90,15 @@ export type SaleSnapshot = {
   isSample: boolean;
   fee: { policy: FeePolicy; bps: number; fixedMinor: number };
   event: SnapshotEvent;
-  rules: { minAge: number | null; consentUnderAge: number | null; maxPerAccount: number | null };
+  rules: {
+    minAge: number | null;
+    consentUnderAge: number | null;
+    maxPerAccount: number | null;
+    /** Checkout hold length in minutes (5 to 15, default 8; step 4). */
+    holdMinutes: number;
+    /** The shop's checkout slots (storefront document checkout.slots) at publish; step 4 asks them. */
+    checkoutQuestions: { afterContact: string[]; consents: string[] };
+  };
   pools: SnapshotPool[];
   products: SnapshotProduct[];
 };

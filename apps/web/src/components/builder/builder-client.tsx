@@ -9,7 +9,7 @@ import { CopyButton } from "@/components/studio/copy-button";
 import { acceptFromFrame, readyMessage, renderedMessage, selectMessage } from "@/lib/storefront/frame-protocol";
 import { publishProblems } from "@/lib/storefront/publish-checks";
 import type { Locale, StorefrontDocument } from "@/lib/storefront/schema";
-import type { LinkView, VersionView } from "@/app/studio/builder/actions";
+import type { LinkView, VersionView } from "@/app/(platform)/studio/builder/actions";
 import { TreePanel } from "./tree-panel";
 import { SettingsPanel } from "./settings-panel";
 import { BrandKitPanel } from "./brand-kit-panel";

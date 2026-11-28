@@ -3,7 +3,7 @@
 // same origin, newer than the last one and valid against the document schema; renders them; answers
 // eps:rendered; posts eps:select when a section is clicked. Links never navigate inside the frame.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { frameCatalogueAction } from "@/app/studio/builder/actions";
+import { frameCatalogueAction } from "@/app/(platform)/studio/builder/actions";
 import { acceptDraft } from "@/lib/storefront/frame-protocol";
 import type { ShopBrand, ShopCatalogue } from "@/lib/storefront/catalogue";
 import { SHOP_LABELS } from "@/lib/storefront/labels";

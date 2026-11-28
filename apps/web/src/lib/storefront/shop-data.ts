@@ -7,7 +7,7 @@ import { withTx } from "../db/tx";
 import { loadPublishedShop } from "./published";
 import { shopLoader, type CacheFn } from "./shop-cache";
 
-const nextCache: CacheFn = (key, tags, fn) => unstable_cache(fn, key, { tags, revalidate: false })();
+const nextCache: CacheFn = (key, tags, fn, seconds) => unstable_cache(fn, key, { tags, revalidate: seconds ?? false })();
 
 export const getPublishedShop = shopLoader(nextCache, (k) => withTx(getAppPool(), {}, (c) => loadPublishedShop(c, k)));
 

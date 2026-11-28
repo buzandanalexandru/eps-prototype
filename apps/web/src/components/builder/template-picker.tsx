@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { changeTemplateAction } from "@/app/studio/builder/actions";
+import { changeTemplateAction } from "@/app/(platform)/studio/builder/actions";
 import { TEMPLATE_IDS, type TemplateId } from "@/lib/storefront/templates";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
 

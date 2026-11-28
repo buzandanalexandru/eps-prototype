@@ -23,10 +23,19 @@ export type UsageSource = (eventIds: string[]) => Promise<Map<string, Record<str
  */
 export const noSalesBeforeFirstPublish: UsageSource = async (ids) => new Map(ids.map((id) => [id, {}]));
 
-export type CompiledEvent = { eventId: string; version: number; created: boolean; sha256: string };
+export type CompiledEvent = { eventId: string; version: number; created: boolean; sha256: string; offSale?: boolean };
+
+export type CheckoutQuestions = CompileExtras["checkoutQuestions"];
+const NO_QUESTIONS: CheckoutQuestions = { afterContact: [], consents: [] };
+
+/** The checkout slots of a storefront document (what step 4's checkout asks). */
+export function questionsOf(doc: { checkout?: { slots?: Partial<CheckoutQuestions> } } | null | undefined): CheckoutQuestions {
+  const s = doc?.checkout?.slots;
+  return { afterContact: [...(s?.afterContact ?? [])], consents: [...(s?.consents ?? [])] };
+}
 
 /** Loads the venue and sample flag the compiler needs, for a set of graphs (two queries). */
-export async function compileExtras(c: ClientBase, graphs: EventGraph[]): Promise<Map<string, CompileExtras>> {
+export async function compileExtras(c: ClientBase, graphs: EventGraph[], questions: CheckoutQuestions = NO_QUESTIONS): Promise<Map<string, CompileExtras>> {
   const venueIds = [...new Set(graphs.map((g) => g.event.venue_id).filter((v): v is string => !!v))];
   const venues = venueIds.length
     ? (await c.query<{ id: string; name: string; address: string; lat: number | null; lng: number | null }>("select id, name, address, lat, lng from control.venues where id = any($1::uuid[])", [venueIds])).rows
@@ -36,7 +45,7 @@ export async function compileExtras(c: ClientBase, graphs: EventGraph[]): Promis
   return new Map(
     graphs.map((g) => {
       const v = venues.find((x) => x.id === g.event.venue_id) ?? null;
-      return [g.event.id, { venue: v && { name: v.name, address: v.address, lat: v.lat, lng: v.lng }, isSample: org.is_sample, organiserId: org.id }];
+      return [g.event.id, { venue: v && { name: v.name, address: v.address, lat: v.lat, lng: v.lng }, isSample: org.is_sample, organiserId: org.id, checkoutQuestions: questions }];
     }),
   );
 }
@@ -98,8 +107,18 @@ export function snapshotHook(opts: { usage: UsageSource; userId: string | null; 
   return async (c, ctx) => {
     const now = opts.now?.() ?? new Date();
     const ids = [...new Set(referencedEvents(ctx.document))].sort();
+    // Events of the brand that were on sale through this shop and are no longer in it go off sale:
+    // the core stops selling them (it reads nothing for an event without a live version).
+    const dropped = (
+      await c.query<{ id: string; v: number }>(
+        `update control.events set live_snapshot_version = null, updated_at = now()
+         where brand_id = $1 and live_snapshot_version is not null and not (id = any($2::uuid[]))
+         returning id::text, 0 as v`,
+        [ctx.brandId, ids],
+      )
+    ).rows.map((r) => ({ eventId: r.id, version: 0, created: false, sha256: "", offSale: true }));
     if (!ids.length) {
-      opts.onCompiled?.([]);
+      opts.onCompiled?.(dropped);
       return;
     }
     // Lock the events (in id order) so concurrent publishes of them serialise: versions are never
@@ -108,7 +127,7 @@ export function snapshotHook(opts: { usage: UsageSource; userId: string | null; 
     const graphs = await loadEventGraphs(c, ids);
     const notReady = readinessProblems(graphs, now);
     if (notReady.length) throw new PublishBlockedError(notReady);
-    const extras = await compileExtras(c, graphs);
+    const extras = await compileExtras(c, graphs, questionsOf(ctx.document));
     const compiled = graphs.map((g) => ({ g, terms: compileTerms(g, extras.get(g.event.id)!) }));
     let usage: Map<string, Record<string, number>>;
     try {
@@ -142,7 +161,7 @@ export function snapshotHook(opts: { usage: UsageSource; userId: string | null; 
       const doc = await insertSnapshot(c, terms, { version, userId: opts.userId, storefrontVersionId: ctx.versionId, now });
       out.push({ eventId: g.event.id, version, created: true, sha256: doc.sha256 });
     }
-    opts.onCompiled?.(out);
+    opts.onCompiled?.([...out, ...dropped]);
   };
 }
 
@@ -160,6 +179,12 @@ export async function publicationState(c: ClientBase, eventId: string): Promise<
   if (!row || row.version === null) return { liveVersion: null, publishedAt: null, changed: false };
   const graphs = await loadEventGraphs(c, [eventId]);
   if (!graphs.length) return { liveVersion: row.version, publishedAt: row.published_at, changed: false };
-  const terms = compileTerms(graphs[0], (await compileExtras(c, graphs)).get(eventId)!);
+  // Compared with the questions of the shop that sells it now (its live storefront version).
+  const live = await c.query<{ document: unknown }>(
+    `select v.document from control.storefronts s join control.storefront_versions v on v.id = s.live_version_id where s.brand_id = $1`,
+    [graphs[0].event.brand_id],
+  );
+  const questions = questionsOf(live.rows[0]?.document as Parameters<typeof questionsOf>[0]);
+  const terms = compileTerms(graphs[0], (await compileExtras(c, graphs, questions)).get(eventId)!);
   return { liveVersion: row.version, publishedAt: row.published_at, changed: termsHash(terms) !== row.terms_sha256 };
 }

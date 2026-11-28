@@ -1,27 +1,26 @@
 // The ticket picker's rules (design D3.8), pure so the client component and the tests share them:
-// quantities within each product's maximum per order, the event's maximum per account and the
-// availability the core reports; add-ons only with a ticket they require; a day or a day and start
-// time for products on day or slot pools; the running all-in total; and the hand-off to checkout.
+// quantities within each product's maximum per order, the event's maximum per account and what the
+// core reports as left, per product and per pool instance (products sharing a pool share its
+// room); add-ons only with a ticket they require; a day or a day and start time for products on
+// day or slot pools (sold-out days and slots cannot be chosen); the running all-in total; and the
+// hand-off to checkout.
 import { slotStartDate } from "../catalogue/time";
 import type { ShopEvent, ShopProduct } from "./catalogue";
+import { priceAt, statusByTime, type Availability, type InstanceAvailability } from "./sale-view";
 
-export type Availability = {
-  status: "on_sale" | "not_yet" | "ended" | "sold_out";
-  allInMinor: number;
-  priceStepIndex: number;
-  remaining?: number;
-  opensAt?: string;
-};
+export type { Availability, InstanceAvailability };
 
 /** A line: a product, the pool instance qualifier it is for (day or day and start time) and a quantity. */
 export type Line = { productId: string; instance: string | null; qty: number };
 
-export type PickerCtx = {
-  event: ShopEvent;
-  /** Availability per product, or null while unknown or when the core cannot be reached (buying paused). */
-  availability: Record<string, Availability> | null;
-  now: Date;
+/** What the core said, for the page's snapshot version (null: unknown or unreachable, buying paused). */
+export type AvailabilityState = {
+  products: Record<string, Availability>;
+  /** Pool instances that are sold out or have few left (others have room). */
+  instances: Record<string, InstanceAvailability>;
 };
+
+export type PickerCtx = { event: ShopEvent; availability: AvailabilityState | null; now: Date };
 
 /** The instance qualifier of a choice: `YYYY-MM-DD` for a day, the local start date and time for a slot. */
 export function instanceFor(p: ShopProduct, day: string | null, time: string | null): string | null {
@@ -33,6 +32,31 @@ export function instanceFor(p: ShopProduct, day: string | null, time: string | n
   return `${slotStartDate(day, s.firstStart ?? time, time)}T${time}`;
 }
 
+/** The pool instances one unit of the product draws on for a choice (scoped pools need the choice). */
+export function poolInstancesOf(p: ShopProduct, ev: ShopEvent, instance: string | null): string[] {
+  const out: string[] = [];
+  for (const id of p.sale?.poolIds ?? []) {
+    const pool = ev.sale?.pools.find((x) => x.poolId === id);
+    if (!pool) continue;
+    if (pool.scope === "event") out.push(id);
+    else if (instance) out.push(pool.scope === "day" ? `${id}@${instance.slice(0, 10)}` : `${id}@${instance}`);
+  }
+  return out;
+}
+
+/** Room left in a pool instance: the core's count when it reported one (few left), else its capacity. */
+export function roomIn(instanceId: string, ctx: PickerCtx): number {
+  const known = ctx.availability?.instances[instanceId];
+  if (known) return known.remaining;
+  const pool = ctx.event.sale?.pools.find((x) => x.poolId === instanceId.split("@")[0]);
+  return pool?.capacity ?? 0;
+}
+
+/** Whether a day or slot can no longer be chosen (one of its pool instances is full). */
+export function choiceSoldOut(p: ShopProduct, instance: string, ctx: PickerCtx): boolean {
+  return poolInstancesOf(p, ctx.event, instance).some((i) => ctx.availability?.instances[i]?.status === "sold_out" || roomIn(i, ctx) <= 0);
+}
+
 export type Blocked = "paused" | "not_yet" | "ended" | "sold_out" | "choose" | "limit" | "account_limit" | null;
 
 const qtyOf = (lines: Line[], productId: string) => lines.filter((l) => l.productId === productId).reduce((n, l) => n + l.qty, 0);
@@ -40,28 +64,33 @@ const ticketQty = (lines: Line[], ev: ShopEvent) => lines.filter((l) => ev.produ
 
 /** The status of a product: from the core when known, else from its sales window. */
 export function statusOf(p: ShopProduct, ctx: PickerCtx): Availability["status"] {
-  const a = ctx.availability?.[p.id];
-  if (a) return a.status;
-  const s = p.sale;
-  if (s?.salesUntil && Date.parse(s.salesUntil) <= ctx.now.getTime()) return "ended";
-  if (s?.salesFrom && Date.parse(s.salesFrom) > ctx.now.getTime()) return "not_yet";
-  return "on_sale";
+  return ctx.availability?.products[p.id]?.status ?? statusByTime(p.sale, ctx.now);
 }
 
 /** The most of a product one order may hold now: its maximum per order, capped by what is left. */
 export function maxFor(p: ShopProduct, ctx: PickerCtx): number {
   const max = p.sale?.maxPerOrder ?? 0;
-  const left = ctx.availability?.[p.id]?.remaining;
+  const left = ctx.availability?.products[p.id]?.remaining;
   return typeof left === "number" ? Math.min(max, left) : max;
+}
+
+/** Units the selection already draws from a pool instance, across every product sharing it. */
+function usedIn(lines: Line[], instanceId: string, ev: ShopEvent): number {
+  return lines.reduce((n, l) => {
+    const p = ev.products.find((x) => x.id === l.productId);
+    return p && poolInstancesOf(p, ev, l.instance).includes(instanceId) ? n + l.qty : n;
+  }, 0);
 }
 
 /** Why one more of the product cannot be added (null: it can). */
 export function blockedReason(lines: Line[], p: ShopProduct, instance: string | null, ctx: PickerCtx): Blocked {
-  if (!ctx.availability || !ctx.availability[p.id]) return "paused";
+  if (!ctx.availability) return "paused";
   const st = statusOf(p, ctx);
   if (st !== "on_sale") return st;
   if (p.sale && p.sale.choice !== "none" && !instance) return "choose";
+  if (instance && choiceSoldOut(p, instance, ctx)) return "sold_out";
   if (qtyOf(lines, p.id) >= maxFor(p, ctx)) return "limit";
+  if (poolInstancesOf(p, ctx.event, instance).some((i) => usedIn(lines, i, ctx.event) >= roomIn(i, ctx))) return "limit";
   const perAccount = ctx.event.sale?.maxPerAccount;
   if (p.sale?.isTicket && perAccount && ticketQty(lines, ctx.event) >= perAccount) return "account_limit";
   return null;
@@ -79,9 +108,9 @@ export function removeOne(lines: Line[], productId: string, instance: string | n
   return lines.flatMap((l) => (l.productId === productId && l.instance === instance ? (l.qty > 1 ? [{ ...l, qty: l.qty - 1 }] : []) : [l]));
 }
 
-/** The unit all-in price: the core's current step when known (sales ladders), else the page's. */
+/** The unit all-in price now: the core's current step when known (sales ladders), else by date. */
 export function unitPrice(p: ShopProduct, ctx: PickerCtx): number {
-  return ctx.availability?.[p.id]?.allInMinor ?? p.allInMinor;
+  return priceAt(p, ctx.now, ctx.availability?.products[p.id]).allInMinor;
 }
 
 export function total(lines: Line[], ctx: PickerCtx): number {
@@ -132,4 +161,42 @@ export function parseItems(raw: string | null | undefined): Line[] | null {
     out.push({ productId, qty, instance: instance ?? null });
   }
   return out.length && out.length <= 50 ? out : null;
+}
+
+/**
+ * The checkout's own reading of a hand-off (server side, never trusting the URL): only the event's
+ * visible products, each instance valid for its product, duplicate lines merged, and every limit
+ * applied again (maximum per order, maximum per account). Step 4 re-prices everything in the core
+ * from snapshot `v`; this only shows the selection.
+ */
+export function normaliseSelection(ev: ShopEvent, lines: Line[]): Line[] {
+  const byKey = new Map<string, Line>();
+  for (const l of lines) {
+    const p = ev.products.find((x) => x.id === l.productId);
+    if (!p?.sale) continue;
+    let inst: string | null = null;
+    if (p.sale.choice === "day") inst = l.instance && p.sale.days.includes(l.instance) ? l.instance : null;
+    if (p.sale.choice === "slot") {
+      const m = l.instance ? /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(l.instance) : null;
+      inst = m && p.sale.slots.includes(m[2]) && p.sale.days.some((d) => instanceFor(p, d, m[2]) === l.instance) ? l.instance : null;
+    }
+    if (p.sale.choice !== "none" && !inst) continue;
+    const key = `${p.id}|${inst ?? ""}`;
+    const cur = byKey.get(key);
+    byKey.set(key, { productId: p.id, instance: inst, qty: (cur?.qty ?? 0) + l.qty });
+  }
+  const out: Line[] = [];
+  const perProduct = new Map<string, number>();
+  let tickets = 0;
+  const perAccount = ev.sale?.maxPerAccount ?? Infinity;
+  for (const l of byKey.values()) {
+    const p = ev.products.find((x) => x.id === l.productId)!;
+    const room = Math.min(p.sale!.maxPerOrder - (perProduct.get(p.id) ?? 0), p.sale!.isTicket ? perAccount - tickets : Infinity);
+    const qty = Math.max(0, Math.min(l.qty, room));
+    if (!qty) continue;
+    perProduct.set(p.id, (perProduct.get(p.id) ?? 0) + qty);
+    if (p.sale!.isTicket) tickets += qty;
+    out.push({ ...l, qty });
+  }
+  return out;
 }

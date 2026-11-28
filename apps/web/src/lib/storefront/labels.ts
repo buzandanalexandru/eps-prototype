@@ -82,6 +82,8 @@ const ro = {
   languages: "Limba",
   eventDates: "Date",
   venue: "Locație",
+  priceLabel: "Preț",
+  sampleArtist: "artist de exemplu",
 };
 export type ShopLabels = typeof ro;
 
@@ -163,6 +165,8 @@ const en: ShopLabels = {
   languages: "Language",
   eventDates: "Dates",
   venue: "Venue",
+  priceLabel: "Price",
+  sampleArtist: "sample artist",
 };
 
 export const SHOP_LABELS: Record<Locale, ShopLabels> = { ro, en };

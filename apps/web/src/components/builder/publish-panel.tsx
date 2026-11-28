@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useFormatter, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/studio/copy-button";
-import { createLinkAction, publishAction, restoreAction, revokeAllLinksAction, revokeLinkAction, type LinkView, type VersionView } from "@/app/studio/builder/actions";
+import { createLinkAction, publishAction, restoreAction, revokeAllLinksAction, revokeLinkAction, type LinkView, type VersionView } from "@/app/(platform)/studio/builder/actions";
 import type { PublishProblem } from "@/lib/storefront/publish-checks";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
 

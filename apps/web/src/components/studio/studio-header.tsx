@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
-import { switchOrganiserAction } from "@/app/studio/actions";
+import { switchOrganiserAction } from "@/app/(platform)/studio/actions";
 import { signOut } from "@/lib/session/actions";
 import type { Studio } from "@/lib/studio/context";
 import { Button } from "@/components/ui/button";

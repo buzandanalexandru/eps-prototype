@@ -1,6 +1,12 @@
 import { renderShop, shopMetadata } from "../../../shop";
 
-export const dynamic = "force-dynamic";
+// Static, generated on first request and kept until the brand's next publish (tag revalidation);
+// the hour bounds anything published outside a publish (a newly configured hostname).
+export const dynamic = "force-static";
+export const revalidate = 3600;
+export function generateStaticParams() {
+  return [];
+}
 
 type P = { params: Promise<{ brand: string; locale: string; event: string }> };
 

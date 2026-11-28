@@ -185,7 +185,9 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
     for (const [i, l] of (e.lineup ?? []).entries()) {
       const day = days.find((d) => d.day === l.day);
       if (!day) throw new Error(`${e.key}: line-up day ${l.day} is not an event day`);
-      await addLineupSlot(c, eid, { dayId: day.id, artist: l.artist, stage: l.stage, starts: l.starts, sort: i }, ek("lineup", String(i)));
+      const slot = await addLineupSlot(c, eid, { dayId: day.id, artist: l.artist, stage: l.stage, starts: l.starts, sort: i }, ek("lineup", String(i)));
+      // Sample data: every seeded artist is a placeholder, labelled as a sample artist by the shop.
+      await c.query("update control.lineup_slots set sample = true where id = $1", [slot.id]);
     }
     const poolIds = new Map(e.pools.map((p) => [p.key, ek("pool", p.key)]));
     const productIds = new Map(e.products.map((p) => [p.key, ek("product", p.key)]));

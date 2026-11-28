@@ -8,7 +8,7 @@ const eslintConfig = defineConfig([
   // All-in prices everywhere (step 3, design D3.7): storefront code formats money only through
   // components/storefront/all-in-price.tsx, which renders snapshot amounts with their fee line.
   {
-    files: ["src/components/storefront/**/*.{ts,tsx}", "src/app/s/**/*.{ts,tsx}", "src/lib/storefront/**/*.{ts,tsx}"],
+    files: ["src/components/storefront/**/*.{ts,tsx}", "src/app/(shop)/**/*.{ts,tsx}", "src/lib/storefront/**/*.{ts,tsx}"],
     ignores: ["src/components/storefront/all-in-price.tsx"],
     rules: {
       "no-restricted-imports": [

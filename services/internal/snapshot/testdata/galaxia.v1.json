@@ -22,9 +22,9 @@
       { "date": "2027-07-15", "opens": "17:00", "closes": "03:00" },
       { "date": "2027-07-16", "opens": "17:00", "closes": "03:00" }
     ],
-    "lineup": [{ "date": "2027-07-15", "artist": "Nova Drift", "stage": "Main Stage", "starts": "22:00" }]
+    "lineup": [{ "date": "2027-07-15", "artist": "Nova Drift", "stage": "Main Stage", "starts": "22:00", "sample": true }]
   },
-  "rules": { "minAge": 14, "consentUnderAge": 18, "maxPerAccount": 6 },
+  "rules": { "minAge": 14, "consentUnderAge": 18, "maxPerAccount": 6, "holdMinutes": 8, "checkoutQuestions": { "afterContact": [], "consents": [] } },
   "pools": [
     {
       "poolId": "0c000000-0000-4000-8000-000000000001",

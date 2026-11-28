@@ -4,7 +4,14 @@
 import { normaliseKey, type PublishedShop, type ShopKey } from "./published";
 
 /** Runs `fn` once per key until one of `tags` is revalidated. */
-export type CacheFn = <T>(key: string[], tags: string[], fn: () => Promise<T>) => Promise<T>;
+export type CacheFn = <T>(key: string[], tags: string[], fn: () => Promise<T>, revalidateSeconds?: number) => Promise<T>;
+
+/**
+ * Hostname lookups are also refreshed every minute: a hostname can be configured without a publish,
+ * so an unknown host's "nothing" is never kept longer than that (slugs only appear through a
+ * publish, which revalidates them).
+ */
+export const HOST_LOOKUP_SECONDS = 60;
 
 export const slugTag = (slug: string) => `shop:slug:${slug}`;
 export const hostTag = (host: string) => `shop:host:${host}`;
@@ -29,7 +36,7 @@ export function shopLoader(cache: CacheFn, load: (k: ShopKey) => Promise<Publish
     if (!k) return null;
     const id = "slug" in k ? ["shop", "slug", k.slug] : ["shop", "host", k.host];
     const tags = ["slug" in k ? slugTag(k.slug) : hostTag(k.host)];
-    return cache(id, tags, () => load(k));
+    return cache(id, tags, () => load(k), "host" in k ? HOST_LOOKUP_SECONDS : undefined);
   };
 }
 

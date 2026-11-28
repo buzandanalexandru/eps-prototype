@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ESLint } from "eslint";
 import { feeBreakdown } from "@/lib/pricing/fees";
-import { fromPrice, shopEventFromSnapshot } from "@/lib/storefront/shop-view";
+import { shopEventFromSnapshot } from "@/lib/storefront/shop-view";
+import { fromPriceAt, instalmentsAt, priceAt } from "@/lib/storefront/sale-view";
 import { SHOP_LABELS } from "@/lib/storefront/labels";
 import type { SaleSnapshot, SnapshotPriceStep } from "@/lib/snapshot/types";
 import { AllInPrice, PriceNotes } from "@/components/storefront/all-in-price";
@@ -18,14 +19,24 @@ function step(index: number, faceMinor: number, policy: "absorb" | "pass_on", fr
   return { index, mode: "by_date", fromAt, afterSold: null, faceMinor, allInMinor: b.allInMinor, fanFeeMinor: b.fanFeeMinor, organiserNetMinor: b.organiserNetMinor };
 }
 
+/** A ticket card's price block as the browser shows it at `now` (the page itself may be older). */
 function card(snap: SaleSnapshot, productId: string, locale: "ro" | "en", now = DEC5) {
-  const ev = shopEventFromSnapshot(snap, null, now);
+  const ev = shopEventFromSnapshot(snap, null, new Date("2026-10-01T00:00:00Z")); // a page cached since October
   const p = ev.products.find((x) => x.id === productId)!;
+  const price = priceAt(p, now);
   return text(
     renderToStaticMarkup(
       <>
-        <AllInPrice allInMinor={p.allInMinor} fanFeeMinor={p.fanFeeMinor} currency={ev.currency} locale={locale} labels={SHOP_LABELS[locale]} showFee />
-        <PriceNotes sale={p.sale!} currency={ev.currency} locale={locale} labels={SHOP_LABELS[locale]} timeZone={ev.timezone} />
+        <AllInPrice allInMinor={price.allInMinor} fanFeeMinor={price.fanFeeMinor} currency={ev.currency} locale={locale} labels={SHOP_LABELS[locale]} showFee />
+        <PriceNotes
+          sale={p.sale!}
+          stepIndex={price.stepIndex}
+          instalments={instalmentsAt(p.sale!, price.allInMinor, now, ev.startsAt, ev.timezone)}
+          currency={ev.currency}
+          locale={locale}
+          labels={SHOP_LABELS[locale]}
+          timeZone={ev.timezone}
+        />
       </>,
     ),
   );
@@ -60,10 +71,15 @@ describe("all-in prices", () => {
     ];
     const ev = shopEventFromSnapshot(snap, null, DEC5);
     expect(ev.products.map((p) => p.allInMinor)).toEqual([55248, 67548, 85998, 1025]);
-    expect(fromPrice(ev, DEC5)).toEqual({ allInMinor: 55248, upcoming: false });
-    // Nothing on sale yet: the lowest upcoming price, labelled.
+    // An add-on requiring a hidden product publishes no hidden id.
+    snap.products[4].requires = ["0d000000-0000-4000-8000-0000000000a4", "0d000000-0000-4000-8000-0000000000a1"];
+    expect(shopEventFromSnapshot(snap, null, DEC5).products.at(-1)!.sale!.requires).toEqual(["0d000000-0000-4000-8000-0000000000a1"]);
+    expect(fromPriceAt(ev, DEC5)).toEqual({ allInMinor: 55248, upcoming: null });
+    // Nothing on sale yet: the lowest upcoming price, labelled with its opening.
     for (const p of snap.products) p.salesFrom = "2027-02-01T08:00:00.000Z";
-    expect(fromPrice(shopEventFromSnapshot(snap, null, DEC5), DEC5)).toEqual({ allInMinor: 55248, upcoming: true });
+    expect(fromPriceAt(shopEventFromSnapshot(snap, null, DEC5), DEC5)).toEqual({ allInMinor: 55248, upcoming: "2027-02-01T08:00:00.000Z" });
+    // The page does not carry hidden products at all.
+    expect(ev.products.some((p) => p.id.endsWith("a4"))).toBe(false);
   });
 });
 
@@ -105,7 +121,7 @@ describe("money formatting rule", () => {
     const eslint = new ESLint({ cwd: process.cwd() });
     const [r] = await eslint.lintText('import { formatMoney } from "@/lib/pricing/money";\nexport const x = formatMoney(1, "RON", "en");\n', { filePath: "src/components/storefront/new-card.tsx" });
     expect(r.messages.map((m) => m.ruleId)).toContain("no-restricted-imports");
-    const [n] = await eslint.lintText('export const y = new Intl.NumberFormat("en").format(1);\n', { filePath: "src/app/s/[brand]/x.tsx" });
+    const [n] = await eslint.lintText('export const y = new Intl.NumberFormat("en").format(1);\n', { filePath: "src/app/(shop)/s/[brand]/x.tsx" });
     expect(n.messages.map((m) => m.ruleId)).toContain("no-restricted-syntax");
   }, 60_000);
 });

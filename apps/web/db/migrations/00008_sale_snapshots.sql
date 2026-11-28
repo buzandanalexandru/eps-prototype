@@ -38,8 +38,13 @@ CREATE TABLE control.sale_snapshots (
 CREATE INDEX sale_snapshots_published_by_idx ON control.sale_snapshots (published_by);
 CREATE INDEX sale_snapshots_storefront_version_idx ON control.sale_snapshots (organiser_id, storefront_version_id);
 
--- The live snapshot version of each event (null until its first publish).
+-- The live snapshot version of each event: null before its first publish and while it is off sale
+-- (a publish of its brand's shop that no longer sells it takes it off sale).
 ALTER TABLE control.events ADD COLUMN live_snapshot_version int;
+-- How long a checkout hold lasts (minutes, 5 to 15; step 4), carried in the snapshot's rules.
+ALTER TABLE control.events ADD COLUMN hold_minutes int NOT NULL DEFAULT 8 CHECK (hold_minutes BETWEEN 5 AND 15);
+-- Sample data: a seeded line-up entry is labelled as a sample artist by the shop, in its language.
+ALTER TABLE control.lineup_slots ADD COLUMN sample boolean NOT NULL DEFAULT false;
 ALTER TABLE control.events
     ADD CONSTRAINT events_live_snapshot_fkey FOREIGN KEY (organiser_id, id, live_snapshot_version)
     REFERENCES control.sale_snapshots (organiser_id, event_id, version);
@@ -118,10 +123,15 @@ CREATE FUNCTION control.live_snapshot(p_event uuid, p_version int DEFAULT NULL)
 RETURNS TABLE (snapshot_id uuid, organiser_id uuid, event_id uuid, version int, document_text text, sha256 text, published_at timestamptz)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 AS $fn$
+    -- The live version, or an earlier one (orders in flight); never a version above the live one,
+    -- and nothing at all for an event that is off sale (live_snapshot_version null).
     SELECT s.id, s.organiser_id, s.event_id, s.version, s.document_text, s.sha256, s.published_at
     FROM control.sale_snapshots s
+    JOIN control.events e ON e.id = s.event_id
     WHERE s.event_id = p_event
-      AND s.version = coalesce(p_version, (SELECT e.live_snapshot_version FROM control.events e WHERE e.id = p_event))
+      AND e.live_snapshot_version IS NOT NULL
+      AND s.version = coalesce(p_version, e.live_snapshot_version)
+      AND s.version <= e.live_snapshot_version
 $fn$;
 -- +goose StatementEnd
 
@@ -145,11 +155,37 @@ AS $fn$
 $fn$;
 -- +goose StatementEnd
 
+-- What a public shop page may read of a live snapshot: the document without the organiser's side
+-- of each price (organiserNetMinor), the fee settings and hidden products.
+-- +goose StatementBegin
+CREATE FUNCTION control.public_snapshot(p_event uuid)
+RETURNS TABLE (event_id uuid, organiser_id uuid, version int, document jsonb)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $fn$
+    SELECT s.event_id, s.organiser_id, s.version,
+           jsonb_set(s.document - 'fee', '{products}', coalesce((
+               SELECT jsonb_agg((p - 'priceSteps') || jsonb_build_object('priceSteps',
+                          (SELECT coalesce(jsonb_agg(st - 'organiserNetMinor' ORDER BY (st ->> 'index')::int), '[]'::jsonb)
+                           FROM jsonb_array_elements(p -> 'priceSteps') st))
+                      ORDER BY ord)
+               FROM jsonb_array_elements(s.document -> 'products') WITH ORDINALITY AS x(p, ord)
+               WHERE (p ->> 'visible')::boolean), '[]'::jsonb))
+    FROM control.sale_snapshots s
+    JOIN control.events e ON e.id = s.event_id AND s.version = e.live_snapshot_version
+    WHERE s.event_id = p_event
+$fn$;
+-- +goose StatementEnd
+GRANT SELECT (event_id, organiser_id, version, document) ON control.sale_snapshots TO eps_snapshot_read;
+
+REVOKE ALL ON FUNCTION control.public_snapshot(uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION control.public_snapshot(uuid) TO eps_web;
 REVOKE ALL ON FUNCTION control.live_snapshot(uuid, int) FROM PUBLIC;
 REVOKE ALL ON FUNCTION control.public_storefront(text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION control.live_snapshot(uuid, int) TO eps_web, eps_core;
+-- Only the core reads sale terms through live_snapshot; the web app's public pages use public_snapshot.
+GRANT EXECUTE ON FUNCTION control.live_snapshot(uuid, int) TO eps_core;
 GRANT EXECUTE ON FUNCTION control.public_storefront(text, text) TO eps_web;
 GRANT CREATE ON SCHEMA control TO eps_snapshot_read, eps_shop_read;
 ALTER FUNCTION control.live_snapshot(uuid, int) OWNER TO eps_snapshot_read;
+ALTER FUNCTION control.public_snapshot(uuid) OWNER TO eps_snapshot_read;
 ALTER FUNCTION control.public_storefront(text, text) OWNER TO eps_shop_read;
 REVOKE CREATE ON SCHEMA control FROM eps_snapshot_read, eps_shop_read;

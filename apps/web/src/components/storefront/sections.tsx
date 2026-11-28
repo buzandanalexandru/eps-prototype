@@ -27,8 +27,6 @@ export type RenderCtx = {
   hrefBase: string;
   /** On preview-link pages: the link's token, so the draft's uploads load. */
   previewToken?: string | null;
-  /** Published shop: the render time (ISO), shared by server and browser so the picker agrees. */
-  now?: string;
 };
 
 export function tx(v: Partial<Localized> | undefined | null, locale: Locale): string {
@@ -113,6 +111,11 @@ function Lineup({ s, ctx }: S<{ heading: Localized; layout: "grid" | "list" }>) 
                 {slots.map((l, i) => (
                   <li key={i} className={s.settings.layout === "grid" ? `${card} p-4` : "flex flex-wrap justify-between gap-2 py-2"}>
                     <span className="font-[family-name:var(--eps-font-heading)] text-lg font-semibold">{l.artist}</span>
+                    {l.sample && (
+                      <span className="ml-2 inline-block rounded-[var(--eps-radius)] border border-[var(--eps-accent)] px-1.5 text-xs font-semibold" data-testid="sample-artist">
+                        {ctx.labels.sampleArtist}
+                      </span>
+                    )}
                     <span className="block text-sm text-[var(--eps-muted)]">
                       {l.starts}
                       {l.stage ? ` · ${l.stage}` : ""}
@@ -136,7 +139,7 @@ function TicketGrid({ s, ctx }: S<{ heading: Localized; showPerks: boolean }>) {
     return (
       <Wrap id="tickets">
         <Heading v={s.settings.heading} ctx={ctx} />
-        <ShopTickets event={ev} labels={ctx.labels} locale={ctx.locale} base={ctx.hrefBase} showPerks={s.settings.showPerks} now={ctx.now ?? new Date().toISOString()} />
+        <ShopTickets event={ev} labels={ctx.labels} locale={ctx.locale} base={ctx.hrefBase} showPerks={s.settings.showPerks} />
       </Wrap>
     );
   }

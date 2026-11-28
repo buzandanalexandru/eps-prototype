@@ -4,7 +4,7 @@ import { getLocale, getTranslations } from "next-intl/server";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { LocaleSwitcher } from "@/components/locale-switcher";
-import "./globals.css";
+import "../globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("common");

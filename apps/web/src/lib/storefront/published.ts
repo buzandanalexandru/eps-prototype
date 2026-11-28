@@ -2,10 +2,14 @@
 // snapshots of the events it sells, read only through the published-only functions
 // public_storefront() and live_snapshot(). Two queries for any shop, no organiser scope, and
 // nothing from drafts. The result is plain JSON, so it can be cached as is (shop-cache.ts).
-import { createHash } from "node:crypto";
 import type { ClientBase } from "pg";
 import type { Currency } from "../pricing/money";
-import type { SaleSnapshot } from "../snapshot/types";
+import type { SaleSnapshot, SnapshotPriceStep, SnapshotProduct } from "../snapshot/types";
+
+/** A live snapshot as public pages read it (control.public_snapshot): the shop never sees the organiser's side. */
+export type PublicSnapshot = Omit<SaleSnapshot, "fee" | "products"> & {
+  products: (Omit<SnapshotProduct, "priceSteps"> & { priceSteps: Omit<SnapshotPriceStep, "organiserNetMinor">[] })[];
+};
 import { storedTiles, tileFor, tileUrl } from "./maps";
 import { LIMITS, parseDocument, referencedEvents, type Locale, type StorefrontDocument } from "./schema";
 
@@ -24,7 +28,7 @@ export type PublishedShop = {
   hostnames: string[];
   document: StorefrontDocument;
   /** Live snapshot per event the shop sells (only the brand's own events). */
-  snapshots: Record<string, SaleSnapshot>;
+  snapshots: Record<string, PublicSnapshot>;
   /** Stored static map tile per event venue, or null. */
   maps: Record<string, string | null>;
 };
@@ -72,17 +76,18 @@ export async function loadPublishedShop(c: ClientBase, key: ShopKey): Promise<Pu
   if (!parsed.ok) return null; // a published version always validated; never render one that does not
   const doc = parsed.doc;
   const ids = referencedEvents(doc).slice(0, LIMITS.events);
-  const snapshots: Record<string, SaleSnapshot> = {};
+  const snapshots: Record<string, PublicSnapshot> = {};
   if (ids.length) {
-    const s = await c.query<{ event_id: string; document_text: string; sha256: string }>(
-      `select s.event_id::text, s.document_text, s.sha256 from unnest($1::uuid[]) as e(id), lateral control.live_snapshot(e.id, null) s`,
+    // The public view of each live snapshot: no organiser net amounts, no fee settings and no
+    // hidden products (public_snapshot); an event that is off sale returns nothing.
+    const s = await c.query<{ event_id: string; organiser_id: string; document: PublicSnapshot }>(
+      `select s.event_id::text, s.organiser_id::text, s.document from unnest($1::uuid[]) as e(id), lateral control.public_snapshot(e.id) s`,
       [ids],
     );
     for (const x of s.rows) {
-      if (createHash("sha256").update(x.document_text, "utf8").digest("hex") !== x.sha256) continue;
-      const snap = JSON.parse(x.document_text) as SaleSnapshot;
+      const snap = x.document;
       // Only the brand's own events appear in its shop.
-      if (snap.organiserId === row.organiser_id && snap.brandId === row.brand_id && snap.eventId === x.event_id) snapshots[x.event_id] = snap;
+      if (x.organiser_id === row.organiser_id && snap.organiserId === row.organiser_id && snap.brandId === row.brand_id && snap.eventId === x.event_id) snapshots[x.event_id] = snap;
     }
   }
   const points = Object.values(snapshots)

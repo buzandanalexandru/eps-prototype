@@ -104,6 +104,7 @@ type Event struct {
 		Artist string `json:"artist"`
 		Stage  string `json:"stage"`
 		Starts string `json:"starts"`
+		Sample bool   `json:"sample"`
 	} `json:"lineup"`
 }
 
@@ -112,6 +113,13 @@ type Rules struct {
 	MinAge          *int `json:"minAge"`
 	ConsentUnderAge *int `json:"consentUnderAge"`
 	MaxPerAccount   *int `json:"maxPerAccount"`
+	// HoldMinutes is how long a checkout hold lasts (5 to 15; step 4).
+	HoldMinutes int `json:"holdMinutes"`
+	// CheckoutQuestions are the shop's checkout slots at publish (step 4 asks them).
+	CheckoutQuestions struct {
+		AfterContact []string `json:"afterContact"`
+		Consents     []string `json:"consents"`
+	} `json:"checkoutQuestions"`
 }
 
 // Fee is the fee policy and platform fee the prices were computed with.

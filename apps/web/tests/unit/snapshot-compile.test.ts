@@ -23,7 +23,10 @@ async function publish(o: Shop, revision: number): Promise<CompiledEvent[]> {
 
 async function liveSnapshot(o: { scope: Shop["scope"] }, eventId: string): Promise<SaleSnapshot & { _version: number }> {
   return tx(o.scope, async (c) => {
-    const r = await c.query("select version, document_text from control.live_snapshot($1, null)", [eventId]);
+    const r = await c.query(
+      "select s.version, s.document_text from control.sale_snapshots s join control.events e on e.id = s.event_id and e.live_snapshot_version = s.version where s.event_id = $1",
+      [eventId],
+    );
     return { ...JSON.parse(r.rows[0].document_text), _version: r.rows[0].version };
   });
 }

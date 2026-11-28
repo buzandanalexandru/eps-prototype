@@ -4,8 +4,9 @@
 // feeBreakdown: no consumer of a snapshot ever computes a fee.
 import { createHash } from "node:crypto";
 import { stepsOf, type EventGraph } from "../catalogue/domain";
-import { TICKET_TYPES, slotSpan } from "../catalogue/schema";
-import { minutesOf, slotStartDate } from "../catalogue/time";
+import { TICKET_TYPES } from "../catalogue/schema";
+import { slotStarts } from "./slots";
+import { slotStartDate } from "../catalogue/time";
 import { effectivePolicy, feeBreakdown } from "../pricing/fees";
 import { lastAllowedDay } from "../pricing/instalments";
 import {
@@ -22,22 +23,12 @@ export type CompileExtras = {
   venue: { name: string; address: string; lat: number | null; lng: number | null } | null;
   isSample: boolean;
   organiserId: string;
+  /** The selling shop's checkout slots (its storefront document's checkout.slots). */
+  checkoutQuestions: { afterContact: string[]; consents: string[] };
 };
 
 const l10n = (v: Partial<L10n> | null | undefined): L10n => ({ ro: v?.ro ?? "", en: v?.en ?? "" });
 const iso = (d: Date | null): string | null => (d ? d.toISOString() : null);
-
-/** "HH:MM" plus minutes, wrapping at midnight. */
-function addMinutes(time: string, mins: number): string {
-  const t = (minutesOf(time) + mins) % 1440;
-  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
-}
-
-/** The start times of a slot grid, first to last (one time grid per slot pool; readiness rule). */
-export function slotStarts(grid: { slotMinutes: number; firstStart: string; lastStart: string }): string[] {
-  const n = slotSpan(grid.firstStart, grid.lastStart) / grid.slotMinutes + 1;
-  return Array.from({ length: n }, (_, i) => addMinutes(grid.firstStart, i * grid.slotMinutes));
-}
 
 function poolInstances(g: EventGraph, pool: EventGraph["pools"][number]): SnapshotPoolInstance[] {
   if (pool.scope === "event") return [{ instanceId: pool.id, date: null, slotStart: null, capacity: pool.capacity }];
@@ -142,11 +133,17 @@ export function compileTerms(g: EventGraph, x: CompileExtras): SaleTerms {
       venue: x.venue ? { name: x.venue.name, address: x.venue.address, lat: x.venue.lat, lng: x.venue.lng } : null,
       days: [...g.days].sort((a, b) => a.day.localeCompare(b.day)).map((d) => ({ date: d.day, opens: d.opens.slice(0, 5), closes: d.closes.slice(0, 5) })),
       lineup: [...g.lineup]
-        .map((l) => ({ date: dayOf.get(l.day_id) ?? "", artist: l.artist, stage: l.stage, starts: l.starts.slice(0, 5), sort: l.sort, id: l.id }))
+        .map((l) => ({ date: dayOf.get(l.day_id) ?? "", artist: l.artist, stage: l.stage, starts: l.starts.slice(0, 5), sort: l.sort, id: l.id, sample: !!l.sample }))
         .sort((a, b) => a.date.localeCompare(b.date) || a.sort - b.sort || a.id.localeCompare(b.id))
-        .map((l) => ({ date: l.date, artist: l.artist, stage: l.stage, starts: l.starts })),
+        .map((l) => ({ date: l.date, artist: l.artist, stage: l.stage, starts: l.starts, sample: l.sample })),
     },
-    rules: { minAge: ev.min_age, consentUnderAge: ev.consent_under_age, maxPerAccount: ev.max_per_account },
+    rules: {
+      minAge: ev.min_age,
+      consentUnderAge: ev.consent_under_age,
+      maxPerAccount: ev.max_per_account,
+      holdMinutes: ev.hold_minutes ?? 8,
+      checkoutQuestions: { afterContact: [...x.checkoutQuestions.afterContact], consents: [...x.checkoutQuestions.consents] },
+    },
     pools,
     products,
   };
@@ -164,3 +161,5 @@ export const sha256Hex = (text: string) => createHash("sha256").update(text, "ut
 export function termsHash(terms: SaleTerms): string {
   return sha256Hex(JSON.stringify(terms));
 }
+
+export { slotStarts };
