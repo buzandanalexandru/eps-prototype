@@ -553,6 +553,13 @@ func (s *Service) Apply(ctx context.Context, org, attemptID string, ch Charge) e
 	if err != nil {
 		return err
 	}
+	// The provider's charge must be this attempt's (review sec L1).
+	if ch.AmountMinor != 0 && (ch.AmountMinor != a.AmountMinor || ch.Currency != a.Currency) {
+		return fmt.Errorf("payments: charge %s does not match attempt %s (amount or currency)", ch.ID, a.ID)
+	}
+	if ch.IdempotencyKey != "" && ch.IdempotencyKey != a.ProviderKey {
+		return fmt.Errorf("payments: charge %s belongs to another attempt", ch.ID)
+	}
 	switch ch.Status {
 	case "pending":
 		return db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
@@ -635,7 +642,7 @@ func (s *Service) succeeded(ctx context.Context, a *Attempt, ch Charge) error {
 	if a.State == Succeeded || a.State == RefundPending || a.State == Refunded {
 		return nil // already applied (a repeated webhook)
 	}
-	out, err := s.Checkout.Complete(ctx, a.OrganiserID, *a.OrderID, "payment confirmed by provider "+a.Provider, func(tx pgx.Tx, o *checkout.Order) error {
+	out, err := s.Checkout.Complete(ctx, a.OrganiserID, *a.OrderID, a.ID, "payment confirmed by provider "+a.Provider, func(tx pgx.Tx, o *checkout.Order) error {
 		moved, err := s.markSucceededTx(ctx, tx, a, ch)
 		if err != nil {
 			return err
@@ -643,14 +650,33 @@ func (s *Service) succeeded(ctx context.Context, a *Attempt, ch Charge) error {
 		if !moved {
 			return errors.New("payments: attempt changed state")
 		}
-		if o.PayPlan == "instalments" {
-			sm := ""
-			if a.SavedMethodID != nil {
-				sm = *a.SavedMethodID
+		// The plan is the succeeding attempt's (review D-b).
+		if a.Plan != "instalments" {
+			if _, err := tx.Exec(ctx, `update sales.orders set pay_plan = 'full' where id = $1`, o.ID); err != nil {
+				return err
 			}
-			return checkout.ActivatePlanTx(ctx, tx, o.ID, sm)
+			_, err := tx.Exec(ctx, `update sales.instalment_plans set state = 'cancelled' where order_id = $1 and state = 'pending'`, o.ID)
+			return err
 		}
-		return nil
+		sm := ""
+		if a.SavedMethodID != nil {
+			sm = *a.SavedMethodID
+		}
+		var pending int
+		if err := tx.QueryRow(ctx, `select count(*) from sales.instalment_plans where order_id = $1 and state = 'pending'`, o.ID).Scan(&pending); err != nil {
+			return err
+		}
+		if pending == 0 {
+			// The deposit succeeded after its plan was cancelled (the order expired meanwhile):
+			// the plan is rebuilt from the schedule this deposit was sent with.
+			if a.Offer == nil {
+				return errors.New("payments: deposit without its schedule")
+			}
+			if _, err := checkout.CreatePlanTx(ctx, tx, o, a.Offer); err != nil {
+				return err
+			}
+		}
+		return checkout.ActivatePlanTx(ctx, tx, o.ID, sm)
 	})
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && pe.ConstraintName == "attempts_one_success_per_order" {
@@ -672,6 +698,7 @@ func (s *Service) succeeded(ctx context.Context, a *Attempt, ch Charge) error {
 		if out.AlreadyPaid {
 			reason = "duplicate"
 			dupes.Inc()
+			s.log().Warn("duplicate payment success refunded", "organiser", a.OrganiserID, "order", *a.OrderID, "attempt", a.ID, "provider", a.Provider)
 		}
 		return s.refund(ctx, cur, ch.ID, reason)
 	}

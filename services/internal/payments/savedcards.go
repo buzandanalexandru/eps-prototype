@@ -155,7 +155,7 @@ func (s *Service) partResult(ctx context.Context, tx pgx.Tx, a *Attempt, ok bool
 	if err := tx.QueryRow(ctx, `select id::text from sales.instalment_plans where order_id = $1`, *a.OrderID).Scan(&planID); err != nil {
 		return err
 	}
-	return checkout.PartResultTx(ctx, tx, a.OrganiserID, planID, *a.Part, ok, s.Checkout.Today())
+	return checkout.PartResultTx(ctx, tx, a.OrganiserID, planID, *a.Part, ok, s.Checkout.Clock())
 }
 
 // PayOverdue retries an overdue part with the plan's saved card ("Pay now").
