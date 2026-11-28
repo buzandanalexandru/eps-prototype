@@ -38,7 +38,7 @@ The organiser SHALL set a logo, primary, surface, text and accent colours, a hea
 #### Scenario: Changing the primary colour
 - **WHEN** the organiser changes the primary colour
 - **THEN** buttons, links and highlights in every section of the preview take the new colour, and no section keeps a colour of its own
-Test: apps/web/tests/unit/storefront-tokens.test.ts
+Test: apps/web/tests/unit/storefront-tokens.test.tsx
 
 #### Scenario: Logo upload
 - **WHEN** the organiser uploads a PNG logo under 1 MB
@@ -97,7 +97,7 @@ Storefront text SHALL be plain text or a small formatting subset rendered escape
 #### Scenario: Script in text
 - **WHEN** an FAQ answer contains `<script>` or an `onerror` attribute
 - **THEN** it is rendered as visible text and nothing executes
-Test: apps/web/tests/unit/storefront-render-safety.test.ts
+Test: apps/web/tests/unit/storefront-render-safety.test.tsx
 
 #### Scenario: Dangerous link
 - **WHEN** a hero button links to `javascript:alert(1)` or a `data:` URL
@@ -237,7 +237,7 @@ The builder SHALL preview the confirmation email and the ticket with the brand's
 #### Scenario: Brand kit on the ticket
 - **WHEN** the organiser opens the ticket preview after changing the primary colour
 - **THEN** the ticket shows the logo, the new colour and a placeholder QR code
-Test: manual check on the deployed preview (email and ticket previews reflect the brand kit)
+Test: apps/web/tests/unit/storefront-messages.test.tsx
 
 ### Requirement: Storefronts stay with their organiser
 Drafts, versions, uploads and preview links SHALL belong to the brand's organiser, and no organiser MUST be able to read or change another organiser's.

@@ -452,7 +452,7 @@ export function BuilderClient(props: BuilderProps) {
                 src={`/studio/builder/frame/${props.storefrontId}?page=${props.initial.document.pages[0].id}`}
                 data-testid="preview-frame"
                 data-device={device}
-                className="block origin-top-left rounded-md border bg-white"
+                className="block origin-top-left rounded-md bg-white shadow-sm ring-1 ring-border"
                 style={{ width: frameWidth, height: FRAME_HEIGHT, transform: scale < 1 ? `scale(${scale})` : undefined }}
                 onLoad={() => postToFrame()}
               />

@@ -30,7 +30,7 @@ Defined with zod in `apps/web/src/lib/storefront/schema.ts` and exported as JSON
 { schemaVersion: 1,
   tokens: { mode: light|dark|auto,
             light: { primary, onPrimary, surface, onSurface, accent, muted }, dark: {...same},
-            fontHeading, fontBody (ids from the curated list), radius: none|s|m|l, logoAssetId? },
+            fontHeading, fontBody (ids from the curated list), radius: none|s|m|l, logo ("" | asset:<id> | sample:<name>) },
   locales: { default: ro|en, enabled: [ro, en] },
   pages: [ { id, kind: home|event|info, eventId?, slug, title: {ro,en},
              sections: [ { id, type, hidden, settings, blocks: [ { id, type, settings } ] } ] } ],
@@ -67,6 +67,14 @@ The checkout appearance is not a page: the document can set only `showLogo` and 
 
 ### D2.8 Studio UI
 Studio uses shadcn/ui; the builder is three panes (page and section tree with drag-to-reorder, the frame, the settings form) collapsing to tabs below 1024 px. Drag and drop uses the browser's native drag events plus up/down buttons for keyboard users, to avoid a new dependency.
+
+### Notes from implementation
+- The logo is an image reference like every other image (`logo`: an upload or a platform sample image), so sample shops can carry sample logos.
+- `storefront_versions.source` (`studio`, `template`, `seed`, `ai`) is added now for step 11's AI drafts.
+- The theatre template joins the brand's template choice from onboarding; `blank` gets a minimal home page.
+- Writes in the builder (save, publish, restore, links, uploads) need the owner or admin role; other members see it read-only.
+- Preview links (`preview_link_target`) and `/assets/<id>` (`public_asset`) are the two cross-organiser reads, each a SECURITY DEFINER function owned by its own NOLOGIN NOBYPASSRLS role.
+- The preview frame keeps its real width (1280 or 390 px) and is scaled down to fit the pane.
 
 ## Risks / Trade-offs
 

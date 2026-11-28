@@ -2,44 +2,44 @@
 
 ## 1. Document schema and storage
 
-- [ ] 1.1 Create branch `step-2-builder`; add the control migration for `storefronts`, `storefront_versions` (one-draft partial unique index, immutability trigger), `preview_links`, `assets`, all with forced RLS; verify `services/internal/tenancy/schema_test.go` and `apps/web/tests/unit/storefront-isolation.test.ts`
-- [ ] 1.2 Write the v1 document schema and section registry (`hero`, `lineup`, `ticket_grid`, `calendar`, `map`, `faq`, `gallery`, `countdown`, `text`, locked `footer`), limits, link and image rules, JSON Schema export; verify `apps/web/tests/unit/storefront-schema.test.ts` (unknown keys and types, size, footer, limits, dangerous links, checkout keys)
-- [ ] 1.3 Implement asset upload with content sniffing (PNG, JPEG, WebP, ≤ 1 MB) and `/assets/<id>` with immutable caching; verify `apps/web/tests/unit/storefront-assets.test.ts`
+- [x] 1.1 Create branch `step-2-builder`; add the control migration for `storefronts`, `storefront_versions` (one-draft partial unique index, immutability trigger), `preview_links`, `assets`, all with forced RLS; verify `services/internal/tenancy/schema_test.go` and `apps/web/tests/unit/storefront-isolation.test.ts`
+- [x] 1.2 Write the v1 document schema and section registry (`hero`, `lineup`, `ticket_grid`, `calendar`, `map`, `faq`, `gallery`, `countdown`, `text`, locked `footer`), limits, link and image rules, JSON Schema export; verify `apps/web/tests/unit/storefront-schema.test.ts` (unknown keys and types, size, footer, limits, dangerous links, checkout keys)
+- [x] 1.3 Implement asset upload with content sniffing (PNG, JPEG, WebP, ≤ 1 MB) and `/assets/<id>` with immutable caching; verify `apps/web/tests/unit/storefront-assets.test.ts`
 
 ## 2. Tokens, contrast and templates
 
-- [ ] 2.1 Implement tokens → CSS variables and the curated font list via `next/font`; verify `apps/web/tests/unit/storefront-tokens.test.ts` (every section reads only variables)
-- [ ] 2.2 Implement the contrast module (WCAG ratios, OKLCH lightness fix, light and dark checks) and palette proposal from a logo; verify `apps/web/tests/unit/storefront-contrast.test.ts`
-- [ ] 2.3 Write the festival, resort, club night and theatre templates; verify `apps/web/tests/unit/storefront-templates.test.ts` (valid, contrast passes, publish checks pass)
+- [x] 2.1 Implement tokens → CSS variables and the curated font list via `next/font`; verify `apps/web/tests/unit/storefront-tokens.test.tsx` (every section reads only variables)
+- [x] 2.2 Implement the contrast module (WCAG ratios, OKLCH lightness fix, light and dark checks) and palette proposal from a logo; verify `apps/web/tests/unit/storefront-contrast.test.ts`
+- [x] 2.3 Write the festival, resort, club night and theatre templates; verify `apps/web/tests/unit/storefront-templates.test.ts` (valid, contrast passes, publish checks pass)
 
 ## 3. Renderer
 
-- [ ] 3.1 Build the shared section renderer in `apps/web/src/components/storefront/` (server components; countdown and gallery hydrate), RO/EN platform labels, escaped Markdown subset; verify `apps/web/tests/unit/storefront-render-safety.test.ts`
-- [ ] 3.2 Bind ticket grid, line-up and calendar to catalogue data with all-in prices from `lib/pricing`; verify `apps/web/tests/unit/storefront-catalogue-binding.test.ts` (live price, foreign event refused)
+- [x] 3.1 Build the shared section renderer in `apps/web/src/components/storefront/` (server components; countdown and gallery hydrate), RO/EN platform labels, escaped Markdown subset; verify `apps/web/tests/unit/storefront-render-safety.test.tsx`
+- [x] 3.2 Bind ticket grid, line-up and calendar to catalogue data with all-in prices from `lib/pricing`; verify `apps/web/tests/unit/storefront-catalogue-binding.test.ts` (live price, foreign event refused)
 
 ## 4. Editor and live preview
 
-- [ ] 4.1 Build the builder layout (tree, frame, settings form generated from schemas; tabs under 1024 px), add/remove/hide, drag and keyboard reorder, change template with confirmation; verify `apps/web/tests/e2e/builder.spec.ts` locally
-- [ ] 4.2 Build the frame route and the postMessage protocol (`eps:draft`, `eps:rendered`, `eps:select`, origin and source checks, seq ordering), device toggle and language switch; verify `apps/web/tests/unit/preview-frame.test.ts` and `apps/web/tests/e2e/builder-preview.spec.ts`
-- [ ] 4.3 Implement autosave with revision conflict (409 and reload prompt); verify `apps/web/tests/unit/storefront-versions.test.ts` (draft separate from live, two tabs)
-- [ ] 4.4 Build the brand kit panel (logo, colours, fonts, radius, mode, inline contrast results and accept suggestion) and the locked Checkout tab; verify the brand kit and checkout scenarios in `builder.spec.ts`
+- [x] 4.1 Build the builder layout (tree, frame, settings form generated from schemas; tabs under 1024 px), add/remove/hide, drag and keyboard reorder, change template with confirmation; verify `apps/web/tests/e2e/builder.spec.ts` locally
+- [x] 4.2 Build the frame route and the postMessage protocol (`eps:draft`, `eps:rendered`, `eps:select`, origin and source checks, seq ordering), device toggle and language switch; verify `apps/web/tests/unit/preview-frame.test.ts` and `apps/web/tests/e2e/builder-preview.spec.ts`
+- [x] 4.3 Implement autosave with revision conflict (409 and reload prompt); verify `apps/web/tests/unit/storefront-versions.test.ts` (draft separate from live, two tabs)
+- [x] 4.4 Build the brand kit panel (logo, colours, fonts, radius, mode, inline contrast results and accept suggestion) and the locked Checkout tab; verify the brand kit and checkout scenarios in `builder.spec.ts`
 
 ## 5. Versions and links
 
-- [ ] 5.1 Implement publish (validation, contrast, translations, ticket grid on event pages; one transaction; idempotent per draft revision) with a hook point for step 3; verify `apps/web/tests/unit/storefront-publish.test.ts`
-- [ ] 5.2 Implement history and restore-as-new-version; verify the rollback scenario in `storefront-versions.test.ts`
-- [ ] 5.3 Implement preview links (create, list, revoke, 7-day expiry, hashed tokens) and `/p/<token>` (banner, noindex, no-store, buying disabled); verify `apps/web/tests/unit/preview-links.test.ts`
-- [ ] 5.4 Show the brand address with copy and live state; verify `apps/web/tests/e2e/builder-publish.spec.ts` (first publish, preview link signed out, address state)
+- [x] 5.1 Implement publish (validation, contrast, translations, ticket grid on event pages; one transaction; idempotent per draft revision) with a hook point for step 3; verify `apps/web/tests/unit/storefront-publish.test.ts`
+- [x] 5.2 Implement history and restore-as-new-version; verify the rollback scenario in `storefront-versions.test.ts`
+- [x] 5.3 Implement preview links (create, list, revoke, 7-day expiry, hashed tokens) and `/p/<token>` (banner, noindex, no-store, buying disabled); verify `apps/web/tests/unit/preview-links.test.ts`
+- [x] 5.4 Show the brand address with copy and live state; verify `apps/web/tests/e2e/builder-publish.spec.ts` (first publish, preview link signed out, address state)
 
 ## 6. Messages and seed
 
-- [ ] 6.1 Build the email and ticket previews with the brand kit and a sample order; verify with a Vitest render test and the manual preview check
-- [ ] 6.2 Extend the step 1 seed so both NIBIRU brands and Sunwave have published storefronts (festival, resort and club night templates with sample images); verify the seed test still passes twice and each storefront validates
+- [x] 6.1 Build the email and ticket previews with the brand kit and a sample order; verify with a Vitest render test and the manual preview check
+- [x] 6.2 Extend the step 1 seed so both NIBIRU brands and Sunwave have published storefronts (festival, resort and club night templates with sample images); verify the seed test still passes twice and each storefront validates
 
 ## 7. Step checks (CLAUDE.md loop)
 
-- [ ] 7.1 Run the step's tests locally, then the full suite once; verify all pass
-- [ ] 7.2 Run `npx openspec validate step-2-builder --strict`; verify it passes
+- [x] 7.1 Run the step's tests locally, then the full suite once; verify all pass
+- [x] 7.2 Run `npx openspec validate step-2-builder --strict`; verify it passes
 - [ ] 7.3 Open the PR to `main`; verify CI is green and the preview is deployed and seeded
 - [ ] 7.4 Run the three adversarial reviewers in parallel (correctness; security and data, including injection through documents and postMessage; spec and scale), fix every confirmed finding or record its rejection, re-run affected tests; verify no open confirmed finding
 - [ ] 7.5 Run Playwright against the deployed preview URL (builder, live preview, publish, preview link, rollback; desktop and phone, RO and EN, no console errors, no horizontal scroll); verify all pass
