@@ -7,7 +7,7 @@ Lets an organiser set up each sale moment of an event (opening time, queue, admi
 ## ADDED Requirements
 
 ### Requirement: Sale settings per sale moment
-An organiser SHALL be able to create sale moments for a published event and set for each: opening time, pre-queue opening (5 to 120 minutes before), queue on or off, admission rate per minute, the limit of fans shopping at once, hold length (5 to 15 minutes), cap per order, cap per person, bot defence on or off, OTP on or off and its ticket threshold. Values outside these ranges SHALL be refused.
+An organiser SHALL be able to create sale moments for a published event and set for each: opening time, pre-queue opening (5 to 120 minutes before), queue on or off, admission rate per minute, the limit of fans shopping at once, hold length (5 to 15 minutes), cap per order, cap per person, bot defence on or off, OTP on or off and its ticket threshold, and whether only signed-in fans may join. Values outside these ranges SHALL be refused.
 
 #### Scenario: Save settings
 - **WHEN** an organiser sets opening at 12:00, pre-queue 30 minutes before, rate 2,000 per minute and caps of 4 per order and 6 per person
@@ -30,6 +30,22 @@ The admission rate, the limit of fans shopping at once, pause, bot defence and t
 #### Scenario: Locked field
 - **WHEN** the organiser tries to move the opening time after the pre-queue opened
 - **THEN** the change is refused and the sale keeps its opening time
+- Test: services/internal/sales/settings_test.go
+
+### Requirement: Sale moment limits
+The opening SHALL be within a year of now, an event SHALL have at most 10 sale moments, and a sale moment SHALL be deletable until its pre-queue opens.
+
+#### Scenario: Limits and deletion
+- **WHEN** an organiser adds an 11th sale moment, an opening 13 months away, or deletes a sale whose pre-queue opened
+- **THEN** each is refused, while deleting a sale before its pre-queue opens succeeds
+- Test: services/internal/sales/settings_test.go
+
+### Requirement: Saves never undo each other
+A save SHALL be refused when it was made on an older version than the current one, and the live controls (rate, shopping limit, pause) SHALL also be changeable on top of whatever version is current.
+
+#### Scenario: Two organisers at once
+- **WHEN** two organisers edit version 1 and the second saves after the first
+- **THEN** the second save is refused with the newer version shown, and a pause applies on top of the newer version
 - Test: services/internal/sales/settings_test.go
 
 ### Requirement: Settings belong to one organiser

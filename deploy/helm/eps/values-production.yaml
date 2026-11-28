@@ -7,3 +7,12 @@ core:
   database: { enabled: true, maxConns: 8 }
 gateway:
   replicas: 2
+redis:
+  # One primary (no replica): sized for an on-sale (step 5 review D-h: about 1.6 kB per waiting fan,
+  # so 100,000 fans take about 160 MB), with requests equal to limits so it is never squeezed, and
+  # its append-only file on a volume that survives a reschedule.
+  maxmemory: 1gb
+  resources:
+    requests: { cpu: 500m, memory: 1400Mi }
+    limits: { cpu: "1", memory: 1400Mi }
+  persistence: { enabled: true, storageClass: do-block-storage, size: 5Gi }

@@ -275,9 +275,14 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		}
 		merged[k] += it.Qty
 	}
-	sold, err := s.ProductSold(ctx, org, req.EventID)
-	if err != nil {
-		return nil, false, err
+	// Units sold per product only matter to a ladder with a step by units sold (step 5: one query
+	// fewer per hold on the common date-only ladders).
+	sold := map[string]int64{}
+	var err error
+	if ladderBySold(live) {
+		if sold, err = s.ProductSold(ctx, org, req.EventID); err != nil {
+			return nil, false, err
+		}
 	}
 	perProduct := map[string]int{}
 	tickets := 0
@@ -341,8 +346,27 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		fanFee += st.FanFeeMinor * int64(qty)
 		net += st.OrganiserNetMinor * int64(qty)
 	}
-	// The per-account maximum counts tickets this buyer already bought for the event.
-	if live.Rules.MaxPerAccount != nil && *live.Rules.MaxPerAccount > 0 {
+	id := uuid.NewString()
+	holdMinutes := HoldMinutes(live.Rules)
+	// Step 5 (D-11): the sale's pass, cap per order and cap per person, before any stock is taken.
+	var gate *GateResult
+	if s.Gate != nil {
+		maxAcct := 0
+		if live.Rules.MaxPerAccount != nil {
+			maxAcct = *live.Rules.MaxPerAccount
+		}
+		g, err := s.Gate.BeforeHold(ctx, GateHold{Buyer: b, Org: org, EventID: req.EventID, OrderID: id, Tickets: tickets, MaxPerAccount: maxAcct, HoldMinutes: holdMinutes})
+		if err != nil {
+			return nil, false, err
+		}
+		gate = g
+		if g != nil && g.HoldMinutes >= MinHoldMinutes && g.HoldMinutes <= MaxHoldMinutes {
+			holdMinutes = g.HoldMinutes
+		}
+	}
+	// The per-account maximum counts tickets this buyer already bought for the event (with a sale
+	// moment, the gate applies the stricter of it and the sale's cap per person instead).
+	if gate == nil && live.Rules.MaxPerAccount != nil && *live.Rules.MaxPerAccount > 0 {
 		have, err := s.ticketsOf(ctx, org, req.EventID, b.ID, live)
 		if err != nil {
 			return nil, false, err
@@ -356,10 +380,20 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		return nil, false, apperr.New(http.StatusUnprocessableEntity, apperr.PricesChanged, "Prices changed, please review.", true).
 			With("version", live.Version).With("totalMinor", total).With("currency", live.Currency)
 	}
-	id := uuid.NewString()
-	deadline := now.Add(time.Duration(HoldMinutes(live.Rules)) * time.Minute).Truncate(time.Millisecond)
+	deadline := now.Add(time.Duration(holdMinutes) * time.Minute).Truncate(time.Millisecond)
+	if gate != nil && gate.Taken != nil {
+		if err := gate.Taken(ctx, deadline.Add(AttemptLimit+HoldGrace)); err != nil {
+			return nil, false, err
+		}
+	}
+	undoGate := func() {
+		if gate != nil && gate.Undo != nil {
+			gate.Undo(context.WithoutCancel(ctx))
+		}
+	}
 	caps := Capacities(live)
 	if err := s.reserve(ctx, Hold{OrganiserID: org, EventID: req.EventID, ID: id, Draws: draws, Deadline: deadline}, caps); err != nil {
+		undoGate()
 		var short *ErrShort
 		if errors.As(err, &short) {
 			soldOuts.Inc()
@@ -371,6 +405,20 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 	o := &Order{ID: id, OrganiserID: org, EventID: req.EventID, SnapshotVersion: req.Version, BuyerKind: b.Kind, BuyerID: b.ID, Locale: locale, Currency: live.Currency,
 		State: Held, TotalMinor: total, FaceMinor: face, FanFeeMinor: fanFee, OrganiserNetMinor: net, Draws: draws, HoldExpiresAt: deadline, HoldRef: id, PayPlan: "full",
 		Answers: map[string]any{}, CreatedAt: now, Lines: lines}
+	if gate != nil {
+		if gate.SaleID != "" {
+			o.SaleID = &gate.SaleID
+		}
+		if gate.PassQID != "" {
+			o.PassQID = &gate.PassQID
+		}
+		if gate.CapIdentity != "" {
+			o.CapIdentity = &gate.CapIdentity
+			o.CapPerPerson = &gate.CapPerPerson
+			o.CapTickets = &gate.CapTickets
+		}
+		o.OTPRequired = gate.OTPRequired
+	}
 	if b.Kind == "account" && b.Email != "" {
 		e := strings.ToLower(strings.TrimSpace(b.Email))
 		o.BuyerEmail = &e
@@ -378,9 +426,11 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 	err = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		dj, _ := json.Marshal(draws)
 		if _, err := tx.Exec(ctx, `insert into sales.orders (id, organiser_id, event_id, snapshot_version, buyer_kind, buyer_id, buyer_email, locale, currency, state,
-			total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, created_at)
-			values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, 'held', $10, $11, $12, $13, $14, $15, $15, $1::text, $16)`,
-			id, org, req.EventID, req.Version, b.Kind, b.ID, o.BuyerEmail, locale, live.Currency, total, face, fanFee, net, dj, deadline, now); err != nil {
+			total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, created_at,
+			sale_id, pass_qid, cap_identity, cap_per_person, cap_tickets, otp_required)
+			values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, 'held', $10, $11, $12, $13, $14, $15, $15, $1::text, $16, $17, $18, $19, $20, $21, $22)`,
+			id, org, req.EventID, req.Version, b.Kind, b.ID, o.BuyerEmail, locale, live.Currency, total, face, fanFee, net, dj, deadline, now,
+			o.SaleID, o.PassQID, o.CapIdentity, o.CapPerPerson, o.CapTickets, o.OTPRequired); err != nil {
 			return err
 		}
 		for _, l := range lines {
@@ -397,6 +447,7 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 	})
 	if err != nil {
 		_, _ = s.Inv.Release(context.WithoutCancel(ctx), org, req.EventID, id)
+		undoGate()
 		var pe *pgconn.PgError
 		if errors.As(err, &pe) && pe.Code == "23505" && pe.ConstraintName == "orders_one_live_per_buyer" {
 			// A second request raced the first: return the order that won.
@@ -543,4 +594,16 @@ func instancesOf(s *snapshot.Snapshot) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ladderBySold reports whether any product's price ladder has a step reached by units sold.
+func ladderBySold(s *snapshot.Snapshot) bool {
+	for _, p := range s.Products {
+		for _, st := range p.PriceSteps {
+			if st.Mode != "by_date" {
+				return true
+			}
+		}
+	}
+	return false
 }

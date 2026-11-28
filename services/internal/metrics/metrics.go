@@ -192,3 +192,10 @@ func RequestCounter(service string, status int) *Counter {
 	class := fmt.Sprintf("%dxx", status/100)
 	return NewCounter("eps_http_requests_total", "HTTP requests served, by status class.", "service", service, "code", class)
 }
+
+// RemoveGauge drops a gauge (a sale that left the waiting rooms' index: review sec M5).
+func RemoveGauge(name string) {
+	mu.Lock()
+	defer mu.Unlock()
+	delete(gauges, name)
+}

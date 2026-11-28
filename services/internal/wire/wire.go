@@ -3,7 +3,11 @@
 package wire
 
 import (
+	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,9 +18,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/buzandanalexandru/eps-prototype/services/internal/botdefence"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/coreapi"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/onsale"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/sales"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wallet"
 )
@@ -59,7 +68,7 @@ func Build(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, log *sl
 		_, _ = rand.Read(b)
 		linkKey = b
 	}
-	co := &checkout.Service{Pool: pool, Inv: &checkout.RedisInventory{Redis: rdb}, Snaps: snaps, Links: &checkout.Links{Key: linkKey}, Log: log}
+	co := &checkout.Service{Pool: pool, Inv: &inventory.Sharded{Redis: rdb}, Snaps: snaps, Links: &checkout.Links{Key: linkKey}, Log: log}
 	client := &http.Client{Timeout: 10 * time.Second, Transport: payments.SharedTransport}
 	apiKey := os.Getenv("PSP_API_KEY")
 	urls := map[string]string{"a": env("PSP_A_URL", "http://localhost:8091"), "b": env("PSP_B_URL", "http://localhost:8092")}
@@ -92,4 +101,65 @@ func Shop(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, log *slo
 	}
 	return &coreapi.Shop{Checkout: s.Checkout, Payments: s.Payments, Wallet: s.Wallet, Knobs: s.Knobs, ReturnOrigins: origins, Log: log,
 		Redis: rdb, HoldsPerMin: envInt("HOLD_RATE_PER_MINUTE", 10), LiveHoldsPer: envInt("HOLD_LIVE_PER_CLIENT", 10)}, hooks
+}
+
+// SalesService is the sale settings service of a process (the core, the gateway and the worker).
+func SalesService(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store) *sales.Service {
+	svc := &sales.Service{Redis: rdb, MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))}
+	if pool != nil {
+		svc.Pool = pool // a nil *pgxpool.Pool must not become a non-nil interface
+	}
+	if snaps != nil {
+		svc.Published = func(ctx context.Context, event string) (string, error) {
+			s, err := snaps.Load(ctx, event)
+			if errors.Is(err, snapshot.ErrNotFound) {
+				return "", nil
+			}
+			if err != nil {
+				return "", err
+			}
+			return s.OrganiserID, nil
+		}
+	}
+	return svc
+}
+
+// OnSale wires the step 5 gate into the core's checkout: sale settings, the pass check (the
+// gateway's public key, QUEUE_PASS_PUBLIC_KEY; required outside EPS_ENV=dev), caps, scores and OTP.
+func OnSale(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, co *checkout.Service, log *slog.Logger) *coreapi.OnSale {
+	_, pub, err := queue.KeysFromEnv(false)
+	if err != nil {
+		log.Error("pass keys", "error", err.Error())
+		os.Exit(1)
+	}
+	sv := SalesService(pool, rdb, snaps)
+	g := &onsale.Gate{Sales: sv, Redis: rdb, Pool: pool, Passes: &queue.PassCheck{Verifier: queue.NewVerifier(pub), Redis: rdb},
+		Caps: &botdefence.Caps{Redis: rdb}, Scorer: &botdefence.Scorer{Redis: rdb}, OTP: &botdefence.OTP{Redis: rdb}, Checkout: co, Secret: IdentitySecret()}
+	co.Gate = g
+	life := &onsale.Lifecycle{Checkout: co, Engine: &queue.Engine{Redis: rdb}, Caps: g.Caps}
+	co.Ended = func(ctx context.Context, o *checkout.Order, how string) { _ = life.End(ctx, o, how) }
+	return &coreapi.OnSale{Sales: sv, Gate: g, Redis: rdb}
+}
+
+// IdentitySecret keys the stored identity and address hashes of the waiting rooms and caps
+// (review sec L4): derived from SNAPSHOT_CACHE_KEY, so every core and gateway of an environment
+// agrees and no new secret is needed.
+func IdentitySecret() []byte {
+	m := hmac.New(sha256.New, []byte(os.Getenv("SNAPSHOT_CACHE_KEY")))
+	m.Write([]byte("eps-identity-hashes-v1"))
+	return m.Sum(nil)
+}
+
+// RequireMACKey stops a process outside EPS_ENV=dev whose Redis copies would be signed with an
+// empty key, and any process without EPS_ENV at all (review sec L6).
+func RequireMACKey(log *slog.Logger) {
+	envName := os.Getenv("EPS_ENV")
+	if envName == "" {
+		log.Error("EPS_ENV is required (dev for local development)")
+		os.Exit(1)
+	}
+	if envName != "dev" && os.Getenv("SNAPSHOT_CACHE_KEY") == "" {
+		log.Error("SNAPSHOT_CACHE_KEY is required outside EPS_ENV=dev")
+		os.Exit(1)
+	}
 }

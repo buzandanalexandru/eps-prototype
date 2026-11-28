@@ -497,10 +497,270 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shop/orders/{orderId}/otp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send (simulate) a one-time code for an order that needs one, or a new code
+         * @description Risk-based OTP (E12, design D-8): asked only when the organiser switched it on and the buyer
+         *     scored as risky or the order is above the ticket threshold. The code is simulated: it is
+         *     returned here and shown on screen in a "simulated SMS" panel, never sent anywhere.
+         */
+        post: operations["sendOrderOtp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/shop/orders/{orderId}/otp/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check a one-time code (3 tries per code, 3 resends; then the order is cancelled) */
+        post: operations["verifyOrderOtp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/events/{eventId}/sales": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The event's sale moments with their current settings */
+        get: operations["listSales"];
+        put?: never;
+        /** Add a sale moment to a published event (owner or admin) */
+        post: operations["createSale"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/sales/{saleId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A sale moment with its settings history and live queue figures */
+        get: operations["getSale"];
+        put?: never;
+        post?: never;
+        /** Delete a sale moment before its pre-queue opens (owner or admin) */
+        delete: operations["deleteSale"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/sales/{saleId}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Change the live dial, the shopping limit or pause on top of the current version (owner or admin) */
+        patch: operations["patchSaleLive"];
+        trace?: never;
+    };
+    "/v1/organiser/sales/{saleId}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save a new version of a sale's settings (owner or admin)
+         * @description Live fields (admission rate, shopping limit, pause, bot defence, OTP, holds and caps) take
+         *     effect within 2 seconds. Opening time, pre-queue window and queue on/off are refused with
+         *     EPS-SALE-LOCKED once the pre-queue opened. With baseVersion, a save on top of an older
+         *     version is refused with EPS-SALE-STALE (409).
+         */
+        put: operations["updateSaleSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/queue/{saleId}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join a sale's waiting room (gateway)
+         * @description Takes the fan's one place per account (or guest identity), or returns the place it has. Before
+         *     the pre-queue opens nothing is taken; in the pre-queue window the fan waits for the draw at
+         *     opening; after the draw the fan joins the back of the line; with the queue off a pass is ready
+         *     at once. The page sends a session secret it created (X-EPS-Session) and a proof of work:
+         *     SHA-256 of "<saleId>:<sha256(session) hex>:<pow>" with 16 leading zero bits.
+         */
+        post: operations["joinQueue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/queue/{saleId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A place's position, estimate and, once admitted, its pass (gateway)
+         * @description Needs only the queue token and the session secret it is bound to (no core token).
+         */
+        get: operations["queueStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SaleSettings: {
+            /** Format: date-time */
+            opensAt: string;
+            /** @description 5 to 120. */
+            prequeueMinutes: number;
+            queueOn: boolean;
+            /** @description 10 to 60,000 fans admitted per minute. */
+            ratePerMinute: number;
+            /** @description Fans shopping at once, 1 to 100,000. */
+            activeLimit: number;
+            paused: boolean;
+            /** @description 5 to 15. */
+            holdMinutes: number;
+            /** @description 1 to 20 tickets. */
+            capPerOrder: number;
+            /** @description 1 to 50 tickets across the event's sale moments. */
+            capPerPerson: number;
+            botDefence: boolean;
+            otpOn: boolean;
+            /** @description Orders above this many tickets are asked for a code (1 to 20). */
+            otpThreshold: number;
+            /** @description Only signed-in fans may join (guests are asked to sign in first). */
+            accountsOnly?: boolean;
+        };
+        SaleLiveChange: {
+            ratePerMinute?: number;
+            activeLimit?: number;
+            paused?: boolean;
+        };
+        SaleCreate: {
+            name: string;
+            settings: components["schemas"]["SaleSettings"];
+        };
+        SaleVersion: {
+            version: number;
+            settings: components["schemas"]["SaleSettings"];
+            /** Format: date-time */
+            at: string;
+            by: string;
+        };
+        QueueCounts: {
+            state: string;
+            prequeue: number;
+            line: number;
+            slow: number;
+            admitted: number;
+            active: number;
+            seed?: string;
+        };
+        SaleView: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            eventId: string;
+            name: string;
+            version: number;
+            settings: components["schemas"]["SaleSettings"];
+            /** @enum {string} */
+            phase: "before" | "prequeue" | "open";
+            /** Format: date-time */
+            prequeueOpensAt?: string;
+            /** Format: date-time */
+            updatedAt: string;
+            updatedBy: string;
+            history?: components["schemas"]["SaleVersion"][];
+            queue?: components["schemas"]["QueueCounts"];
+        };
+        SaleList: {
+            sales: components["schemas"]["SaleView"][];
+        };
+        OtpChallenge: {
+            /** @description The simulated code (shown on screen; a real system would send it by SMS). */
+            code: string;
+            /** Format: date-time */
+            expiresAt: string;
+            resendsLeft: number;
+            triesLeft: number;
+            simulated: boolean;
+        };
+        QueueStatus: {
+            /** @enum {string} */
+            state: "before" | "notopen" | "prequeue" | "shuffling" | "waiting" | "admitted" | "ended";
+            saleId: string;
+            eventId: string;
+            /** Format: date-time */
+            opensAt: string;
+            /** Format: date-time */
+            prequeueOpensAt: string;
+            queueToken?: string;
+            /** @description Fans ahead in line. */
+            ahead?: number;
+            estimateSeconds?: number;
+            paused: boolean;
+            /** @description The signed pass (once admitted), sent as X-EPS-Pass on checkout calls. */
+            pass?: string;
+            /** @description Unix milliseconds. */
+            passExpiresAt?: number;
+            nextPollMs: number;
+            /** Format: date-time */
+            serverTime: string;
+        };
         Health: {
             /** @enum {string} */
             status: "ok";
@@ -591,6 +851,8 @@ export interface components {
              * @description Present only when few are left (at most 50, or at most 5% of capacity).
              */
             remaining?: number;
+            /** @description Sold out for now, but held rather than sold (step 5) - some may come back. */
+            allHeld?: boolean;
         };
         Availability: {
             /** Format: uuid */
@@ -613,6 +875,7 @@ export interface components {
             status: "on_sale" | "sold_out";
             /** Format: int64 */
             remaining: number;
+            allHeld?: boolean;
         };
         Problem: {
             /** @description A URI reference identifying the problem type. */
@@ -891,6 +1154,11 @@ export interface components {
                 [key: string]: unknown;
             };
             detailsGiven: boolean;
+            saleId?: string;
+            /** @description A one-time code must be entered before payment (risk-based OTP, step 5). */
+            otpRequired?: boolean;
+            /** Format: date-time */
+            otpVerifiedAt?: string;
             lastErrorCode?: string;
             /** Format: date-time */
             createdAt?: string;
@@ -942,6 +1210,14 @@ export interface components {
         };
     };
     parameters: {
+        SaleId: string;
+        /** @description The waiting room's signed pass (required on sales with a waiting room). */
+        Pass: string;
+        /** @description The browser's session secret the pass is bound to. */
+        Session: string;
+        /** @description The page's tab id (polling is scored per tab). */
+        Tab: string;
+        SessionRequired: string;
         OrderId: string;
         OrganiserId: string;
         OrganiserQuery: string;
@@ -1158,6 +1434,10 @@ export interface operations {
             query?: never;
             header?: {
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+                /** @description The waiting room's signed pass (required on sales with a waiting room). */
+                "X-EPS-Pass"?: components["parameters"]["Pass"];
+                /** @description The browser's session secret the pass is bound to. */
+                "X-EPS-Session"?: components["parameters"]["Session"];
             };
             path?: never;
             cookie?: never;
@@ -1253,6 +1533,10 @@ export interface operations {
                 "X-Order-Token"?: components["parameters"]["OrderToken"];
                 /** @description Created when the fan presses the button; reused on retry and double click. */
                 "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+                /** @description The waiting room's signed pass (required on sales with a waiting room). */
+                "X-EPS-Pass"?: components["parameters"]["Pass"];
+                /** @description The browser's session secret the pass is bound to. */
+                "X-EPS-Session"?: components["parameters"]["Session"];
             };
             path: {
                 orderId: components["parameters"]["OrderId"];
@@ -1647,6 +1931,286 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SeasonCloseResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    sendOrderOtp: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+                /** @description The waiting room's signed pass (required on sales with a waiting room). */
+                "X-EPS-Pass"?: components["parameters"]["Pass"];
+                /** @description The browser's session secret the pass is bound to. */
+                "X-EPS-Session"?: components["parameters"]["Session"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The simulated code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OtpChallenge"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    verifyOrderOtp: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description A signed order link (resume or view token); the order's buyer does not need one. */
+                "X-Order-Token"?: components["parameters"]["OrderToken"];
+                /** @description The waiting room's signed pass (required on sales with a waiting room). */
+                "X-EPS-Pass"?: components["parameters"]["Pass"];
+                /** @description The browser's session secret the pass is bound to. */
+                "X-EPS-Session"?: components["parameters"]["Session"];
+            };
+            path: {
+                orderId: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The order, with its code verified. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listSales: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sale moments by opening time. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleList"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    createSale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaleCreate"];
+            };
+        };
+        responses: {
+            /** @description The sale with version 1 of its settings. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sale. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteSale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    patchSaleLive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaleLiveChange"];
+            };
+        };
+        responses: {
+            /** @description The sale with its new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateSaleSettings: {
+        parameters: {
+            query?: {
+                baseVersion?: number;
+            };
+            header?: never;
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaleSettings"];
+            };
+        };
+        responses: {
+            /** @description The sale with its new version. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SaleView"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    joinQueue: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-EPS-Session": components["parameters"]["SessionRequired"];
+                /** @description The page's tab id (polling is scored per tab). */
+                "X-EPS-Tab"?: components["parameters"]["Tab"];
+                /** @description The browser's user agent, passed on by the web app. */
+                "X-EPS-Client-UA"?: string;
+            };
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    pow?: string;
+                    print?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The fan's place. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueStatus"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    queueStatus: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description The page's tab id (polling is scored per tab). */
+                "X-EPS-Tab"?: components["parameters"]["Tab"];
+                "X-EPS-Session": components["parameters"]["SessionRequired"];
+                "X-EPS-Queue-Token": string;
+            };
+            path: {
+                saleId: components["parameters"]["SaleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The place. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueStatus"];
                 };
             };
             default: components["responses"]["Problem"];

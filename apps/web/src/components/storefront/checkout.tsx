@@ -13,6 +13,7 @@ import type { Currency } from "@/lib/pricing";
 import { parseItems } from "@/lib/storefront/picker";
 import { money, shopDate } from "./all-in-price";
 import { newKey, shopApi, type OrderView, type Problem } from "./shop-api";
+import { clearPass, passHeaders } from "./queue-client";
 
 type Props = { labels: ShopLabels; locale: Locale; base: string };
 
@@ -39,10 +40,12 @@ export function messageFor(labels: ShopLabels, p: Pick<Problem, "code" | "messag
   return typeof v === "string" ? v : labels.err_generic;
 }
 
-function ErrorBox({ labels, problem, testId = "checkout-error" }: { labels: ShopLabels; problem: Pick<Problem, "code" | "messageKey">; testId?: string }) {
+function ErrorBox({ labels, problem, testId = "checkout-error" }: { labels: ShopLabels; problem: Pick<Problem, "code" | "messageKey"> & { data?: Problem["data"] }; testId?: string }) {
+  const left = (problem.data as { left?: number } | undefined)?.left;
   return (
     <div role="alert" className={`${box} border-[var(--eps-primary)]`} data-testid={testId}>
       <p className="font-semibold">{messageFor(labels, problem)}</p>
+      {problem.code === "EPS-CAP-REACHED" && typeof left === "number" && left > 0 && <p data-testid="cap-left">{fill(labels.err_cap_left, { n: left })}</p>}
       {problem.code.startsWith("EPS-") && (
         <p className="text-sm">
           {labels.errorCode}: <code data-testid="error-code">{problem.code}</code>
@@ -72,6 +75,20 @@ function keepQueryOnLanguageLinks() {
   for (const a of document.querySelectorAll<HTMLAnchorElement>('a[data-testid^="shop-lang-"]')) {
     a.href = `${a.href.split("?")[0]}${window.location.search}`;
   }
+}
+
+/**
+ * A sale with a waiting room needs a pass (step 5): the fan goes to the waiting room, which comes
+ * back here with one. Never a block: the waiting room always gives a place.
+ */
+function toWaitingRoom(p: Problem, base: string, eventId: string): boolean {
+  const sale = (p.data as { saleId?: string } | undefined)?.saleId;
+  if (p.code !== "EPS-PASS-REQUIRED" || !sale || !/^[0-9a-f-]{36}$/.test(sale)) return false;
+  clearPass(eventId);
+  const back = `${window.location.pathname}${window.location.search}`;
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+  window.location.assign(`${base}/queue?sale=${sale}&next=${encodeURIComponent(back)}`);
+  return true;
 }
 
 type Hand = { eventId: string; version: number; locale: string; items: { productId: string; qty: number; instance?: string }[] };
@@ -139,10 +156,11 @@ export function Checkout({ labels, locale, base }: Props) {
     };
     (async () => {
       const body = { eventId: event, version: v, locale, items: items.map((l) => ({ productId: l.productId, qty: l.qty, ...(l.instance ? { instance: l.instance } : {}) })) };
-      const r = await shopApi<OrderView>("orders", { method: "POST", key: key!, body });
+      const r = await shopApi<OrderView>("orders", { method: "POST", key: key!, body, headers: passHeaders(event) });
       if (!r.ok) {
         // Any error drops the hand-off's key (review M3): trying again is a new request.
         forget();
+        if (toWaitingRoom(r.problem, base, event)) return;
         setLoad({ state: "error", problem: r.problem, retry: r.problem.code === "EPS-PRICES-CHANGED" ? { ...body, version: Number((r.problem.data as { version?: number } | undefined)?.version ?? v) } : undefined });
         return;
       }
@@ -152,7 +170,7 @@ export function Checkout({ labels, locale, base }: Props) {
       if (!["held", "paying", "payment_failed"].includes(r.data.state)) {
         // This hand-off already became an order that is over (paid, expired...): a new hold.
         forget();
-        const again = await shopApi<OrderView>("orders", { method: "POST", key: newKey(), body });
+        const again = await shopApi<OrderView>("orders", { method: "POST", key: newKey(), body, headers: passHeaders(event) });
         if (!again.ok) {
           setLoad({ state: "error", problem: again.problem });
           return;
@@ -163,7 +181,7 @@ export function Checkout({ labels, locale, base }: Props) {
       setOrderId(r.data.id);
       show(r.data);
     })();
-  }, [locale, show]);
+  }, [locale, show, base]);
 
   const state = load.state === "ready" ? load.order.state : null;
   const [burst, setBurst] = useState(0);
@@ -184,8 +202,9 @@ export function Checkout({ labels, locale, base }: Props) {
 
   const retryNew = async (body: NonNullable<Extract<Load, { state: "error" }>["retry"]>) => {
     setLoad({ state: "loading" });
-    const r = await shopApi<OrderView>("orders", { method: "POST", key: newKey(), body });
+    const r = await shopApi<OrderView>("orders", { method: "POST", key: newKey(), body, headers: passHeaders(body.eventId) });
     if (!r.ok) {
+      if (toWaitingRoom(r.problem, base, body.eventId)) return;
       setLoad({ state: "error", problem: r.problem });
       return;
     }
@@ -482,6 +501,7 @@ function PayForm({ order, labels, locale, link, onChange, refresh }: ScreenProps
       method: "POST",
       key: press.current,
       orderToken: link,
+      headers: passHeaders(order.eventId),
       body: { method: m.method, ...(m.savedCardId ? { savedCardId: m.savedCardId } : {}), ...(saveCard && m.method === "hosted_card" ? { saveCard: true } : {}), plan, returnUrl: here },
     });
     if (!r.ok) {
@@ -508,6 +528,7 @@ function PayForm({ order, labels, locale, link, onChange, refresh }: ScreenProps
     setBusy(false);
   }
 
+  const needOtp = !!order.otpRequired && !order.otpVerifiedAt;
   const afterContact = order.questions.filter((q) => q.slot === "afterContact");
   const consents = order.questions.filter((q) => q.slot === "consents");
   const need = (id: string) => missing.includes(id);
@@ -633,8 +654,9 @@ function PayForm({ order, labels, locale, link, onChange, refresh }: ScreenProps
         )}
       </fieldset>
       {error && <ErrorBox labels={labels} problem={error} />}
+      {needOtp && <OtpPanel order={order} labels={labels} link={link} onChange={onChange} />}
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={primary} disabled={busy} data-testid="pay">
+        <button type="submit" className={primary} disabled={busy || needOtp} data-testid="pay">
           {busy ? labels.sending : order.state === "payment_failed" ? labels.tryAgain : fill(labels.payAmount, { amount: money(amount, cur, locale) })}
         </button>
         <button type="button" className={secondary} disabled={busy} onClick={() => void cancel()} data-testid="cancel-order">
@@ -642,6 +664,82 @@ function PayForm({ order, labels, locale, link, onChange, refresh }: ScreenProps
         </button>
       </div>
     </form>
+  );
+}
+
+type Challenge = { code: string; expiresAt: string; resendsLeft: number; triesLeft: number; simulated: boolean };
+
+/**
+ * Risk-based OTP (step 5, E12): asked only of risky or bulk orders when the organiser switched it
+ * on. The code is simulated and shown here in a "simulated SMS" panel; nothing is sent anywhere.
+ */
+function OtpPanel({ order, labels, link, onChange }: Pick<ScreenProps, "order" | "labels" | "link" | "onChange">) {
+  const [sms, setSms] = useState<Challenge | null>(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<Problem | null>(null);
+  const headers = passHeaders(order.eventId);
+  const send = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await shopApi<Challenge>(`orders/${order.id}/otp`, { method: "POST", orderToken: link, headers });
+    if (r.ok) {
+      setSms(r.data);
+      setCode("");
+    } else setError(r.problem);
+    setBusy(false);
+  };
+  const verify = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await shopApi<OrderView>(`orders/${order.id}/otp/verify`, { method: "POST", orderToken: link, headers, body: { code: code.trim() } });
+    if (r.ok) onChange(r.data);
+    else {
+      setError(r.problem);
+      if (r.problem.code === "EPS-OTP-LOCKED") {
+        const cur = await shopApi<OrderView>(`orders/${order.id}`, { orderToken: link });
+        if (cur.ok) onChange(cur.data);
+      }
+    }
+    setBusy(false);
+  };
+  const tries = (error?.data as { triesLeft?: number } | undefined)?.triesLeft;
+  return (
+    <div className={`${box} space-y-3`} data-testid="otp">
+      <p className="font-semibold">{labels.otpTitle}</p>
+      <p className="text-sm">{labels.otpLead}</p>
+      {sms && (
+        <div className="rounded-[var(--eps-radius)] border-2 border-dashed border-[var(--eps-primary)] p-3" role="note" data-testid="otp-sms">
+          <p className="text-xs font-semibold tracking-wide uppercase">{labels.otpSimTitle}</p>
+          <p className="font-semibold" data-testid="otp-sms-message">
+            {fill(labels.otpSimMessage, { code: sms.code })}
+          </p>
+          <p className="text-xs">{labels.otpSimNote}</p>
+        </div>
+      )}
+      {sms ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid min-w-0 flex-1 gap-1 text-sm">
+            {labels.otpCode}
+            <input className={input} inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} data-testid="otp-code" />
+          </label>
+          <button type="button" className={primary} disabled={busy || code.length !== 6} onClick={() => void verify()} data-testid="otp-verify">
+            {labels.otpVerify}
+          </button>
+          {sms.resendsLeft > 0 && (
+            <button type="button" className={secondary} disabled={busy} onClick={() => void send()} data-testid="otp-resend">
+              {labels.otpResend}
+            </button>
+          )}
+        </div>
+      ) : (
+        <button type="button" className={primary} disabled={busy} onClick={() => void send()} data-testid="otp-send">
+          {labels.otpSend}
+        </button>
+      )}
+      {error && <ErrorBox labels={labels} problem={error} testId="otp-error" />}
+      {typeof tries === "number" && tries > 0 && <p className="text-sm">{fill(labels.otpTriesLeft, { n: tries })}</p>}
+    </div>
   );
 }
 

@@ -126,6 +126,15 @@ jobs:
           kubectl -n eps-prod create secret generic eps-db --from-literal=DATABASE_URL="$url" \
             --from-literal=LOGIN_PASSWORD="$pw" --dry-run=client -o yaml | kubectl apply -f - > /dev/null
           deploy/scripts/runtime-secret.sh eps-prod
+      - name: Redis moves onto a volume once (step 5; a StatefulSet's volume templates cannot change in place)
+        run: |
+          # The counters rebuild from Postgres after a Redis loss (design D-9), so the one-time move
+          # from an emptyDir to a block-storage volume replaces the StatefulSet.
+          if kubectl -n eps-prod get statefulset eps-redis >/dev/null 2>&1 && \
+             [[ -z "$(kubectl -n eps-prod get statefulset eps-redis -o jsonpath='{.spec.volumeClaimTemplates}')" ]]; then
+            kubectl -n eps-prod delete statefulset eps-redis --wait
+            echo "eps-redis replaced: it comes back on a volume"
+          fi
       - name: helm upgrade --install (atomic; a release that never gets ready rolls back)
         run: |
           helm upgrade --install eps deploy/helm/eps --namespace eps-prod \

@@ -34,6 +34,8 @@ core:
   replicas: 1
   # Checkout, payments and wallet need the order-link key and the providers' keys (eps-runtime).
   paymentSecrets: [ORDER_LINK_KEY, PSP_API_KEY, PSP_ADMIN_TOKEN, PSP_WEBHOOK_SECRET_A, PSP_WEBHOOK_SECRET_B]
+  # Step 5: the core verifies waiting-room passes with the gateway's public key only.
+  passKeys: [QUEUE_PASS_PUBLIC_KEY]
   # New holds per client per minute and live holds per client (review D-h); 0 turns a limit off.
   holdLimits: { perMinute: 10, live: 10 }
   autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 10, targetCPU: 70 }
@@ -53,8 +55,15 @@ gateway:
   replicas: 1
   autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 20, targetCPU: 70 }
   pdb: { enabled: true }
-  # The gateway keeps no Postgres pool and its readiness depends only on Redis.
+  # The gateway keeps no Postgres pool and its readiness depends only on Redis (the core publishes
+  # the token keys and sale settings there).
   database: { enabled: false }
+  # Step 5: the gateway signs waiting-room passes (and verifies its own queue tokens).
+  passKeys: [QUEUE_PASS_PRIVATE_KEY, QUEUE_PASS_PUBLIC_KEY]
+  # Waiting-room joins per client address per minute (design D-5); a /24 gets 20 times this.
+  queueJoinsPerMinute: 10
+  # New guest places per address per minute (guest identities are free to make: review D-f).
+  queueNewGuestsPerMinute: 5
   ingress:
     enabled: true
     host: gw
@@ -64,7 +73,9 @@ gateway:
 
 worker:
   enabled: true
-  replicas: 1
+  # Two replicas: the singleton loops run on the holder of the worker lease, the other is a hot
+  # standby; the order-event consumers run on both (step 5 review).
+  replicas: 2
   # The reconciler and instalment runner call the providers; the worker builds the same checkout
   # service as the core, which requires the order-link key outside dev (no webhook keys needed).
   paymentSecrets: [ORDER_LINK_KEY, PSP_API_KEY]
@@ -120,3 +131,5 @@ redis:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 500m, memory: 256Mi }
+  # A block-storage volume for the append-only file (production; previews keep an emptyDir).
+  persistence: { enabled: false, storageClass: do-block-storage, size: 5Gi }

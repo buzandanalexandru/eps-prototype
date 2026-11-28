@@ -75,6 +75,26 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
       optional: false
 {{- end }}
 {{- end }}
+{{- with .ctx.Values.passKeys }}
+# Step 5, the waiting room's Ed25519 pass keys from eps-runtime: the gateway signs
+# (QUEUE_PASS_PRIVATE_KEY), the core only verifies (QUEUE_PASS_PUBLIC_KEY).
+{{- range $k := . }}
+- name: {{ $k }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $.ctx.Values.global.runtimeSecret }}
+      key: {{ $k }}
+      optional: false
+{{- end }}
+{{- end }}
+{{- with .ctx.Values.queueJoinsPerMinute }}
+- name: QUEUE_JOINS_PER_MINUTE
+  value: {{ . | quote }}
+{{- end }}
+{{- with .ctx.Values.queueNewGuestsPerMinute }}
+- name: QUEUE_NEW_GUESTS_PER_MINUTE
+  value: {{ . | quote }}
+{{- end }}
 {{- if .ctx.Values.paymentSecrets }}
 - name: PSP_A_URL
   value: {{ printf "http://%s-psp-a" .ctx.Release.Name | quote }}

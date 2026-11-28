@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
@@ -66,6 +67,8 @@ func WithAccessLog(log *slog.Logger, service string) func(http.Handler) http.Han
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
 			metrics.RequestCounter(service, rec.status).Inc()
+			metrics.NewHistogram("eps_http_request_seconds", "Request latency by route (ids folded).", metrics.DefaultLatencyBuckets,
+				"service", service, "route", Route(r.URL.Path)).Observe(time.Since(start).Seconds())
 			if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 				return // probes every few seconds would drown the log
 			}
@@ -120,4 +123,38 @@ func WithWriteDeadline(d time.Duration, stream func(*http.Request) bool) func(ht
 // IsEventStream reports whether the client asked for server-sent events.
 func IsEventStream(r *http.Request) bool {
 	return r.Header.Get("Accept") == "text/event-stream"
+}
+
+// Route folds a path into a bounded label: ids (uuids, long hex or digits) become ":id" and only
+// the first five segments count (review sec M5: latency by route).
+func Route(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) > 5 {
+		parts = parts[:5]
+	}
+	for i, p := range parts {
+		if isID(p) {
+			parts[i] = ":id"
+		} else if len(p) > 32 {
+			parts[i] = ":x"
+		}
+	}
+	return "/" + strings.Join(parts, "/")
+}
+
+func isID(p string) bool {
+	if len(p) < 8 {
+		return false
+	}
+	digits := 0
+	for _, c := range p {
+		switch {
+		case c >= '0' && c <= '9':
+			digits++
+		case c >= 'a' && c <= 'f', c >= 'A' && c <= 'F', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return digits > 0
 }

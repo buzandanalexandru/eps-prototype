@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"time"
 
 	dbfiles "github.com/buzandanalexandru/eps-prototype/services/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/auth"
@@ -14,6 +15,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
@@ -23,6 +25,7 @@ import (
 
 func main() {
 	log := service.Logger("core")
+	wire.RequireMACKey(log)
 	ctx := context.Background()
 	pool := service.Postgres(ctx, log)
 	rdb := service.Redis(log)
@@ -37,20 +40,26 @@ func main() {
 	var usage snapshot.Usage = snapshot.NoUsage{}
 	var shop *coreapi.Shop
 	var hooks *payments.Webhooks
+	var onSale *coreapi.OnSale
 	if pool != nil {
 		// Copies in Redis are signed with SNAPSHOT_CACHE_KEY (a secret CI generates per environment).
 		snaps = snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
 		if rdb != nil {
 			shop, hooks = wire.Shop(pool, rdb, snaps, log)
-			usage = checkout.Usage{Svc: shop.Checkout}
+			usage = checkout.Usage{Svc: shop.Checkout, HeldBy: inventory.HeldOf(shop.Checkout.Inv)}
+			onSale = wire.OnSale(pool, rdb, snaps, shop.Checkout, log)
 		}
 		avail = &snapshot.AvailabilityService{Store: snaps, Usage: usage, Redis: rdb}
+		if u, ok := usage.(checkout.Usage); ok {
+			avail.Held = u
+		}
 	}
 	srv := &coreapi.Server{
 		Snapshots:    snaps,
 		Availability: avail,
 		Usage:        usage,
 		Shop:         shop,
+		OnSale:       onSale,
 		Service:      "core",
 		Pool:         pool,
 		Checks: []health.Checker{
@@ -67,6 +76,10 @@ func main() {
 	issuers := auth.IssuersFromEnv(os.Getenv)
 	verifier := auth.NewVerifier(keys, issuers...)
 	verifier.Start(ctx)
+	if pool != nil && rdb != nil {
+		// The gateway verifies core tokens with the keys the core publishes to Redis (step 5).
+		go auth.RunPublisher(ctx, keys, rdb, []byte(os.Getenv("SNAPSHOT_CACHE_KEY")), time.Minute)
+	}
 	metrics.NewGauge("eps_auth_key_loads", func() float64 { return float64(verifier.Loads()) })
 	log.Info("token issuers", "issuers", issuers)
 	h, err := coreapi.NewHandler(srv, coreapi.Options{

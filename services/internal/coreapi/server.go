@@ -33,6 +33,8 @@ type Server struct {
 	Usage        snapshot.Usage
 	// Checkout, payments and wallet (step 4): nil in contract tests without a database.
 	Shop *Shop
+	// Sale settings and the checkout gate (step 5): nil in contract tests without a database.
+	OnSale *OnSale
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)

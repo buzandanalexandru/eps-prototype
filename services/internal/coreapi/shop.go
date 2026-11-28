@@ -271,6 +271,9 @@ func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) O
 		v.Order = &red
 		return v
 	}
+	if o.OTPRequired && s.OnSale != nil && s.OnSale.Gate != nil && o.OTPVerified == nil {
+		o.OTPRequired = s.OnSale.Gate.OTPNeeded(ctx, o) // the organiser may have switched OTP off
+	}
 	live := o.State == checkout.Held || o.State == checkout.PaymentFailed || o.State == checkout.Paying
 	holdLive := o.HoldExpiresAt.After(time.Now())
 	v.CanPay = (o.State == checkout.Held || o.State == checkout.PaymentFailed) && holdLive && (access == accessBuyer || access == accessLink)
@@ -345,6 +348,7 @@ func (s *Server) CreateOrder(ctx context.Context, req api.CreateOrderRequestObje
 		rateLimited.Inc()
 		return problemRaw(ctx, apperr.New(http.StatusTooManyRequests, apperr.RateLimited, "Too many holds from this connection. Wait a minute.", true)), nil
 	}
+	b = withPass(b, req.Params.XEPSPass, req.Params.XEPSSession)
 	o, existing, err := s.Shop.Checkout.CreateOrder(ctx, b, checkout.CreateRequest(*req.Body), key)
 	if err != nil {
 		return s.fail(ctx, err), nil
@@ -483,6 +487,12 @@ func (s *Server) PayOrder(ctx context.Context, req api.PayOrderRequestObject) (a
 		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
 	}
 	body := req.Body
+	// Step 5 (D-11): the order's pass from the same session, then the one-time code if it needs one.
+	if s.OnSale != nil && s.OnSale.Gate != nil {
+		if err := s.OnSale.Gate.BeforePay(ctx, o, withPass(b, req.Params.XEPSPass, req.Params.XEPSSession), access == accessLink); err != nil {
+			return s.fail(ctx, err), nil
+		}
+	}
 	if access == accessLink {
 		// A link holder pays by card, Apple Pay or Google Pay only; the wallet and saved cards need
 		// the buyer's own session (review D-e). The payment acts for the order's buyer.

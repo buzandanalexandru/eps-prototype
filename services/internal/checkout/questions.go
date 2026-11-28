@@ -179,9 +179,20 @@ func (s *Service) SetDetails(ctx context.Context, o *Order, d Details) (*Order, 
 		return nil, apperr.New(http.StatusUnprocessableEntity, apperr.DetailsMissing, "Answer the required questions.", false).With("missing", missing)
 	}
 	aj, _ := json.Marshal(answers)
+	// Step 5 (D-7): a guest's cap moves to the normalised email it gives, checked again there.
+	identity := o.CapIdentity
+	if s.Gate != nil && o.BuyerKind == "guest" && o.CapIdentity != nil {
+		id, err := s.Gate.BeforeDetails(ctx, o, email)
+		if err != nil {
+			return nil, err
+		}
+		if id != "" {
+			identity = &id
+		}
+	}
 	err = db.WithTx(ctx, s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `update sales.orders set buyer_name = $2, buyer_email = case when buyer_kind = 'guest' or buyer_email is null then $3 else buyer_email end,
-			answers = $4, details_given = true, updated_at = now() where id = $1 and state in ('held', 'payment_failed')`, o.ID, name, email, aj)
+			answers = $4, details_given = true, cap_identity = $5, updated_at = now() where id = $1 and state in ('held', 'payment_failed')`, o.ID, name, email, aj, identity)
 		if err != nil {
 			return err
 		}

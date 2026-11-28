@@ -57,6 +57,11 @@ export function choiceSoldOut(p: ShopProduct, instance: string, ctx: PickerCtx):
   return poolInstancesOf(p, ctx.event, instance).some((i) => ctx.availability?.instances[i]?.status === "sold_out" || roomIn(i, ctx) <= 0);
 }
 
+/** Whether a full day or slot is only held, not sold (step 5: its tickets may come back). */
+export function choiceAllHeld(p: ShopProduct, instance: string, ctx: PickerCtx): boolean {
+  return poolInstancesOf(p, ctx.event, instance).some((i) => ctx.availability?.instances[i]?.status === "sold_out" && ctx.availability?.instances[i]?.allHeld === true);
+}
+
 export type Blocked = "paused" | "not_yet" | "ended" | "sold_out" | "choose" | "limit" | "account_limit" | null;
 
 const qtyOf = (lines: Line[], productId: string) => lines.filter((l) => l.productId === productId).reduce((n, l) => n + l.qty, 0);

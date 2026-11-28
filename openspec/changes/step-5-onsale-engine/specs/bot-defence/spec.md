@@ -7,7 +7,7 @@ Keeps bots and bulk buyers from crowding out real fans during an on-sale, by sco
 ## ADDED Requirements
 
 ### Requirement: Silent bot scoring
-When bot defence is on, the system SHALL score each queue place from 0 to 100 using behaviour signals (missing proof of work, polling too fast or too regularly, many places per address, automation markers, shared fingerprints, very new accounts, checkout without a valid pass). Scores SHALL be shown only to the organiser.
+When bot defence is on, the system SHALL score each queue place from 0 to 100 using behaviour signals (missing proof of work, polling too fast or too regularly, many places per address or address block, hosting addresses, automation markers, shared browser prints, checkout with another session's pass, all codes of an OTP used). Scores SHALL be shown only to the organiser.
 
 #### Scenario: Refresh-spamming bot
 - **WHEN** a client without proof of work polls status every 200 milliseconds
@@ -17,6 +17,14 @@ When bot defence is on, the system SHALL score each queue place from 0 to 100 us
 #### Scenario: Ordinary fan
 - **WHEN** a fan passes proof of work, polls every 10 seconds with jitter and reloads twice
 - **THEN** its score stays below 40
+- Test: services/internal/botdefence/score_test.go
+
+### Requirement: Shared addresses are not suspects
+Many places from one address or address block SHALL on their own make a place at most risky, never a suspect, and a browser print SHALL count only when more than 20 people share it.
+
+#### Scenario: Shared addresses alone
+- **WHEN** many places come from one address and its /24
+- **THEN** the score stays below the suspect threshold unless another signal adds to it
 - Test: services/internal/botdefence/score_test.go
 
 ### Requirement: Suspects go to the back after the shuffle
@@ -33,7 +41,7 @@ Places scoring 70 or more SHALL be moved behind every other place, and places sc
 - Test: services/internal/botdefence/penalty_test.go
 
 ### Requirement: Caps per person across sale moments
-The system SHALL limit tickets per person per event across all its sale moments, counting held and paid tickets, by account or by normalised guest email. A hold over the cap SHALL be refused with `EPS-CAP-REACHED` and the number still allowed; the cap SHALL be checked again when payment succeeds.
+The system SHALL limit tickets per person per event across all its sale moments, counting held and paid tickets, by account (and its verified email) or by normalised guest email, including tickets paid before the event had sale moments. A hold over the cap SHALL be refused with `EPS-CAP-REACHED` and the number still allowed; the cap SHALL be checked again when payment succeeds.
 
 #### Scenario: Cap across presale and general sale
 - **WHEN** a fan with a cap of 6 bought 4 in the presale and tries to hold 3 in the general sale
@@ -43,6 +51,16 @@ The system SHALL limit tickets per person per event across all its sale moments,
 #### Scenario: Guest email variants
 - **WHEN** guests use `ana.pop+1@gmail.com` and `anapop@gmail.com`
 - **THEN** both count toward the same cap
+- Test: services/internal/botdefence/caps_test.go
+
+#### Scenario: Bought before the sale moment
+- **WHEN** a fan paid 6 tickets (cap 6) before the event had sale moments and then holds 1 in a sale moment
+- **THEN** the hold is refused
+- Test: services/internal/botdefence/caps_test.go
+
+#### Scenario: Account email and guest share a cap
+- **WHEN** an account with a verified email bought 4 (cap 6) and a guest using that email asks for 3
+- **THEN** the guest is refused and told 2 more can be bought
 - Test: services/internal/botdefence/caps_test.go
 
 #### Scenario: Parallel holds at the cap
@@ -94,5 +112,6 @@ Bot defence SHALL never show real fans a block or error for behaviour alone; the
 
 #### Scenario: Simulated crowd
 - **WHEN** a test crowd of 10,000 human-like fans and 1,000 bots goes through the queue
+- **AND** the crowd includes carrier-grade NAT, a popular phone model and fans with two tabs
 - **THEN** fewer than 1% of the fans are marked suspect and more than 90% of the bots are
 - Test: services/internal/botdefence/crowd_test.go

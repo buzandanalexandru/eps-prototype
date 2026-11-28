@@ -25,3 +25,13 @@ services/bin/
 
 # Helm
 deploy/helm/**/charts/*.tgz
+
+# Go binaries and stray generated copies built in services/ by hand
+/services/loadkit
+/services/core
+/services/gateway
+/services/worker
+/services/fakepsp
+/services/migrate
+/services/simulator
+/services/api.gen.go

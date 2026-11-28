@@ -473,19 +473,19 @@ func (e ProviderListProvidersProvider) Valid() bool {
 
 // Defines values for ProviderListProvidersState.
 const (
-	Closed   ProviderListProvidersState = "closed"
-	HalfOpen ProviderListProvidersState = "half_open"
-	Open     ProviderListProvidersState = "open"
+	ProviderListProvidersStateClosed   ProviderListProvidersState = "closed"
+	ProviderListProvidersStateHalfOpen ProviderListProvidersState = "half_open"
+	ProviderListProvidersStateOpen     ProviderListProvidersState = "open"
 )
 
 // Valid indicates whether the value is a known member of the ProviderListProvidersState enum.
 func (e ProviderListProvidersState) Valid() bool {
 	switch e {
-	case Closed:
+	case ProviderListProvidersStateClosed:
 		return true
-	case HalfOpen:
+	case ProviderListProvidersStateHalfOpen:
 		return true
-	case Open:
+	case ProviderListProvidersStateOpen:
 		return true
 	default:
 		return false
@@ -531,6 +531,39 @@ func (e QuestionSlot) Valid() bool {
 	}
 }
 
+// Defines values for QueueStatusState.
+const (
+	QueueStatusStateAdmitted  QueueStatusState = "admitted"
+	QueueStatusStateBefore    QueueStatusState = "before"
+	QueueStatusStateEnded     QueueStatusState = "ended"
+	QueueStatusStateNotopen   QueueStatusState = "notopen"
+	QueueStatusStatePrequeue  QueueStatusState = "prequeue"
+	QueueStatusStateShuffling QueueStatusState = "shuffling"
+	QueueStatusStateWaiting   QueueStatusState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the QueueStatusState enum.
+func (e QueueStatusState) Valid() bool {
+	switch e {
+	case QueueStatusStateAdmitted:
+		return true
+	case QueueStatusStateBefore:
+		return true
+	case QueueStatusStateEnded:
+		return true
+	case QueueStatusStateNotopen:
+		return true
+	case QueueStatusStatePrequeue:
+		return true
+	case QueueStatusStateShuffling:
+		return true
+	case QueueStatusStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessStatus.
 const (
 	NotReady ReadinessStatus = "not_ready"
@@ -543,6 +576,27 @@ func (e ReadinessStatus) Valid() bool {
 	case NotReady:
 		return true
 	case Ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SaleViewPhase.
+const (
+	SaleViewPhaseBefore   SaleViewPhase = "before"
+	SaleViewPhaseOpen     SaleViewPhase = "open"
+	SaleViewPhasePrequeue SaleViewPhase = "prequeue"
+)
+
+// Valid indicates whether the value is a known member of the SaleViewPhase enum.
+func (e SaleViewPhase) Valid() bool {
+	switch e {
+	case SaleViewPhaseBefore:
+		return true
+	case SaleViewPhaseOpen:
+		return true
+	case SaleViewPhasePrequeue:
 		return true
 	default:
 		return false
@@ -826,6 +880,7 @@ type InstalmentPlanState string
 
 // InstanceAvailability defines model for InstanceAvailability.
 type InstanceAvailability struct {
+	AllHeld    *bool                      `json:"allHeld,omitempty"`
 	InstanceId string                     `json:"instanceId"`
 	Remaining  int64                      `json:"remaining"`
 	Status     InstanceAvailabilityStatus `json:"status"`
@@ -907,14 +962,19 @@ type OrderView struct {
 	Lines           []OrderLine        `json:"lines"`
 	Locale          *string            `json:"locale,omitempty"`
 	OrganiserId     string             `json:"organiserId"`
-	PaidAt          *time.Time         `json:"paidAt,omitempty"`
-	PayPlan         OrderViewPayPlan   `json:"payPlan"`
-	Payment         *PaymentAttempt    `json:"payment,omitempty"`
-	Plan            *InstalmentPlan    `json:"plan,omitempty"`
-	Questions       []Question         `json:"questions"`
+
+	// OtpRequired A one-time code must be entered before payment (risk-based OTP, step 5).
+	OtpRequired   *bool            `json:"otpRequired,omitempty"`
+	OtpVerifiedAt *time.Time       `json:"otpVerifiedAt,omitempty"`
+	PaidAt        *time.Time       `json:"paidAt,omitempty"`
+	PayPlan       OrderViewPayPlan `json:"payPlan"`
+	Payment       *PaymentAttempt  `json:"payment,omitempty"`
+	Plan          *InstalmentPlan  `json:"plan,omitempty"`
+	Questions     []Question       `json:"questions"`
 
 	// ResumeToken The signed resume link token, until the hold deadline (live orders only).
 	ResumeToken *string     `json:"resumeToken,omitempty"`
+	SaleId      *string     `json:"saleId,omitempty"`
 	SavedCards  []SavedCard `json:"savedCards"`
 
 	// ServerTime The core's clock, so the timer counts down from the server deadline.
@@ -954,6 +1014,16 @@ type OrderViewPayPlan string
 
 // OrderViewState defines model for OrderView.State.
 type OrderViewState string
+
+// OtpChallenge defines model for OtpChallenge.
+type OtpChallenge struct {
+	// Code The simulated code (shown on screen; a real system would send it by SMS).
+	Code        string    `json:"code"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+	ResendsLeft int       `json:"resendsLeft"`
+	Simulated   bool      `json:"simulated"`
+	TriesLeft   int       `json:"triesLeft"`
+}
 
 // PayCode defines model for PayCode.
 type PayCode struct {
@@ -1046,6 +1116,9 @@ type Problem struct {
 
 // ProductAvailability defines model for ProductAvailability.
 type ProductAvailability struct {
+	// AllHeld Sold out for now, but held rather than sold (step 5) - some may come back.
+	AllHeld *bool `json:"allHeld,omitempty"`
+
 	// AllInMinor What the fan pays for one unit now, in minor units.
 	AllInMinor int64 `json:"allInMinor"`
 
@@ -1122,6 +1195,42 @@ type QuestionKind string
 // QuestionSlot defines model for Question.Slot.
 type QuestionSlot string
 
+// QueueCounts defines model for QueueCounts.
+type QueueCounts struct {
+	Active   int     `json:"active"`
+	Admitted int     `json:"admitted"`
+	Line     int     `json:"line"`
+	Prequeue int     `json:"prequeue"`
+	Seed     *string `json:"seed,omitempty"`
+	Slow     int     `json:"slow"`
+	State    string  `json:"state"`
+}
+
+// QueueStatus defines model for QueueStatus.
+type QueueStatus struct {
+	// Ahead Fans ahead in line.
+	Ahead           *int      `json:"ahead,omitempty"`
+	EstimateSeconds *int      `json:"estimateSeconds,omitempty"`
+	EventId         string    `json:"eventId"`
+	NextPollMs      int       `json:"nextPollMs"`
+	OpensAt         time.Time `json:"opensAt"`
+
+	// Pass The signed pass (once admitted), sent as X-EPS-Pass on checkout calls.
+	Pass *string `json:"pass,omitempty"`
+
+	// PassExpiresAt Unix milliseconds.
+	PassExpiresAt   *int             `json:"passExpiresAt,omitempty"`
+	Paused          bool             `json:"paused"`
+	PrequeueOpensAt time.Time        `json:"prequeueOpensAt"`
+	QueueToken      *string          `json:"queueToken,omitempty"`
+	SaleId          string           `json:"saleId"`
+	ServerTime      time.Time        `json:"serverTime"`
+	State           QueueStatusState `json:"state"`
+}
+
+// QueueStatusState defines model for QueueStatus.State.
+type QueueStatusState string
+
 // Readiness defines model for Readiness.
 type Readiness struct {
 	Checks []Check         `json:"checks"`
@@ -1130,6 +1239,82 @@ type Readiness struct {
 
 // ReadinessStatus defines model for Readiness.Status.
 type ReadinessStatus string
+
+// SaleCreate defines model for SaleCreate.
+type SaleCreate struct {
+	Name     string       `json:"name"`
+	Settings SaleSettings `json:"settings"`
+}
+
+// SaleList defines model for SaleList.
+type SaleList struct {
+	Sales []SaleView `json:"sales"`
+}
+
+// SaleLiveChange defines model for SaleLiveChange.
+type SaleLiveChange struct {
+	ActiveLimit   *int  `json:"activeLimit,omitempty"`
+	Paused        *bool `json:"paused,omitempty"`
+	RatePerMinute *int  `json:"ratePerMinute,omitempty"`
+}
+
+// SaleSettings defines model for SaleSettings.
+type SaleSettings struct {
+	// AccountsOnly Only signed-in fans may join (guests are asked to sign in first).
+	AccountsOnly *bool `json:"accountsOnly,omitempty"`
+
+	// ActiveLimit Fans shopping at once, 1 to 100,000.
+	ActiveLimit int  `json:"activeLimit"`
+	BotDefence  bool `json:"botDefence"`
+
+	// CapPerOrder 1 to 20 tickets.
+	CapPerOrder int `json:"capPerOrder"`
+
+	// CapPerPerson 1 to 50 tickets across the event's sale moments.
+	CapPerPerson int `json:"capPerPerson"`
+
+	// HoldMinutes 5 to 15.
+	HoldMinutes int       `json:"holdMinutes"`
+	OpensAt     time.Time `json:"opensAt"`
+	OtpOn       bool      `json:"otpOn"`
+
+	// OtpThreshold Orders above this many tickets are asked for a code (1 to 20).
+	OtpThreshold int  `json:"otpThreshold"`
+	Paused       bool `json:"paused"`
+
+	// PrequeueMinutes 5 to 120.
+	PrequeueMinutes int  `json:"prequeueMinutes"`
+	QueueOn         bool `json:"queueOn"`
+
+	// RatePerMinute 10 to 60,000 fans admitted per minute.
+	RatePerMinute int `json:"ratePerMinute"`
+}
+
+// SaleVersion defines model for SaleVersion.
+type SaleVersion struct {
+	At       time.Time    `json:"at"`
+	By       string       `json:"by"`
+	Settings SaleSettings `json:"settings"`
+	Version  int          `json:"version"`
+}
+
+// SaleView defines model for SaleView.
+type SaleView struct {
+	EventId         openapi_types.UUID `json:"eventId"`
+	History         *[]SaleVersion     `json:"history,omitempty"`
+	Id              openapi_types.UUID `json:"id"`
+	Name            string             `json:"name"`
+	Phase           SaleViewPhase      `json:"phase"`
+	PrequeueOpensAt *time.Time         `json:"prequeueOpensAt,omitempty"`
+	Queue           *QueueCounts       `json:"queue,omitempty"`
+	Settings        SaleSettings       `json:"settings"`
+	UpdatedAt       time.Time          `json:"updatedAt"`
+	UpdatedBy       string             `json:"updatedBy"`
+	Version         int                `json:"version"`
+}
+
+// SaleViewPhase defines model for SaleView.Phase.
+type SaleViewPhase string
 
 // SavedCard defines model for SavedCard.
 type SavedCard struct {
@@ -1270,6 +1455,21 @@ type OrganiserId = openapi_types.UUID
 // OrganiserQuery defines model for OrganiserQuery.
 type OrganiserQuery = openapi_types.UUID
 
+// Pass defines model for Pass.
+type Pass = string
+
+// SaleId defines model for SaleId.
+type SaleId = openapi_types.UUID
+
+// Session defines model for Session.
+type Session = string
+
+// SessionRequired defines model for SessionRequired.
+type SessionRequired = string
+
+// Tab defines model for Tab.
+type Tab = string
+
 // GetReadyzParams defines parameters for GetReadyz.
 type GetReadyzParams struct {
 	// Verbose Include every check, not only the failing ones.
@@ -1279,15 +1479,51 @@ type GetReadyzParams struct {
 // SetProviderKnobsParamsProvider defines parameters for SetProviderKnobs.
 type SetProviderKnobsParamsProvider string
 
+// UpdateSaleSettingsParams defines parameters for UpdateSaleSettings.
+type UpdateSaleSettingsParams struct {
+	BaseVersion *int `form:"baseVersion,omitempty" json:"baseVersion,omitempty"`
+}
+
 // StandPaymentParams defines parameters for StandPayment.
 type StandPaymentParams struct {
 	// IdempotencyKey Created when the fan presses the button; reused on retry and double click.
 	IdempotencyKey IdempotencyKeyRequired `json:"Idempotency-Key"`
 }
 
+// JoinQueueJSONBody defines body for JoinQueue for application/json ContentType.
+type JoinQueueJSONBody struct {
+	Pow   *string `json:"pow,omitempty"`
+	Print *string `json:"print,omitempty"`
+}
+
+// JoinQueueParams defines parameters for JoinQueue.
+type JoinQueueParams struct {
+	XEPSSession SessionRequired `json:"X-EPS-Session"`
+
+	// XEPSTab The page's tab id (polling is scored per tab).
+	XEPSTab *Tab `json:"X-EPS-Tab,omitempty"`
+
+	// XEPSClientUA The browser's user agent, passed on by the web app.
+	XEPSClientUA *string `json:"X-EPS-Client-UA,omitempty"`
+}
+
+// QueueStatusParams defines parameters for QueueStatus.
+type QueueStatusParams struct {
+	// XEPSTab The page's tab id (polling is scored per tab).
+	XEPSTab        *Tab            `json:"X-EPS-Tab,omitempty"`
+	XEPSSession    SessionRequired `json:"X-EPS-Session"`
+	XEPSQueueToken string          `json:"X-EPS-Queue-Token"`
+}
+
 // CreateOrderParams defines parameters for CreateOrder.
 type CreateOrderParams struct {
 	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+
+	// XEPSPass The waiting room's signed pass (required on sales with a waiting room).
+	XEPSPass *Pass `json:"X-EPS-Pass,omitempty"`
+
+	// XEPSSession The browser's session secret the pass is bound to.
+	XEPSSession *Session `json:"X-EPS-Session,omitempty"`
 }
 
 // GetOrderParams defines parameters for GetOrder.
@@ -1320,6 +1556,35 @@ type SimulateNextInstalmentParams struct {
 	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
 }
 
+// SendOrderOtpParams defines parameters for SendOrderOtp.
+type SendOrderOtpParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+
+	// XEPSPass The waiting room's signed pass (required on sales with a waiting room).
+	XEPSPass *Pass `json:"X-EPS-Pass,omitempty"`
+
+	// XEPSSession The browser's session secret the pass is bound to.
+	XEPSSession *Session `json:"X-EPS-Session,omitempty"`
+}
+
+// VerifyOrderOtpJSONBody defines body for VerifyOrderOtp for application/json ContentType.
+type VerifyOrderOtpJSONBody struct {
+	Code string `json:"code"`
+}
+
+// VerifyOrderOtpParams defines parameters for VerifyOrderOtp.
+type VerifyOrderOtpParams struct {
+	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
+	XOrderToken *OrderToken `json:"X-Order-Token,omitempty"`
+
+	// XEPSPass The waiting room's signed pass (required on sales with a waiting room).
+	XEPSPass *Pass `json:"X-EPS-Pass,omitempty"`
+
+	// XEPSSession The browser's session secret the pass is bound to.
+	XEPSSession *Session `json:"X-EPS-Session,omitempty"`
+}
+
 // PayOrderParams defines parameters for PayOrder.
 type PayOrderParams struct {
 	// XOrderToken A signed order link (resume or view token); the order's buyer does not need one.
@@ -1327,6 +1592,12 @@ type PayOrderParams struct {
 
 	// IdempotencyKey Created when the fan presses the button; reused on retry and double click.
 	IdempotencyKey IdempotencyKeyRequired `json:"Idempotency-Key"`
+
+	// XEPSPass The waiting room's signed pass (required on sales with a waiting room).
+	XEPSPass *Pass `json:"X-EPS-Pass,omitempty"`
+
+	// XEPSSession The browser's session secret the pass is bound to.
+	XEPSSession *Session `json:"X-EPS-Session,omitempty"`
 }
 
 // ListSavedCardsParams defines parameters for ListSavedCards.
@@ -1361,14 +1632,26 @@ type TopUpWalletParams struct {
 	IdempotencyKey IdempotencyKeyRequired `json:"Idempotency-Key"`
 }
 
+// CreateSaleJSONRequestBody defines body for CreateSale for application/json ContentType.
+type CreateSaleJSONRequestBody = SaleCreate
+
 // SetProviderKnobsJSONRequestBody defines body for SetProviderKnobs for application/json ContentType.
 type SetProviderKnobsJSONRequestBody = ProviderKnobs
+
+// PatchSaleLiveJSONRequestBody defines body for PatchSaleLive for application/json ContentType.
+type PatchSaleLiveJSONRequestBody = SaleLiveChange
+
+// UpdateSaleSettingsJSONRequestBody defines body for UpdateSaleSettings for application/json ContentType.
+type UpdateSaleSettingsJSONRequestBody = SaleSettings
 
 // CloseSeasonJSONRequestBody defines body for CloseSeason for application/json ContentType.
 type CloseSeasonJSONRequestBody = SeasonCloseRequest
 
 // StandPaymentJSONRequestBody defines body for StandPayment for application/json ContentType.
 type StandPaymentJSONRequestBody = StandPaymentRequest
+
+// JoinQueueJSONRequestBody defines body for JoinQueue for application/json ContentType.
+type JoinQueueJSONRequestBody JoinQueueJSONBody
 
 // ClaimOrdersJSONRequestBody defines body for ClaimOrders for application/json ContentType.
 type ClaimOrdersJSONRequestBody = ClaimRequest
@@ -1378,6 +1661,9 @@ type CreateOrderJSONRequestBody = CreateOrderRequest
 
 // SetOrderDetailsJSONRequestBody defines body for SetOrderDetails for application/json ContentType.
 type SetOrderDetailsJSONRequestBody = OrderDetails
+
+// VerifyOrderOtpJSONRequestBody defines body for VerifyOrderOtp for application/json ContentType.
+type VerifyOrderOtpJSONRequestBody VerifyOrderOtpJSONBody
 
 // PayOrderJSONRequestBody defines body for PayOrder for application/json ContentType.
 type PayOrderJSONRequestBody = PayRequest
@@ -1396,6 +1682,12 @@ type ServerInterface interface {
 	// GetPoolUsage Units sold or held per pool instance
 	// (GET /v1/organiser/events/{eventId}/pool-usage)
 	GetPoolUsage(w http.ResponseWriter, r *http.Request, eventId EventId)
+	// ListSales The event's sale moments with their current settings
+	// (GET /v1/organiser/events/{eventId}/sales)
+	ListSales(w http.ResponseWriter, r *http.Request, eventId EventId)
+	// CreateSale Add a sale moment to a published event (owner or admin)
+	// (POST /v1/organiser/events/{eventId}/sales)
+	CreateSale(w http.ResponseWriter, r *http.Request, eventId EventId)
 	// ActivateSnapshot Make a published snapshot version the one the core serves
 	// (POST /v1/organiser/events/{eventId}/snapshots/{version}/activate)
 	ActivateSnapshot(w http.ResponseWriter, r *http.Request, eventId EventId, version int)
@@ -1405,6 +1697,18 @@ type ServerInterface interface {
 	// SetProviderKnobs Change a simulated provider's knobs for this organiser (owner or admin)
 	// (PUT /v1/organiser/payments/providers/{provider}/knobs)
 	SetProviderKnobs(w http.ResponseWriter, r *http.Request, provider SetProviderKnobsParamsProvider)
+	// DeleteSale Delete a sale moment before its pre-queue opens (owner or admin)
+	// (DELETE /v1/organiser/sales/{saleId})
+	DeleteSale(w http.ResponseWriter, r *http.Request, saleId SaleId)
+	// GetSale A sale moment with its settings history and live queue figures
+	// (GET /v1/organiser/sales/{saleId})
+	GetSale(w http.ResponseWriter, r *http.Request, saleId SaleId)
+	// PatchSaleLive Change the live dial, the shopping limit or pause on top of the current version (owner or admin)
+	// (PATCH /v1/organiser/sales/{saleId}/live)
+	PatchSaleLive(w http.ResponseWriter, r *http.Request, saleId SaleId)
+	// UpdateSaleSettings Save a new version of a sale's settings (owner or admin)
+	// (PUT /v1/organiser/sales/{saleId}/settings)
+	UpdateSaleSettings(w http.ResponseWriter, r *http.Request, saleId SaleId, params UpdateSaleSettingsParams)
 	// CloseSeason Move every fan's unspent balance to next-season credit (owner or admin)
 	// (POST /v1/organiser/wallet/season-close)
 	CloseSeason(w http.ResponseWriter, r *http.Request)
@@ -1414,6 +1718,12 @@ type ServerInterface interface {
 	// GetAvailability Public availability of an event's products
 	// (GET /v1/public/events/{eventId}/availability)
 	GetAvailability(w http.ResponseWriter, r *http.Request, eventId EventId)
+	// JoinQueue Join a sale's waiting room (gateway)
+	// (POST /v1/queue/{saleId}/join)
+	JoinQueue(w http.ResponseWriter, r *http.Request, saleId SaleId, params JoinQueueParams)
+	// QueueStatus A place's position, estimate and, once admitted, its pass (gateway)
+	// (GET /v1/queue/{saleId}/status)
+	QueueStatus(w http.ResponseWriter, r *http.Request, saleId SaleId, params QueueStatusParams)
 	// ClaimOrders Add guest orders placed with the caller's verified email to the account
 	// (POST /v1/shop/claims)
 	ClaimOrders(w http.ResponseWriter, r *http.Request)
@@ -1438,6 +1748,12 @@ type ServerInterface interface {
 	// SimulateNextInstalment Demo action - move the plan's clock to its next due date
 	// (POST /v1/shop/orders/{orderId}/instalments/simulate-next)
 	SimulateNextInstalment(w http.ResponseWriter, r *http.Request, orderId OrderId, params SimulateNextInstalmentParams)
+	// SendOrderOtp Send (simulate) a one-time code for an order that needs one, or a new code
+	// (POST /v1/shop/orders/{orderId}/otp)
+	SendOrderOtp(w http.ResponseWriter, r *http.Request, orderId OrderId, params SendOrderOtpParams)
+	// VerifyOrderOtp Check a one-time code (3 tries per code, 3 resends; then the order is cancelled)
+	// (POST /v1/shop/orders/{orderId}/otp/verify)
+	VerifyOrderOtp(w http.ResponseWriter, r *http.Request, orderId OrderId, params VerifyOrderOtpParams)
 	// PayOrder Pay an order (one Pay press)
 	// (POST /v1/shop/orders/{orderId}/payments)
 	PayOrder(w http.ResponseWriter, r *http.Request, orderId OrderId, params PayOrderParams)
@@ -1552,6 +1868,58 @@ func (siw *ServerInterfaceWrapper) GetPoolUsage(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListSales operation middleware
+func (siw *ServerInterfaceWrapper) ListSales(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSales(w, r, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSale operation middleware
+func (siw *ServerInterfaceWrapper) CreateSale(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSale(w, r, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ActivateSnapshot operation middleware
 func (siw *ServerInterfaceWrapper) ActivateSnapshot(w http.ResponseWriter, r *http.Request) {
 
@@ -1618,6 +1986,126 @@ func (siw *ServerInterfaceWrapper) SetProviderKnobs(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SetProviderKnobs(w, r, provider)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSale operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSale(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "saleId" -------------
+	var saleId SaleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "saleId", r.PathValue("saleId"), &saleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "saleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSale(w, r, saleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSale operation middleware
+func (siw *ServerInterfaceWrapper) GetSale(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "saleId" -------------
+	var saleId SaleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "saleId", r.PathValue("saleId"), &saleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "saleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSale(w, r, saleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PatchSaleLive operation middleware
+func (siw *ServerInterfaceWrapper) PatchSaleLive(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "saleId" -------------
+	var saleId SaleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "saleId", r.PathValue("saleId"), &saleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "saleId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PatchSaleLive(w, r, saleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSaleSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSaleSettings(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "saleId" -------------
+	var saleId SaleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "saleId", r.PathValue("saleId"), &saleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "saleId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateSaleSettingsParams
+
+	// ------------- Optional query parameter "baseVersion" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "baseVersion", r.URL.Query(), &params.BaseVersion, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "baseVersion"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "baseVersion", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSaleSettings(w, r, saleId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1712,6 +2200,194 @@ func (siw *ServerInterfaceWrapper) GetAvailability(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// JoinQueue operation middleware
+func (siw *ServerInterfaceWrapper) JoinQueue(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "saleId" -------------
+	var saleId SaleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "saleId", r.PathValue("saleId"), &saleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "saleId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params JoinQueueParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-EPS-Session" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Session")]; found {
+		var XEPSSession SessionRequired
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Session", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Session", valueList[0], &XEPSSession, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Session", Err: err})
+			return
+		}
+
+		params.XEPSSession = XEPSSession
+
+	} else {
+		err := fmt.Errorf("Header parameter X-EPS-Session is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-EPS-Session", Err: err})
+		return
+	}
+
+	// ------------- Optional header parameter "X-EPS-Tab" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Tab")]; found {
+		var XEPSTab Tab
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Tab", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Tab", valueList[0], &XEPSTab, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Tab", Err: err})
+			return
+		}
+
+		params.XEPSTab = &XEPSTab
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Client-UA" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Client-UA")]; found {
+		var XEPSClientUA string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Client-UA", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Client-UA", valueList[0], &XEPSClientUA, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Client-UA", Err: err})
+			return
+		}
+
+		params.XEPSClientUA = &XEPSClientUA
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.JoinQueue(w, r, saleId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// QueueStatus operation middleware
+func (siw *ServerInterfaceWrapper) QueueStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "saleId" -------------
+	var saleId SaleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "saleId", r.PathValue("saleId"), &saleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "saleId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params QueueStatusParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-EPS-Tab" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Tab")]; found {
+		var XEPSTab Tab
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Tab", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Tab", valueList[0], &XEPSTab, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Tab", Err: err})
+			return
+		}
+
+		params.XEPSTab = &XEPSTab
+
+	}
+
+	// ------------- Required header parameter "X-EPS-Session" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Session")]; found {
+		var XEPSSession SessionRequired
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Session", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Session", valueList[0], &XEPSSession, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Session", Err: err})
+			return
+		}
+
+		params.XEPSSession = XEPSSession
+
+	} else {
+		err := fmt.Errorf("Header parameter X-EPS-Session is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-EPS-Session", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "X-EPS-Queue-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Queue-Token")]; found {
+		var XEPSQueueToken string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Queue-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Queue-Token", valueList[0], &XEPSQueueToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Queue-Token", Err: err})
+			return
+		}
+
+		params.XEPSQueueToken = XEPSQueueToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-EPS-Queue-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-EPS-Queue-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.QueueStatus(w, r, saleId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ClaimOrders operation middleware
 func (siw *ServerInterfaceWrapper) ClaimOrders(w http.ResponseWriter, r *http.Request) {
 
@@ -1767,6 +2443,44 @@ func (siw *ServerInterfaceWrapper) CreateOrder(w http.ResponseWriter, r *http.Re
 		}
 
 		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Pass" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Pass")]; found {
+		var XEPSPass Pass
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Pass", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Pass", valueList[0], &XEPSPass, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Pass", Err: err})
+			return
+		}
+
+		params.XEPSPass = &XEPSPass
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Session" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Session")]; found {
+		var XEPSSession Session
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Session", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Session", valueList[0], &XEPSSession, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Session", Err: err})
+			return
+		}
+
+		params.XEPSSession = &XEPSSession
 
 	}
 
@@ -2031,6 +2745,182 @@ func (siw *ServerInterfaceWrapper) SimulateNextInstalment(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// SendOrderOtp operation middleware
+func (siw *ServerInterfaceWrapper) SendOrderOtp(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SendOrderOtpParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Pass" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Pass")]; found {
+		var XEPSPass Pass
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Pass", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Pass", valueList[0], &XEPSPass, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Pass", Err: err})
+			return
+		}
+
+		params.XEPSPass = &XEPSPass
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Session" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Session")]; found {
+		var XEPSSession Session
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Session", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Session", valueList[0], &XEPSSession, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Session", Err: err})
+			return
+		}
+
+		params.XEPSSession = &XEPSSession
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendOrderOtp(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyOrderOtp operation middleware
+func (siw *ServerInterfaceWrapper) VerifyOrderOtp(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "orderId" -------------
+	var orderId OrderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "orderId", r.PathValue("orderId"), &orderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "orderId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params VerifyOrderOtpParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Order-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Order-Token")]; found {
+		var XOrderToken OrderToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Order-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Order-Token", valueList[0], &XOrderToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Order-Token", Err: err})
+			return
+		}
+
+		params.XOrderToken = &XOrderToken
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Pass" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Pass")]; found {
+		var XEPSPass Pass
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Pass", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Pass", valueList[0], &XEPSPass, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Pass", Err: err})
+			return
+		}
+
+		params.XEPSPass = &XEPSPass
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Session" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Session")]; found {
+		var XEPSSession Session
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Session", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Session", valueList[0], &XEPSSession, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Session", Err: err})
+			return
+		}
+
+		params.XEPSSession = &XEPSSession
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyOrderOtp(w, r, orderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PayOrder operation middleware
 func (siw *ServerInterfaceWrapper) PayOrder(w http.ResponseWriter, r *http.Request) {
 
@@ -2091,6 +2981,44 @@ func (siw *ServerInterfaceWrapper) PayOrder(w http.ResponseWriter, r *http.Reque
 		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
 		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
 		return
+	}
+
+	// ------------- Optional header parameter "X-EPS-Pass" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Pass")]; found {
+		var XEPSPass Pass
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Pass", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Pass", valueList[0], &XEPSPass, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Pass", Err: err})
+			return
+		}
+
+		params.XEPSPass = &XEPSPass
+
+	}
+
+	// ------------- Optional header parameter "X-EPS-Session" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-EPS-Session")]; found {
+		var XEPSSession Session
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-EPS-Session", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-EPS-Session", valueList[0], &XEPSSession, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-EPS-Session", Err: err})
+			return
+		}
+
+		params.XEPSSession = &XEPSSession
+
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2541,6 +3469,16 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/wallets/{organiserId}/pay-code", wrapper.CreatePayCode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/wallet/stand-payments", wrapper.StandPayment)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/wallet/season-close", wrapper.CloseSeason)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/orders/{orderId}/otp", wrapper.SendOrderOtp)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/shop/orders/{orderId}/otp/verify", wrapper.VerifyOrderOtp)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/organiser/events/{eventId}/sales", wrapper.ListSales)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/events/{eventId}/sales", wrapper.CreateSale)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/organiser/sales/{saleId}", wrapper.DeleteSale)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/organiser/sales/{saleId}", wrapper.GetSale)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/organiser/sales/{saleId}/live", wrapper.PatchSaleLive)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/organiser/sales/{saleId}/settings", wrapper.UpdateSaleSettings)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/queue/{saleId}/join", wrapper.JoinQueue)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/queue/{saleId}/status", wrapper.QueueStatus)
 
 	return m
 }
@@ -2693,6 +3631,85 @@ type GetPoolUsagedefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetPoolUsagedefaultApplicationProblemPlusJSONResponse) VisitGetPoolUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSalesRequestObject struct {
+	EventId EventId `json:"eventId"`
+}
+
+type ListSalesResponseObject interface {
+	VisitListSalesResponse(w http.ResponseWriter) error
+}
+
+type ListSales200JSONResponse SaleList
+
+func (response ListSales200JSONResponse) VisitListSalesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSalesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListSalesdefaultApplicationProblemPlusJSONResponse) VisitListSalesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSaleRequestObject struct {
+	EventId EventId `json:"eventId"`
+	Body    *CreateSaleJSONRequestBody
+}
+
+type CreateSaleResponseObject interface {
+	VisitCreateSaleResponse(w http.ResponseWriter) error
+}
+
+type CreateSale201JSONResponse SaleView
+
+func (response CreateSale201JSONResponse) VisitCreateSaleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateSaledefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateSaledefaultApplicationProblemPlusJSONResponse) VisitCreateSaleResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -2866,6 +3883,159 @@ func (response SetProviderKnobsdefaultApplicationProblemPlusJSONResponse) VisitS
 	return err
 }
 
+type DeleteSaleRequestObject struct {
+	SaleId SaleId `json:"saleId"`
+}
+
+type DeleteSaleResponseObject interface {
+	VisitDeleteSaleResponse(w http.ResponseWriter) error
+}
+
+type DeleteSale204Response struct {
+}
+
+func (response DeleteSale204Response) VisitDeleteSaleResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteSaledefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteSaledefaultApplicationProblemPlusJSONResponse) VisitDeleteSaleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSaleRequestObject struct {
+	SaleId SaleId `json:"saleId"`
+}
+
+type GetSaleResponseObject interface {
+	VisitGetSaleResponse(w http.ResponseWriter) error
+}
+
+type GetSale200JSONResponse SaleView
+
+func (response GetSale200JSONResponse) VisitGetSaleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetSaledefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetSaledefaultApplicationProblemPlusJSONResponse) VisitGetSaleResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchSaleLiveRequestObject struct {
+	SaleId SaleId `json:"saleId"`
+	Body   *PatchSaleLiveJSONRequestBody
+}
+
+type PatchSaleLiveResponseObject interface {
+	VisitPatchSaleLiveResponse(w http.ResponseWriter) error
+}
+
+type PatchSaleLive200JSONResponse SaleView
+
+func (response PatchSaleLive200JSONResponse) VisitPatchSaleLiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PatchSaleLivedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PatchSaleLivedefaultApplicationProblemPlusJSONResponse) VisitPatchSaleLiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSaleSettingsRequestObject struct {
+	SaleId SaleId `json:"saleId"`
+	Params UpdateSaleSettingsParams
+	Body   *UpdateSaleSettingsJSONRequestBody
+}
+
+type UpdateSaleSettingsResponseObject interface {
+	VisitUpdateSaleSettingsResponse(w http.ResponseWriter) error
+}
+
+type UpdateSaleSettings200JSONResponse SaleView
+
+func (response UpdateSaleSettings200JSONResponse) VisitUpdateSaleSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateSaleSettingsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateSaleSettingsdefaultApplicationProblemPlusJSONResponse) VisitUpdateSaleSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CloseSeasonRequestObject struct {
 	Body *CloseSeasonJSONRequestBody
 }
@@ -3005,6 +4175,87 @@ type GetAvailabilitydefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetAvailabilitydefaultApplicationProblemPlusJSONResponse) VisitGetAvailabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinQueueRequestObject struct {
+	SaleId SaleId `json:"saleId"`
+	Params JoinQueueParams
+	Body   *JoinQueueJSONRequestBody
+}
+
+type JoinQueueResponseObject interface {
+	VisitJoinQueueResponse(w http.ResponseWriter) error
+}
+
+type JoinQueue200JSONResponse QueueStatus
+
+func (response JoinQueue200JSONResponse) VisitJoinQueueResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JoinQueuedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response JoinQueuedefaultApplicationProblemPlusJSONResponse) VisitJoinQueueResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type QueueStatusRequestObject struct {
+	SaleId SaleId `json:"saleId"`
+	Params QueueStatusParams
+}
+
+type QueueStatusResponseObject interface {
+	VisitQueueStatusResponse(w http.ResponseWriter) error
+}
+
+type QueueStatus200JSONResponse QueueStatus
+
+func (response QueueStatus200JSONResponse) VisitQueueStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type QueueStatusdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response QueueStatusdefaultApplicationProblemPlusJSONResponse) VisitQueueStatusResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -3337,6 +4588,87 @@ type SimulateNextInstalmentdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response SimulateNextInstalmentdefaultApplicationProblemPlusJSONResponse) VisitSimulateNextInstalmentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendOrderOtpRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  SendOrderOtpParams
+}
+
+type SendOrderOtpResponseObject interface {
+	VisitSendOrderOtpResponse(w http.ResponseWriter) error
+}
+
+type SendOrderOtp200JSONResponse OtpChallenge
+
+func (response SendOrderOtp200JSONResponse) VisitSendOrderOtpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendOrderOtpdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SendOrderOtpdefaultApplicationProblemPlusJSONResponse) VisitSendOrderOtpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyOrderOtpRequestObject struct {
+	OrderId OrderId `json:"orderId"`
+	Params  VerifyOrderOtpParams
+	Body    *VerifyOrderOtpJSONRequestBody
+}
+
+type VerifyOrderOtpResponseObject interface {
+	VisitVerifyOrderOtpResponse(w http.ResponseWriter) error
+}
+
+type VerifyOrderOtp200JSONResponse OrderView
+
+func (response VerifyOrderOtp200JSONResponse) VisitVerifyOrderOtpResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type VerifyOrderOtpdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response VerifyOrderOtpdefaultApplicationProblemPlusJSONResponse) VisitVerifyOrderOtpResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -3764,6 +5096,12 @@ type StrictServerInterface interface {
 	// GetPoolUsage Units sold or held per pool instance
 	// (GET /v1/organiser/events/{eventId}/pool-usage)
 	GetPoolUsage(ctx context.Context, request GetPoolUsageRequestObject) (GetPoolUsageResponseObject, error)
+	// ListSales The event's sale moments with their current settings
+	// (GET /v1/organiser/events/{eventId}/sales)
+	ListSales(ctx context.Context, request ListSalesRequestObject) (ListSalesResponseObject, error)
+	// CreateSale Add a sale moment to a published event (owner or admin)
+	// (POST /v1/organiser/events/{eventId}/sales)
+	CreateSale(ctx context.Context, request CreateSaleRequestObject) (CreateSaleResponseObject, error)
 	// ActivateSnapshot Make a published snapshot version the one the core serves
 	// (POST /v1/organiser/events/{eventId}/snapshots/{version}/activate)
 	ActivateSnapshot(ctx context.Context, request ActivateSnapshotRequestObject) (ActivateSnapshotResponseObject, error)
@@ -3773,6 +5111,18 @@ type StrictServerInterface interface {
 	// SetProviderKnobs Change a simulated provider's knobs for this organiser (owner or admin)
 	// (PUT /v1/organiser/payments/providers/{provider}/knobs)
 	SetProviderKnobs(ctx context.Context, request SetProviderKnobsRequestObject) (SetProviderKnobsResponseObject, error)
+	// DeleteSale Delete a sale moment before its pre-queue opens (owner or admin)
+	// (DELETE /v1/organiser/sales/{saleId})
+	DeleteSale(ctx context.Context, request DeleteSaleRequestObject) (DeleteSaleResponseObject, error)
+	// GetSale A sale moment with its settings history and live queue figures
+	// (GET /v1/organiser/sales/{saleId})
+	GetSale(ctx context.Context, request GetSaleRequestObject) (GetSaleResponseObject, error)
+	// PatchSaleLive Change the live dial, the shopping limit or pause on top of the current version (owner or admin)
+	// (PATCH /v1/organiser/sales/{saleId}/live)
+	PatchSaleLive(ctx context.Context, request PatchSaleLiveRequestObject) (PatchSaleLiveResponseObject, error)
+	// UpdateSaleSettings Save a new version of a sale's settings (owner or admin)
+	// (PUT /v1/organiser/sales/{saleId}/settings)
+	UpdateSaleSettings(ctx context.Context, request UpdateSaleSettingsRequestObject) (UpdateSaleSettingsResponseObject, error)
 	// CloseSeason Move every fan's unspent balance to next-season credit (owner or admin)
 	// (POST /v1/organiser/wallet/season-close)
 	CloseSeason(ctx context.Context, request CloseSeasonRequestObject) (CloseSeasonResponseObject, error)
@@ -3782,6 +5132,12 @@ type StrictServerInterface interface {
 	// GetAvailability Public availability of an event's products
 	// (GET /v1/public/events/{eventId}/availability)
 	GetAvailability(ctx context.Context, request GetAvailabilityRequestObject) (GetAvailabilityResponseObject, error)
+	// JoinQueue Join a sale's waiting room (gateway)
+	// (POST /v1/queue/{saleId}/join)
+	JoinQueue(ctx context.Context, request JoinQueueRequestObject) (JoinQueueResponseObject, error)
+	// QueueStatus A place's position, estimate and, once admitted, its pass (gateway)
+	// (GET /v1/queue/{saleId}/status)
+	QueueStatus(ctx context.Context, request QueueStatusRequestObject) (QueueStatusResponseObject, error)
 	// ClaimOrders Add guest orders placed with the caller's verified email to the account
 	// (POST /v1/shop/claims)
 	ClaimOrders(ctx context.Context, request ClaimOrdersRequestObject) (ClaimOrdersResponseObject, error)
@@ -3806,6 +5162,12 @@ type StrictServerInterface interface {
 	// SimulateNextInstalment Demo action - move the plan's clock to its next due date
 	// (POST /v1/shop/orders/{orderId}/instalments/simulate-next)
 	SimulateNextInstalment(ctx context.Context, request SimulateNextInstalmentRequestObject) (SimulateNextInstalmentResponseObject, error)
+	// SendOrderOtp Send (simulate) a one-time code for an order that needs one, or a new code
+	// (POST /v1/shop/orders/{orderId}/otp)
+	SendOrderOtp(ctx context.Context, request SendOrderOtpRequestObject) (SendOrderOtpResponseObject, error)
+	// VerifyOrderOtp Check a one-time code (3 tries per code, 3 resends; then the order is cancelled)
+	// (POST /v1/shop/orders/{orderId}/otp/verify)
+	VerifyOrderOtp(ctx context.Context, request VerifyOrderOtpRequestObject) (VerifyOrderOtpResponseObject, error)
 	// PayOrder Pay an order (one Pay press)
 	// (POST /v1/shop/orders/{orderId}/payments)
 	PayOrder(ctx context.Context, request PayOrderRequestObject) (PayOrderResponseObject, error)
@@ -3956,6 +5318,65 @@ func (sh *strictHandler) GetPoolUsage(w http.ResponseWriter, r *http.Request, ev
 	}
 }
 
+// ListSales operation middleware
+func (sh *strictHandler) ListSales(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request ListSalesRequestObject
+
+	request.EventId = eventId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ListSales(ctx, request.(ListSalesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSales")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSalesResponseObject); ok {
+		if err := validResponse.VisitListSalesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateSale operation middleware
+func (sh *strictHandler) CreateSale(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request CreateSaleRequestObject
+
+	request.EventId = eventId
+
+	var body CreateSaleJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.CreateSale(ctx, request.(CreateSaleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateSale")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateSaleResponseObject); ok {
+		if err := validResponse.VisitCreateSaleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ActivateSnapshot operation middleware
 func (sh *strictHandler) ActivateSnapshot(w http.ResponseWriter, r *http.Request, eventId EventId, version int) {
 	var request ActivateSnapshotRequestObject
@@ -4033,6 +5454,125 @@ func (sh *strictHandler) SetProviderKnobs(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SetProviderKnobsResponseObject); ok {
 		if err := validResponse.VisitSetProviderKnobsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteSale operation middleware
+func (sh *strictHandler) DeleteSale(w http.ResponseWriter, r *http.Request, saleId SaleId) {
+	var request DeleteSaleRequestObject
+
+	request.SaleId = saleId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.DeleteSale(ctx, request.(DeleteSaleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteSale")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteSaleResponseObject); ok {
+		if err := validResponse.VisitDeleteSaleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSale operation middleware
+func (sh *strictHandler) GetSale(w http.ResponseWriter, r *http.Request, saleId SaleId) {
+	var request GetSaleRequestObject
+
+	request.SaleId = saleId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetSale(ctx, request.(GetSaleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSale")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSaleResponseObject); ok {
+		if err := validResponse.VisitGetSaleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PatchSaleLive operation middleware
+func (sh *strictHandler) PatchSaleLive(w http.ResponseWriter, r *http.Request, saleId SaleId) {
+	var request PatchSaleLiveRequestObject
+
+	request.SaleId = saleId
+
+	var body PatchSaleLiveJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.PatchSaleLive(ctx, request.(PatchSaleLiveRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PatchSaleLive")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PatchSaleLiveResponseObject); ok {
+		if err := validResponse.VisitPatchSaleLiveResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateSaleSettings operation middleware
+func (sh *strictHandler) UpdateSaleSettings(w http.ResponseWriter, r *http.Request, saleId SaleId, params UpdateSaleSettingsParams) {
+	var request UpdateSaleSettingsRequestObject
+
+	request.SaleId = saleId
+	request.Params = params
+
+	var body UpdateSaleSettingsJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.UpdateSaleSettings(ctx, request.(UpdateSaleSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateSaleSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateSaleSettingsResponseObject); ok {
+		if err := validResponse.VisitUpdateSaleSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4123,6 +5663,67 @@ func (sh *strictHandler) GetAvailability(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetAvailabilityResponseObject); ok {
 		if err := validResponse.VisitGetAvailabilityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// JoinQueue operation middleware
+func (sh *strictHandler) JoinQueue(w http.ResponseWriter, r *http.Request, saleId SaleId, params JoinQueueParams) {
+	var request JoinQueueRequestObject
+
+	request.SaleId = saleId
+	request.Params = params
+
+	var body JoinQueueJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.JoinQueue(ctx, request.(JoinQueueRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "JoinQueue")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(JoinQueueResponseObject); ok {
+		if err := validResponse.VisitJoinQueueResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// QueueStatus operation middleware
+func (sh *strictHandler) QueueStatus(w http.ResponseWriter, r *http.Request, saleId SaleId, params QueueStatusParams) {
+	var request QueueStatusRequestObject
+
+	request.SaleId = saleId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.QueueStatus(ctx, request.(QueueStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "QueueStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(QueueStatusResponseObject); ok {
+		if err := validResponse.VisitQueueStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4353,6 +5954,67 @@ func (sh *strictHandler) SimulateNextInstalment(w http.ResponseWriter, r *http.R
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SimulateNextInstalmentResponseObject); ok {
 		if err := validResponse.VisitSimulateNextInstalmentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendOrderOtp operation middleware
+func (sh *strictHandler) SendOrderOtp(w http.ResponseWriter, r *http.Request, orderId OrderId, params SendOrderOtpParams) {
+	var request SendOrderOtpRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.SendOrderOtp(ctx, request.(SendOrderOtpRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendOrderOtp")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendOrderOtpResponseObject); ok {
+		if err := validResponse.VisitSendOrderOtpResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// VerifyOrderOtp operation middleware
+func (sh *strictHandler) VerifyOrderOtp(w http.ResponseWriter, r *http.Request, orderId OrderId, params VerifyOrderOtpParams) {
+	var request VerifyOrderOtpRequestObject
+
+	request.OrderId = orderId
+	request.Params = params
+
+	var body VerifyOrderOtpJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.VerifyOrderOtp(ctx, request.(VerifyOrderOtpRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "VerifyOrderOtp")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(VerifyOrderOtpResponseObject); ok {
+		if err := validResponse.VisitVerifyOrderOtpResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4639,129 +6301,168 @@ func (sh *strictHandler) GetWhoami(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"7H3vdhs3suer4HBnj6mzTYq25dyM/GUV20l8x440lpzcbOSVwO4iiagJdAC0KI6Pv+4D7CPuk+xBAehG",
+	"s9H8I1Ge7J39MBmZ3Y0/VYVC/fmh8LmXinkhOHCtesefewWVdA4aJP7rzS1w/TYzfzLeO+4VVM96SY/T",
+	"OfSOe+CeJj0Jf5RMQtY71rKEpKfSGcyp+Wwi5Jzq3nGvLJl5Uy8L86nSkvFp78uXpPc2g3khNPB0+TdY",
+	"Vl3NgGYg686C1wbmvbCTgmoN0nz1P387GfwPOvjHaPDXq8Gnz98mT0ejL3/Zot8P1Qw+9zJQqWSFZsI0",
+	"+UoC1ZCRxQw40TMgE8pJIUEpUPjvcam14C+JhFJBRgQnErRcEsozkolynANJc5beDHvJtlPrpue9pnoq",
+	"M5CdbBTu6cPYiH1ciBvgbRKeEMWm3NDGvERyxm9IX4Iq50CEJLcMFkSbTw9eIkXxtSeKjMslSJIJUIQL",
+	"TTggeaGTkP8xwFEM7DDC8c/p3TvgUz3rHR+NRvHxTylnai2d6jceSivX0t9LkLXI/4H/eoT+zqhSba5c",
+	"zIAsKNOMT4kUYv5EeTYVVCnDINujkWhFc1BkwfSM0MZHB2uY8ebsfIBdd3Di2ejo29hwz2kOnVxQ9uHD",
+	"CHIOSiERYjQZS7FQKH/KvkYUpBI0iiaShikyFiXPiBYbpu876qTAaM3wQp20VR/dJFntc864//fTb2JD",
+	"uKDjOHUKOoUnimg6Jiwj/ULkuZEFpohKhZGWAqR5ukkwTAcdI4yN6IuZnSoEV4CifCbFOIe5+TMVXAPX",
+	"5k9aFDlLqRnuYWHf+G+/K8vouqu/SJj0jnv/5bDe+g7tU3Xo28UeV7QYJyClkAmhilBOPnz/ivz16MW/",
+	"EdcTyURazoHrIVLQtWg6PEk1u6XaSVwhRQFSMzsRqLfYDXKb9NSMPnvxjXm19egWpJdo94xxDVOQPUs6",
+	"Lxi/Bbu2/6Zq+FPVpxj/Dqk2DZ/cUpbTMcuZXj5s9FPgIM1WeqIb72dUw0CzOcQ+YlxpylOI6K8zIXJS",
+	"PSd9ygkOhxRC5AmhJKNLcn1ZjkbPU/PT2wz/hv9ufzLd2h+uzSZEicqF3ur9C/vDjz8ev3/vWji45HpG",
+	"NSk504osQALR9AY4mUgxR0sAH1MJRIk8I6LUptMZvQUygQXJYaKH5G01GbPd5UxpyC45vmR0rd0c1UwU",
+	"ZCphqbAV09zA/JHRpcKezDzsXyktFDEDKlh6A5KMl+Rawpwyzvj0enhpWM80zNWmVeEH1hCGLxW7qJQU",
+	"/11IkZWptSS3avjMfrCp3UC62xopZ7dAFKeFmglN3KtIKsrVAiRJxRwUcmJYi9guyyOU3GCSoXTGls6r",
+	"GaQ37TVDU13SvLEEGNffHEXGZlSQpixvT/yX2RKnmJo+yISyHDLS53ALKMp2wxJm7pxDqnEXw0V1MIwt",
+	"M7grINWQbTkqq8lXx1QIpacSVEIkZEwlxHL5GI2H6l9GXUuRx0YhbgL9NRYiB8pbDMK+8d0ozXPK5mbj",
+	"BKXbpBe1IbzZSOhqW5V5pOnUPHR7tZf8jSqxKecrE/UtRqeJTglau52T3UU3V0Ou/mi25QU9vgKNou3/",
+	"+uuvvw7evx+8fn1gBA+1qdJU6vDRBSrNAzIREr/y+or4RRWVTvdwy7n8YTeqOb1j83LeO37qDB73r40a",
+	"oO7NthWj/5zevbWUemEbd/962tZduUhpjoQDbgbwW0+KXtIDHjQc3cfbdI4qOdwPjFVm/lpAFrhQxior",
+	"JEshs/sQ04a8O5AipgythLSIkvTuBlMxcD+iWhKlHlpB9TIavDRg80JI7XzaWe+4N2V6Vo6HqZgfjst/",
+	"UJ5RTnO4ozyT5SEUalBIoYX59lCBvGUpqEMzcMlpfug7xCn8CDQ3Ta5KsdJUlypkRUOLBGs/JIL7KiYG",
+	"bzPgOm4Y3RVb6tIbxrPGkLzb10t6E4rbD9IuJi1CTiPetrE2jQS4dtBOr/+FjrYigufL+F4gRd6xzuGO",
+	"pprMYT4GqWasIObVdW1Xc1pwnA/N5szMaCzursRkwlKjySeMo2pJDKUnk+hEFcuiZq8qI27KRzvpxKih",
+	"ayTesbXYWOYNvglafPhs2NsoAKVxVZBPdiS4X8YFwujJ3DgBp5MJyLZcZFAIxfR7xoXcZBy9FxysWUWX",
+	"cx+g295ew2Gc2U9jRpUWmua7DGSFLI2pBINstLyeSH50bRtpLkq+I5WyEk55y7OIeiKSpvCRa5Zv9XrU",
+	"q0Jp1Q29bkaUlTkYAUlnVE7N94YwKDLiFmRWmg5SI+553tjaO0TPLBY7r6RBkw1kzSmPWSgivTmdTBTo",
+	"13Sp4pO6l3x2LM6Cyn3LrKK3kL2iMntHx5DHVcIqWwrgmeUERc1oOCDmRQ7acmoNNx6+SJD1dkjJ6ooJ",
+	"2vbE6uTrqvPVXjF5/iPkWcyArv2Ut3FGVT7hlltWZB/lV8bKN3MVeXZlNuKNsh0MqmoyHEuMFu+ejmIx",
+	"FB6floj8vDKIti1Wd2Y52t5fObFLkTBO5oZ9zu3vjylnCUmNWOD2twUp0YR/jU5exOy2Dqz9M8uYGQDN",
+	"z4JXbJxvdXz4kfH20eoyhqIxATTc6cQah4X9kWdwh7ukacbtiangCrgOTYOaIoY3+RYxzNpD3BzsjPh2",
+	"tpttTUxPva9kXCLH3jEO672kFkVyxuEnEde6nlrr9AuKPjpDLIVzDcVbw754ew2HqctBan9mxPgkz9/y",
+	"3dS/+ex7msJ9vuLfAzxAvTqiJg2nzUmRmWZrTrF17jjaGTDYfg/Dln5msNjo3LuGO4eDjURCRynEUjmY",
+	"KDtu5M7Egtv82UvMtx0TagNlLu1mc3BzuiQFXRpVkVKZJeSkKHIgZ3RJhLzkPwgx9f80Jv1LTNVd+fbQ",
+	"fDZdVVm9lwTuCjPF6p2wOzrRxkeYwSWfiTwjwDPISB93R+wgIVyQAqQyao7Y0Jc6sHFKv9PgnHq4nG6M",
+	"X+oHZI3yqu/oZr6lOm1xBPt843Vfq1l8/LcVN46mqdkj1rpv+OFPbu23nqaUn9Fl3BNLaZ6DJJ5/XCxI",
+	"fwZ5ZpS5M8RdUNBqfKS34X/ikqqo61cFIlT6gfWQ2gz4LmH7tJQSeLoMKfLh9Kde0nvz8UOUFo7bP7Db",
+	"xm4eDCOIZ7Xjl+bZTzto0cnO+mqys65KejOmtHAZ3nhgje5A1IkU8w77jSoRt4H0FjaQNgqU6qgyWjXA",
+	"jSC9wXWmdkrjbBmGbLvP27kM9nWzy1Kl30gp5CuRde/DO2p03O2/rAvtxSIzIZyg/VwX3ZCTEyK4pSVJ",
+	"RQZkXipNxkDAGCSQkTFMhIRqofclUzeDMVWQkdOLs4QoDQV50bGahS5+BskmbLcVbbzY3d5fejfUK4BJ",
+	"mee9kMkqqgmKOiiwNnVkXzvRGuYFymrh+tvSy8wtPbyNvL1M/N19ERMJq007cDAYw7UQi3BfxKhZQkqu",
+	"WV5r6wxoZmSV9HMbzjMGw5qwnapQE5FHzmvefo7n/pOoFw7yFuQFm3fECVMh4YkiGHBIiBI4KSMokuCm",
+	"qEhmzBOMSWMIG9urZtxwndYKmQ+I/9yd/Y4EBMxGaQNWPkCDknRlN8w6YsOUKiGrDYtGsMCwelIaC2Y/",
+	"cQNrynQCqBq21qAWG9J/PsLUb1woFsZO0OtsiCeK2JcI1UTPmAoCx31nxARi19y9xjQ3BNltnqmEbLcI",
+	"08p+1ei12V57C4vFY5rIqjrJsSpOdeSmsmdWojZ2M1ndFhsrpLYCQl1TmXeJN+obyzQ0KmtdumIl1QZt",
+	"1I3QxauZ4SyfRlzV1G2PMQU1L3NEPOLe01czs1YFJyqVAPwlGvU0J2qpNMzJQpR5RhTwjDBtHInz9+ed",
+	"OeZdzQYJpmH1Dia6Y237wcZNRi0ZdH69mm41FAlH2ew+bCzsN0b6M7r05kcrK7QrCYq6rY7V3fF4ZXrB",
+	"u3Wj4XQ7JtKZXp6DnomGyzMTSkN2ZTxJI5vGlbwqUMSn6Ei6f6CY+7ecgoraAfczHyToUvKPMgqaQGDO",
+	"DEghxS0zXqtNnBouV9jeMU1vEE0kJJsym2Q1OxqheS4WVtE2w1qjJL7n4v4ZFcxqqUd37BXWOUp3MCg0",
+	"gmJYEyY8Mdr+8D2yLLDWuO7IBNSyEsvtIycavrPRf3GZKGUhFDTzpRZdqEVRFg35iGcSV60B5932MJk4",
+	"Z1r7/I1VnVcVJ8wLaQqQ4d8ZpEb5Z5ildXZDyW+4WPDKNriqUw9rjIV1GQNHuIBMm/NATia6gCoNkYjg",
+	"OxsrQwsiCmNl2LXtokTOYFAzsCCjMeU3pKJYXPtbNm0fP4vFy+LTFSL/qGhsk9sJARMCDTegYN5GfLYI",
+	"cPA62R5+eE/cYZTUpYo5lR8xR4HowyIvFTFW8FZJinVpG+xqc9ygE1ayHkAXgHy3sV7ONR3nQOY0nTEO",
+	"Awk0wx9QZaE1kxAYTofkuuS01DPgmqVm7RtGMX5Lc5bhcgelzU9c6KuJKLl5jvGyP0phu/AJAWsiqTKd",
+	"EarI9Zuz88GPp+9eD87Nf04/XlyTfgbG4yOvB0+P4gsjo5ruluD5nqbablfWJMODEYr03caWlam2cFMP",
+	"NbUxwDlTivGpQ0WqhAyHw3iapwYddi6TDjWvzEL8G3RELRGqlNMx5ERMCF0hYx/PC5z8Onj95tW7tz+9",
+	"eU3+z//634Z5xm648vq2A7NiudaZ39RyaRgXNQn0DCTRcom0mVLGSUq5WR5FPIBSZz/b9qhmuiMgZH9o",
+	"O3YfP7wlEiZg3AsgDAFFExyLYydCy83Xm4Eq+NQPIsipOtO2JlLHYmtBcddlmVfWnkc1T4QkXCwSMi41",
+	"6hgiqaXwjHIrkX0XnyIDosQcMIqdmj+M5RWnOW1kpVZZSHV9MIsuFY5BcMC0rB1MM1O7ZW7W7HzOVm8J",
+	"jT8SY3dHS2liFMYS9MH2AYydk3kb97FGLn8FMI/+jEZn3h5nm8ACMek5TDTpU03mQmnyYmT1nf/nfzWr",
+	"NaUFTZlebpvYXocRcHTCrI61prZHDYSJvkrAV8jYkJcOWUcj529cjCP7fGD8OWOxBpMG+Mna7OflfOzx",
+	"M6imdv/QGJGlvMeHxg3l6fLqd2O6yqt5h2byr3U9F6V2NlQkZIzPruZu1638PYqm7YvR8w5HTIFWV7Rr",
+	"AaXme8jIjWECmQrreGlBuJGunIwR4T5XkN+CIv2nL8wSLjWoOpFIcqq0a6h71RlD4JTny5X8XqCb2RxE",
+	"qXen/QLGMyFurjLIaTdpq7ekKHbt48sa6Y2nrAvcTVxeYQuPyjW2zu5NaZ53zA3hImmp2S18byW448XJ",
+	"2qc3fiFuOCwSrFqnoHfMYuzkbUqg6czbDXFDoOlK5kKhOjMD6yW9Gc0nV/j3NmrN+3e22Z2N6pqRSSAD",
+	"sWaq/EXbwYnbT6sQZQ13Gn1kYRG8DjMUpWHugXrbZGUtMGn7LIX/rp2FqVNrEb7lQjcEwKiTV4JriiAj",
+	"Nxu1ratuWqvgwXa69UyCDzpYUcIrjLHHPfVbiC8YmrlQRVzZO3hSzJgwRmDZ8VQBdGSQcrHYkF3ZDKKH",
+	"XtC/G6RrOphQBdPspNd5ZVqs0GsGNGKafk+5IvjMmIE+wdSeiVkUc6rhHFLBsw5FtQ6EwOFOn4k8f9+1",
+	"xdb25Lax365z242D2sJ4Dp5+BwlBI48qUp/AJoIHzpbR5sOu/hrJ/VYE4Y7MWZ4zZUkUp2NBfQCivfQ8",
+	"+093JQV+VWXHdkp+NpKVW+YVVzW7zbhb09Up90CS1aycTHIb6HOH45sSDduF/vwiqc6414ESLzttElYE",
+	"bwhgY96xlfQBaMa4Q5Otmr+Q3myvhO0xx1iauOUCGEts6RwA+/e2p28SP6rYXM5pDvagUXsyESDqt9F4",
+	"PWjDty0S4zmc+3c78KtVW12DjVtu6FHukKHPYSuooW22eyi38AoN6K4N6B2bs47027qlbgzdM5Dv0Wbv",
+	"yL9FR3QecKIFf8St0hrzq+rJ/OoU44BxMjFqf06X5HfBOOljAl2ht0vVDWTG0cDInHmVSaU74DIrNIhs",
+	"LWomigKDR8a1TiEhT03jT0ejZDQaxXXkWOjXMIFmIC2E3NHiDOSpj5k3e8Xmn42IZukN6A4tbFs4QzBl",
+	"RxMvqiYITaVQNqaIOueJwvgGmQtMtMW7mIk8s+yN7FIvkAYvhpsiK9spZKGL0w5YoNDFxUyCMqOJCIWF",
+	"zdCxuAULb5hTvqznXYmDR79nQPqOwAf33982kOVZh1hYxc63XFArLB2Zpr9BobPC7zcgLMlhfectDsC3",
+	"dxo/mXp8q4NpLpNgRwpFpCnVKxLaWBKe3yvM7VJhAfrn/uDK8bLDerjPtrBLPY6gCof/HtGYOKTOKUfh",
+	"4bvku2LQ1I3bjRtqZK/fEuDJu8DOxYyquMUV2FkdrvRDzcot8H6Vk/YAkSiLbFcYtfvku+UDa76wpjHp",
+	"zJSo5FlGhKMNhxGXRw8VbAnkWFIet8rvgSnvCE7knScBw2DPFo58EILxXrwd/9pJx025dF9gy1WQErYb",
+	"HRBiwF/lQkF3RYhd4Ueredu1YKHGCOLYA7MtdSTOGnjJXXPS2O7Gc8fnmvKsQkd00GgFE7NFpqMbSudw",
+	"EmhU+ASVmomFIi5jpcyIEFbZLOs3Gvz10+ejL4Pg77/01gXXNnk3AYqsPcwJ5U8UsRBHjedJrBn0zAfc",
+	"E6IYn+ZASmXD7OFwcXzfdFQejADsauzZJiDLhSjKYp+M2vlQym61O+6JiNsIYtsENluhc0iYBnJ1DY7M",
+	"kXoLxFAbRFZjz3aD69fY5HXf/WLfak3StRObTKc9OC5Zrk90fEMS86iL9wMzC9g8wxXL5nRqFrYi2Nhq",
+	"VanAcKzLv62k/IsiZ5CROZtKrAlXVXMxZrr97CWhY4ziVUVHM6rpmCogTJGSV4mJNiTbl1fa8iS3Dzls",
+	"o3FbhHYnZdtz/I5xKpfE2BmknwoJCZlSDQu6bKFOusI+rumKMTVFYyz/pZKlfQDUt1Lo1GpvhGYownhU",
+	"Ciw2/R4HpnYHyTf124PtfUvR9+IWumoxbDzi5J93nHBsIfxCUH6gttbA/Stoi59dt2zE7TTLULUjVTaa",
+	"ab7Z7uFUhO0KcjWQz5RfOSrYokBXCm2tK0uL+FnXe2B7d/GXWzlBB79FoOaVP8OFQWCehf92IzdmImbH",
+	"jPajeceGOt/i+KLLvNUHbpsbYPRgIyqvtJRML88NFZy2ACpBnpS2dpT91/eeGv/+y0WvVWrBAsPtSRx7",
+	"XMjBFojTw6TIKQfSf5O9Pj9JCC0zhkCvayjUwHx8ndRAG29voX5E7mAICMdR82CmdWHrkzI+EV0nsLiW",
+	"NNVkDHoBbg95c3a+Oqyf4E4Pf1cHrkSl3Wf8wx+Ew73zzKvvg+Elv5gxRSYsx70IrVhrHCpRyhSOycWy",
+	"gHMcj9ONfVoU6nAB40Ml08OcjQ9Ns078htlQB/3/IC65Ow6mdDlWpN8ux0ALZv43nAIfTsUBBvGqEo2+",
+	"0hm2+OotnoLG/Fcm2UQPL/mbW5BLhwll6wu5+oLHDlFKro22ua7Gel0B6lwtTYf+61lCSyAnZ28DP/u4",
+	"Nxo+HY58AJQWrHfce44/oUk9QyE8nGH1sn+Yv6exs1vPRiOymBn6O4RgCkoRWXL1ktgCkDZVQjIogGfA",
+	"UwYYwTVaBi0Oo7B7P4D+0fW0Ulv32Wi0pq7ubvV0XSm2SDndi2Dwhg85u4VhY2X2jn/7lPRUOZ9Ts3H1",
+	"3rFb4PaolKZTZY/yYfOfzGeHmFHaRDfg5MzVqURGfoAMpQArhXrOutHb8LA1/HyFTG+tqZfkxei5MXE8",
+	"VtNImvnbUV/oGcgFUxAl/Qc71qRRcP+31SG/5WleZhiTl0vbcIK1YRHCF3YquOVxrJD4Lcix1bY1z1pF",
+	"Nj89ohDUucaIHCAlMBtjlv3QrI4Xo+dfp++fhCYoNS/JtWXbNRqtiixm1FdQGFpc34Q65yjWW0W6oIB0",
+	"tyDXY+qQ5Nunh5U5dIhxO3X42cXvvhwWQuSD0h95mHad7yzKcc7UDFV3jUN/Pnx6cOwKFjUPA6D/UYRF",
+	"lZPgiC6iXZ3KvuRYPM2eMz8iNpangvcQJa8SJ7e+Oeu74CUJfqHlTGnzs/HllsNLjjm8uqYz6l+cqYWp",
+	"YkXkITmNFRx8SSjHNVcfYH2iXEVopsjR6Mgq6dZSrA+QtFZjjNX1K4f+eoxHXTz18CICjA/ajEORPRo9",
+	"3UFczfvPd3z/aKf377eEqkUTnF8RskNgg/Xkz/KqrZZU5Qe71dQUEuM7nOMbf0oJqRAFEQE5D7K4xjQ1",
+	"hgduWGwOwz1w5aIjY2yXrp4Bk1VkMcgyVFyy2IQvCRaPblPeojrOLWz8IaRHQ+07kS33SnUHOvnSdEm0",
+	"LOFLi99P99qzOyQXtaqQD0h/H1l6SsQEC8F7FuyD9SdZRmjIdLOJU7/tQOZ0bx+Lv+KBgmzO+EGE+1us",
+	"T7+aDz+7OX05pPZWBYtbcdKzcnWPcbU7PDLJpjPtkOTVoF2kTzW2y8T89+hgSHxpC5ILmqlLbhqtKzFL",
+	"UU5n1iT3FBigmWYMjMRbhabxGVWzhKQ0nYHynoqEImdQL5tLbt5as9U56opJe9sjfUNsTtxxVD/GgzXb",
+	"oLuhAs4dne+/2pLorS11qnHtHSVVwe7RaGPR7sfUqMGFHR1rzPOdKVtFKzgn/p9x831Pb6CxtqOlyAWH",
+	"+rQ8mvNq2x3ZVw8+bJxHiO7GxmSzb58FkPfHs7/C0xYRafhO6Fl1alrta08Nbdi6IkfVDRmQsQR6g2ES",
+	"Y98bHYKCaE9S1FSvyjJvRfTDz/7PL4fVmYyijHDhHHTzPEZLY0TUQJBi79YDm85lPNaGvnK8ZJs9/Z8l",
+	"ZcEJKHv4aR9iZ1GgZktvydsT5U5pTYRsFQnq3t/XyR7u/YefLdT5i927c7C7eVPSXuPv97IB3U1ikb3i",
+	"qG0t2H6yfZDSNrViHbmqbXgfj4QBQo/QHlfb2EhJpzLcM2VGX9VO3Ysh2iAzWlChrUtccqjWkZb0EzbF",
+	"A2lb2KNNYT3M3bGcgup01ubJmfnZY6sfxpnHcVsCzPdXVnPbuy6GgxwW3r7Yo4LT/s6ojNE8qe5QQQh3",
+	"zuZM2yKqpTIGDdGiMEY2qlrnx3qT5z6ezYokhVhCt802iWJYRSYM8kyRvunG3kgoqYZkZdiJHXRCxkKT",
+	"zEJpE1sQcibM9/5KsAO8m+ySw2QCqV0wjJNnxJ/qIadBkCAJlNWC8UwssB2nvfihmEwwNidhgpE909ol",
+	"x3sJT969Gbw7ffW3N68RF+/SFaHmg2xIfjHcHlPl0aUJqs3bkPiUE5FnIC95YHaHHZKqv/OLk3dvSP9o",
+	"9NeDmJ/zEZGMDWTmfddnEr+1M5hJ837Djb7M46z14KzKv85KPzfyQ8NWbcER0+mTYGe4zwq2uf1Dm8ce",
+	"2Dx2EIFYiV+ZxxYY2XskHrdxn1+b0y3cZ4TlWKRjLm73Y1+9F7c+KWbBiyVXBdpYFiWBVQTgTg8sl4jF",
+	"Saxjt69D181vTXk2CG/iicecfsJaPLqCVTYgQ0YBr8As3aWOdA5k5R5ognfIgELl2U4ihmjWnZVYx+XX",
+	"j6aIIsjbryylFY4wqo0avGo4V3JvzpVE56rZk65gZP3K61onlhiASdvxUbpStSeaFDwDSW6ZYuO8rhPl",
+	"TJvGHZrH1nw2Ctqevkwa5g8WW7G5P4pVP9Ulp3k+YP5elKRK71XFaMgfJcWb0oLiM3W5GbMim1Vm3JeX",
+	"PAjEHh0kAUwluDuwzhduc8nqK5rOICPPLrmzd14SLhyEh2N1vyE5Gh3V0EsbaJ1RZd5rXjbatxgSYwMZ",
+	"ch10ZBgbNZX+lCmk5gWskbuPg+dGFdk7nXEYSM/Bqxp22gIZ1Jc4f7XAZUfi/QyXDwlXi7MvfQ4ruNy1",
+	"imLgR/UaRPO1NuF/F4x3bwcX9AbC7UBwIEVOU5u0dZg1lCM8oOoKgOnlAZZgsjBw+739iqEkDsl3GEyw",
+	"OYjVaAIXxqDHO7nxEuKXPjrdsuT9oYQFNSveBneAZJIuCNWX3CULXwYaEZ/5z8zU7eCwdE+lSzi8rBIZ",
+	"3lMwbkJ1ezpiLi65OzBrMytBJVa6evM60w5kkJF+49JzCxyjhm1iYgawEPLm+JKf/3gyePbiG/PLZc+W",
+	"TbT8snUT3X2A9trrvvJtzeCu8bwQC/vvy56dz9NvSI7YjSn5B0hBxkyr2Jr/d8H4392htXt7F5veXLkk",
+	"fotPLugYX1t3532pjFxOgaM/qZS9/9+l0BYwJrQoNlzt/ipnwPXg40nXBe9HsUMMDzA9Vgog2VIlQX/f",
+	"HMVLr9m2w5vnn327xU3AX9dwCUuerLVeUEHsw1Yx0ls7S66gBd5ATvoeBxroR3uG8lPSuxtAoQbVoYCe",
+	"e7fXoTjr8hBRa8Ua0hXQzaoRu01XML2WlmCKjEXJ8XR/n4sAnnvQtqBDyu66Tv1SetTlvGaN4dgHtiDK",
+	"hqRqfXbo6NuOZffPE92HCm3HRn9iGzarQigsq5oQX9/HiE9CGkVzEhuVx2o6D5FwNRPFId7brdbFBCib",
+	"27oEjxQTaFyC/pXVVXhJegfP3cXm7kqTfUFRrP3krklB7me1EVLddXHrrr4heMegURPmcX12wLO8uvLv",
+	"U4O39X1wnUCx98uAt49E5PrGugiJT+U+E9EV5RxlXaWQKj6iEsJhYUiPVVTiJEw6rOMfMS5tPUWUVsi8",
+	"p8hAWfSpDfMgzC8ocKysJYrh4jwnWHQWrd7Em7GX3G1g9u4zVIJBOeZ/O0isJ4v9z21flWN37cKG1w6c",
+	"kwrpBuouVueX3Cber2eQZ9dDcuIuVnNHBuo7eyqzGh3qKWjnptqH9rKBZ6ORtWTdJC75HFOFzoA3rUso",
+	"gOpaoqMRI9PEWGTLhuOAb2JvMVPVQth8TY6HRJG22eXOqFI77IaPFpAKZv1P0pNhqfuolkRxeqII3DGl",
+	"bZJnRaSYC9L0nYBJKHK6RHS1WoA8QBWwT+DhxjHj6BJXWv7h+seoh7pUD8+cE4j5IH/rwzb6+vAz/r/D",
+	"GUStze8dDf31mUh99MHdgsbq8MFVl6R//R8DJIi1wq6D2y6tlVrd5+Wuu/TXW7li8v5Gp+ejQUaXeLOm",
+	"t1TJGWWZWf3+7p18Gbjg1Q0NqeATJueQdYSd7reoTy2ptlml+Kq1QR/VjtxO7vZiSPBKAvBOZF+Rb0cx",
+	"O7T3hK2xAfH5vw6DqnvT9scqS0JCycq9pwN7asct1b7SIr0xa2kiwahGG3I6uAdPs+CW7g5EXOM276/J",
+	"1/3vkI2p/Nn2RsvbKnvsOLMXqbJlgH2TNrzoLlR3zkJVSDW8zW1XYQpusTos6HIgbkFm5ZpM8hldntp3",
+	"6iss/3V0u880IXh/H3w+wwQScWQnNTvwLuXKyjbd4cmWW3f50QNZ7ZN8Aw53upvZ5+61n+BO/3927wWQ",
+	"ORfE1rEhA8QhhOzFi0rN8rZQlDtNjExk99v6hS6600EfGjf1kv6bp88SUvmk3x4cu2qUdZZUh2BwohZM",
+	"Y/qSmX2sCoSitXrJVSqk2eMUkUzdLElo0+IZ67GfuDWqifa1Ff3hlgydzioVfWxjqpfc+pOQEbxBDzOv",
+	"zWshCYaML+uLEcn5+/PLHikohzxx59JtYWq+XJhWYkbrOfAMJeRUF19L2h/LaX2sBRRe69mFrWpc4bkX",
+	"QBWEEIUDQlduqJ7YE0dW0jC8wV343rs7HBbEFWu5x4o6xLjdsltj4pXWy/8ssrOPNJivYtRIb21Vo+3T",
+	"PznjtW2YobL/UAR9ZHc/aB1Ib1pC3n9O8A5YTN3b6+SeE3dHLMK4eFPdVk7PfbyNzUizc02lVphVt/fA",
+	"u5pojbOIsbNDfWPIEMEb0QQMlGIAtqBTSC75SVHkQIydJCT5AcvV4b/w1sckMIkOnPOl6moBb87OiQVc",
+	"mX1BcAsXwk3mkq8GLQ2lXHK/2vHwKi8JSoEiZw7rI6F02Wi8zw1/y0SJ9/HlLL05JtRsVBgmbcU/HW38",
+	"TkQd2NkhvEj/9eB5FL1jzO6v6aUn94bu/b8TfA1uFf7ap6waV6NuskBtKiG4ENWuSIuGC69H3adDYqMW",
+	"ZsmYX3ANbKE+cDUOqqqza6oYBFeM7yrQzgj9OwLeH/nkUFhdN1rWwGsfRfqeQ4m9W/JltcZRz9mbtA72",
+	"ng/zvQ5UMBZ/82Blsa89DbfKusPPKV4JvdVxOF8yeJtzl7bZtUCBDaW7t1JjmwTkqx268wxx+8atuPHn",
+	"7txa1g44sYE3QXnAziX1i3vn0bHLXWvBDWDvAh5s4g5WrxKLX2wWG6hNjLngsFwHXw6JamydquLjl3Wn",
+	"vR10+94Ka81pnaDMZPsA8rrawI+q/tZj1S399s7uGpLeUGCBme2LbN6Hvxjk9C5JB1S2USFbr5ZbxVAH",
+	"U3V96ho8/9JVHcgA8Z9dJyZs0vesqj/9ryJOfsZduRmRwX5QOOSbQcamTNcxAWv6G955J6U6bTivrgW5",
+	"hzRhtVG1Xpb8WSDJFKiViNpqDlWtO4aDh4e6hOpCFB+LPWmoP9ehnUb59a9sqIf1yDvEVotiUBZPVOX2",
+	"+mBoYLDv10S/EAUpi1AzbfC0HyLbh5/dvDZsjheu7u4elFnTZqy6f5DZ+OnPICT7UW6VwK2CAlZ5G9zL",
+	"0sW1n4N6SI9EneqynjZlfvanqLll38NO3XZAcL8rWW4NcDui8CSuxS5VJd67amAuZoLOWSdm52cb8XMn",
+	"ULBKcliP2XQN6UyArbplYblDcjR6ipuQKHUF68EPonVaf7FDeEQ+vXUnftZUmrKIVX806F71pR4o/W/S",
+	"mU1+t0ZTFUdAOzJgpn/BsLMpJs1C2799MkrC1nyO1cA9s4BPIznI3L6FutEc45WEKZKBZLfumjPgt0wK",
+	"bkwN44iUMncVs9XxIZadHhZSZEO4o/Mih6FSOSuGTOAm6kbu74z04mj0o/ulmlPwW13WKvjRnRkLfqkC",
+	"N+Fb3usMflv4CvN1B3gSvX1u59yQrKpu56DopN/AqFd1u23Z4LpEWaXmLbb9y6cv/zcAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,
