@@ -228,4 +228,4 @@ jobs:
             echo "::error::PLAYWRIGHT_BASE_URL is not a Vercel deployment: '$PLAYWRIGHT_BASE_URL'"; exit 1
           fi
           echo "Smoke-testing $PLAYWRIGHT_BASE_URL"
-          npx playwright test tests/e2e/smoke.spec.ts
+          npx playwright test --no-deps tests/e2e/smoke.spec.ts

@@ -1020,7 +1020,9 @@
     "sPaidAtB": "Paid at B during the outage",
     "sPeakRps": "Requests in the busiest second",
     "loadSandboxTitle": "Measured in a sandbox (step 5), not on this cluster",
-    "loadRunTitle": "Measured here, by this run"
+    "loadRunTitle": "Measured here, by this run",
+    "errorRealSale": "A real sale on this platform has fans in its waiting room. Rehearse when it is over.",
+    "errorHourly": "At most 3 runs an hour per organiser. Try again later."
   },
   "live": {
     "title": "Live on-sale",

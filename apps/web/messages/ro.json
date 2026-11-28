@@ -1020,7 +1020,9 @@
     "sPaidAtB": "Plătite la B în timpul căderii",
     "sPeakRps": "Cereri în secunda cea mai aglomerată",
     "loadSandboxTitle": "Măsurat într-un sandbox (pasul 5), nu pe acest cluster",
-    "loadRunTitle": "Măsurat aici, de această rulare"
+    "loadRunTitle": "Măsurat aici, de această rulare",
+    "errorRealSale": "O vânzare reală de pe platformă are fani în sala de așteptare. Repetă după ce se încheie.",
+    "errorHourly": "Cel mult 3 rulări pe oră per organizator. Încearcă mai târziu."
   },
   "live": {
     "title": "Vânzare live",

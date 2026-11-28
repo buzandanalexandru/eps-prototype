@@ -78,7 +78,8 @@ export function SimulatorPanel({ rehearsalId, limits, initial, admin }: { source
   const explain = (code: string, data?: Record<string, unknown>) => {
     if (code === "EPS-SIM-INVALID" && typeof data?.field === "string") return t("errorRange", { field: data.field, min: String(data.min ?? ""), max: String(data.max ?? "") });
     if (code === "EPS-SIM-ACTIVE") return t("errorActive");
-    if (code === "EPS-SIM-BUSY") return t("errorBusy");
+    if (code === "EPS-SIM-BUSY") return t(data?.reason === "real_sale_live" ? "errorRealSale" : "errorBusy");
+    if (code === "EPS-RATE-LIMITED") return t("errorHourly");
     return code;
   };
 

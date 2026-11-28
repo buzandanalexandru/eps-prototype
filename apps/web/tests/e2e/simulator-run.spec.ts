@@ -43,7 +43,7 @@ test("a small run with an A outage: live numbers, a failover, then the summary",
   await shown("tile-sold", /\d+ \/ \d/);
   await shown("tile-revenue", /\d/);
   await shown("tile-success", /(\d|–)/);
-  await expect(dash.getByTestId("tile-bots")).toContainText("Places flagged (bots and fans)");
+  await expect(dash.getByTestId("live-tiles")).toContainText("Places flagged (bots and fans)");
   for (const id of ["bots-flagged", "bots-sent-back", "bots-otp", "bots-otp-failed", "bots-passes"]) await shown(id, /^\d/);
   await expect(dash.getByTestId("live-providers")).toContainText("Provider A");
   await expect(dash.getByTestId("live-providers")).toContainText("Provider B");
