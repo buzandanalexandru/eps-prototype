@@ -80,8 +80,16 @@ export function TreePanel({
             <Button type="button" size="xs" variant="outline" data-testid="add-info-page" onClick={() => setDoc((d) => addPage(d, "info").doc)}>
               {t("addInfoPage")}
             </Button>
-            {events[0] && (
-              <Button type="button" size="xs" variant="outline" onClick={() => setDoc((d) => addPage(d, "event", { eventId: events[0].id, slug: events[0].slug }).doc)}>
+            {events.some((e) => !doc.pages.some((p) => p.kind === "event" && p.eventId === e.id)) && (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={() => {
+                  const free = events.find((e) => !doc.pages.some((p) => p.kind === "event" && p.eventId === e.id));
+                  if (free) setDoc((d) => addPage(d, "event", { eventId: free.id }).doc);
+                }}
+              >
                 {t("addEventPage")}
               </Button>
             )}

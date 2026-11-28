@@ -214,7 +214,7 @@ export function SettingsPanel({
         {errorBox}
         <h2 className="font-semibold">{t("pageSettings")}</h2>
         <LocalizedInput value={page.title} locales={locales} label={t("fields.title")} max={120} disabled={readOnly} onChange={(v) => setDoc((d) => setPage(d, page.id, { title: v }))} testId="field-title" />
-        {page.kind !== "home" && (
+        {page.kind === "info" && (
           <label className="grid gap-1 text-sm font-medium">
             {t("fields.slug")}
             <Input value={page.slug} disabled={readOnly} onChange={(e) => setDoc((d) => setPage(d, page.id, { slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-").slice(0, 60) }))} />
