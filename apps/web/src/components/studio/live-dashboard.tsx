@@ -34,6 +34,7 @@ export type Frame = {
 type Point = { t: number; q: number; a: number; s: number; f: number };
 
 const STALE_MS = 5000;
+const ENDED = ["done", "failed", "stopped"];
 const KEEP_MS = 15 * 60_000;
 
 function Spark({ points, pick, label, markers, testId, fmt }: { points: Point[]; pick: (p: Point) => number; label: string; markers?: number[]; testId: string; fmt: (n: number) => string }) {
@@ -96,11 +97,23 @@ export function LiveDashboard({ saleId, gateway, admin, initialRate, initialPaus
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const stop = useRef(false);
+  // Timeline values in the page's language (review spec L2): breaker states have their own words.
+  const val = (kind: string, v?: string) => {
+    if (!v) return t("val.none");
+    if (kind === "breaker" && t.has(`state_${v}`)) return t(`state_${v}` as "state_closed");
+    return t.has(`val.${v}`) ? t(`val.${v}` as "val.on") : v;
+  };
   const nf = useCallback((n: number, d = 0) => new Intl.NumberFormat(locale === "ro" ? "ro-RO" : "en-GB", { maximumFractionDigits: d }).format(n), [locale]);
 
+  const lastTs = useRef(0);
   const onFrame = useCallback((f: Frame) => {
     setFrame(f);
-    setLast(Date.now());
+    // Staleness is judged from the frame's own time (review D-g): a replayed or repeated frame
+    // does not count as fresh.
+    if (f.ts > lastTs.current) {
+      lastTs.current = f.ts;
+      setLast(Date.now());
+    }
     setPaused(f.queue.paused);
     setDegraded(f.degraded);
     setPoints((ps) => {
@@ -270,7 +283,12 @@ export function LiveDashboard({ saleId, gateway, admin, initialRate, initialPaus
                   </div>
                 ))}
               </dl>
-              {f.run?.truth && (
+              {f.run && !ENDED.includes(f.run.state ?? "") && (
+                <p className="mt-2 text-xs text-muted-foreground" data-testid="live-truth-later">
+                  {t("truthLater")}
+                </p>
+              )}
+              {f.run?.truth && ENDED.includes(f.run.state ?? "") && (
                 <p className="mt-2 text-sm" data-testid="live-truth">
                   <span className="font-semibold">{t("truth")}:</span>{" "}
                   {t("truthLine", {
@@ -320,7 +338,7 @@ export function LiveDashboard({ saleId, gateway, admin, initialRate, initialPaus
                   {[...f.timeline].reverse().map((e, i) => (
                     <li key={`${e.ts}-${i}`} data-kind={e.kind} className="break-words">
                       <span className="tabular-nums text-muted-foreground">{new Date(e.ts).toLocaleTimeString(locale === "ro" ? "ro-RO" : "en-GB")}</span>{" "}
-                      {t(`ev_${e.kind}` as "ev_breaker", { provider: (e.provider ?? "").toUpperCase(), from: e.from ?? "", to: e.to ?? "", n: nf(e.n ?? 0) })}
+                      {t(`ev_${e.kind}` as "ev_breaker", { provider: (e.provider ?? "").toUpperCase(), from: val(e.kind, e.from), to: val(e.kind, e.to), n: nf(e.n ?? 0) })}
                     </li>
                   ))}
                 </ol>

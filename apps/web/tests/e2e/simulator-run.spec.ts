@@ -37,14 +37,32 @@ test("a small run with an A outage: live numbers, a failover, then the summary",
   // A is down from opening for 45 s: payments fail over to B and the dashboard shows it.
   await expect.poll(async () => Number((await dash.getByTestId("tile-failovers").textContent())?.replace(/\D/g, "") || 0), { timeout: 120_000 }).toBeGreaterThan(0);
   await expect(dash.getByTestId("spark-sold-marker").first()).toBeAttached();
-  await expect(dash.getByTestId("live-truth")).toBeVisible();
-  // The run ends with its summary.
-  await expect(page.getByTestId("simulator-run")).toHaveAttribute("data-state", /done|stopped/, { timeout: 6 * 60_000 });
+  // Scenario "During a run": every listed number is shown (review spec L6).
+  const shown = async (id: string, re: RegExp) => expect(dash.getByTestId(id)).toHaveText(re);
+  for (const id of ["queue", "prequeue", "admitted", "shopping", "failures", "failovers", "bots"]) await shown(`tile-${id}`, /\d/);
+  await shown("tile-sold", /\d+ \/ \d/);
+  await shown("tile-revenue", /\d/);
+  await shown("tile-success", /(\d|–)/);
+  await expect(dash.getByTestId("tile-bots")).toContainText("Places flagged (bots and fans)");
+  for (const id of ["bots-flagged", "bots-sent-back", "bots-otp", "bots-otp-failed", "bots-passes"]) await shown(id, /^\d/);
+  await expect(dash.getByTestId("live-providers")).toContainText("Provider A");
+  await expect(dash.getByTestId("live-providers")).toContainText("Provider B");
+  await expect(dash.getByTestId("live-stock").getByTestId("stock-line").first()).toBeVisible();
+  await expect(dash.getByText("Platform-wide (every sale in this environment)")).toBeVisible();
+  // The bots-against-truth split waits for the end of the run.
+  await expect(dash.getByTestId("live-truth-later")).toBeVisible();
+  await expect(dash.getByTestId("live-truth")).toHaveCount(0);
+  // The run ends with its summary (scenario "Summary after the run": done, not stopped).
+  await expect(page.getByTestId("simulator-run")).toHaveAttribute("data-state", "done", { timeout: 6 * 60_000 });
   await expect(page.getByTestId("simulator-summary")).toBeVisible();
-  await expect(page.getByTestId("summary-sFansSent")).toHaveText(/^1(35|36)$/);
+  await expect(page.getByTestId("summary-sFansSent")).toHaveText(/^1(35|36) of 1(35|36)$/);
   expect(Number((await page.getByTestId("summary-sTickets").textContent())?.replace(/\D/g, ""))).toBeGreaterThan(0);
   expect(Number((await page.getByTestId("summary-sFailovers").textContent())?.replace(/\D/g, ""))).toBeGreaterThan(0);
-  await expect(page.getByTestId("simulator-load-run")).toContainText("requests a second");
+  expect(Number((await page.getByTestId("summary-sPaidAtB").textContent())?.replace(/\D/g, ""))).toBeGreaterThan(0);
+  expect(Number((await page.getByTestId("summary-sPeakRps").textContent())?.replace(/\D/g, ""))).toBeGreaterThan(0);
+  await expect(page.getByTestId("simulator-load-run")).toContainText("on average over the run");
+  // After the run, the dashboard shows the bots against the simulator's truth.
+  await expect(dash.getByTestId("live-truth")).toBeVisible({ timeout: 30_000 });
   await dash.close();
   void browser;
 });

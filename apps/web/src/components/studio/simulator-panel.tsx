@@ -12,15 +12,16 @@ import { runAction, startRunAction, stopRunAction, type Knobs, type Run } from "
 type Limits = { maxFans: number; maxDurationSeconds: number };
 type StepStats = { count: number; errors: number; p50Ms: number; p95Ms: number };
 type Truth = Record<string, number | string | undefined>;
-type Report = { phase?: string; fans?: Record<string, number>; bots?: Record<string, number>; truth?: Truth; rps?: number; requests?: Record<string, StepStats> };
+type Report = { phase?: string; fans?: Record<string, number>; bots?: Record<string, number>; truth?: Truth; rps?: number; peakRps?: number; requests?: Record<string, StepStats> };
 type Summary = {
   truth?: Truth;
-  facts?: { paidOrders?: number; ticketsSold?: number; failovers?: number; attempts?: number };
+  facts?: { paidOrders?: number; ticketsSold?: number; failovers?: number; attempts?: number; paidAtBDuringOutage?: number };
   paymentSuccessRate?: number;
   sellOutSeconds?: number;
   botsFlagged?: number;
   fansFlagged?: number;
   rps?: number;
+  peakRps?: number;
   requests?: Record<string, StepStats>;
 };
 
@@ -103,6 +104,9 @@ export function SimulatorPanel({ rehearsalId, limits, initial, admin }: { source
   const summary = (run?.summary ?? null) as Summary | null;
   const req = summary?.requests ?? report?.requests;
   const rps = summary?.rps ?? report?.rps;
+  const peak = summary?.peakRps ?? report?.peakRps;
+  const arrived = (sent: string, planned: string) =>
+    t("ofPlanned", { sent: fmt(Number(summary?.truth?.[sent] ?? 0)), planned: fmt(Number(summary?.truth?.[planned] ?? 0)) });
   const field = "grid gap-1 text-sm";
   return (
     <>
@@ -254,8 +258,8 @@ export function SimulatorPanel({ rehearsalId, limits, initial, admin }: { source
             <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3" data-testid="simulator-summary">
               {(
                 [
-                  ["sFansSent", fmt(Number(summary.truth?.fansSent ?? 0))],
-                  ["sBotsSent", fmt(Number(summary.truth?.botsSent ?? 0))],
+                  ["sFansSent", arrived("fansSent", "fansPlanned")],
+                  ["sBotsSent", arrived("botsSent", "botsPlanned")],
                   ["sAdmitted", fmt(Number(summary.truth?.fansAdmitted ?? 0))],
                   ["sBotsAdmitted", fmt(Number(summary.truth?.botsAdmitted ?? 0))],
                   ["sTickets", fmt(summary.facts?.ticketsSold)],
@@ -263,11 +267,13 @@ export function SimulatorPanel({ rehearsalId, limits, initial, admin }: { source
                   ["sSellOut", summary.sellOutSeconds != null ? t("seconds", { n: fmt(summary.sellOutSeconds) }) : t("sNoSellOut")],
                   ["sSuccess", `${fmt((summary.paymentSuccessRate ?? 0) * 100, 1)}%`],
                   ["sFailovers", fmt(summary.facts?.failovers)],
+                  ["sPaidAtB", fmt(summary.facts?.paidAtBDuringOutage ?? 0)],
                   ["sBotsFlagged", fmt(summary.botsFlagged)],
                   ["sFansFlagged", fmt(summary.fansFlagged)],
                   ["sFansOtp", fmt(Number(summary.truth?.fansAskedOtp ?? 0))],
                   ["sSkips", fmt(Number(summary.truth?.skipsRefused ?? 0))],
                   ["sRps", fmt(summary.rps, 1)],
+                  ["sPeakRps", fmt(summary.peakRps ?? 0)],
                 ] as const
               ).map(([k, v]) => (
                 <div key={k} className="min-w-0">
@@ -279,9 +285,10 @@ export function SimulatorPanel({ rehearsalId, limits, initial, admin }: { source
               ))}
             </dl>
           )}
+          <h4 className="text-sm font-semibold">{t("loadRunTitle")}</h4>
           <p className="text-sm" data-testid="simulator-load-run">
             {rps
-              ? t("loadMeasuredRun", { rps: fmt(rps, 1), join: fmt(req?.join?.p95Ms, 1), status: fmt(req?.status?.p95Ms, 1), hold: fmt(req?.hold?.p95Ms, 1) })
+              ? t("loadMeasuredRun", { rps: fmt(rps, 1), peak: fmt(peak ?? 0), join: fmt(req?.join?.p95Ms, 1), status: fmt(req?.status?.p95Ms, 1), hold: fmt(req?.hold?.p95Ms, 1) })
               : t("loadNoRun")}
           </p>
         </section>
