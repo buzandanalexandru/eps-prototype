@@ -67,7 +67,12 @@ func main() {
 		return
 	}
 	if !*statusOnly {
-		if err := db.MigrateAll(ctx, sqlDB, os.DirFS(*controlDir), dbfiles.Sales()); err != nil {
+		// Retried on a lock timeout or deadlock against the live services (step 6's lesson): each
+		// migration takes its locks up front with a short lock_timeout and rolls back as a whole.
+		retry := func(try int, err error, wait time.Duration) {
+			log.Warn("migration met a lock conflict; retrying", "try", try, "wait", wait.String(), "error", db.Redact(err.Error()))
+		}
+		if err := db.MigrateAllRetry(ctx, sqlDB, os.DirFS(*controlDir), dbfiles.Sales(), 5, retry); err != nil {
 			log.Error("migration failed", "error", db.Redact(err.Error()))
 			os.Exit(1)
 		}
