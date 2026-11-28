@@ -11,7 +11,7 @@ Feature IDs refer to `feature-scope.md`; decision IDs (S, P, O, U, R) refer to `
 | 3 ✅ | `step-3-publish-and-storefront` (archived) | Sale snapshot, `/s/<brand>` storefronts, all-in price (P1, D1) | Selling |
 | 4 ✅ | `step-4-checkout-and-payments` (archived) | Holds, order states, fake providers A/B, failover, idempotency, resume link, guest checkout, questions, instalments, Apple/Google Pay, wallet (D2–D9, D11–D13, O3, O4, O6, P3) | Act 2 checkout |
 | 5 ✅ | `step-5-onsale-engine` (archived) | Sale settings, waiting room and shuffle, signed passes, rate dial, bot scoring, caps, OTP (E1–E6, E12, O1, O2) | Act 2 queue |
-| 6 | `step-6-simulator-and-dashboard` | Simulator, live dashboard, metrics, graceful degradation (E7, E8, E11, I4, R2, R3) | Act 2 complete |
+| 6 ✅ | `step-6-simulator-and-dashboard` (archived) | Simulator, live dashboard, metrics, graceful degradation (E7, E8, E11, I4, R2, R3) | Act 2 complete |
 | 7 | `step-7-tickets-and-wallet` | Trip wallet, rotating QR, personalise and check in, fan account, door scanning, wallet pass preview (F2–F5, F8, G2, O5) | Act 3 |
 | 8 | `step-8-squad-buy` | Group hold, each friend pays their own share (F1, O7) | Act 3 complete |
 | 9 | `step-9-resale-waitlist-lottery` | Face-value resale, self-filling waitlist, lottery, upgrades (F6, E9, E10, C7) | Extras |

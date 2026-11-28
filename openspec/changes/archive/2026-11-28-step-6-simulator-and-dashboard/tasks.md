@@ -46,12 +46,12 @@
 
 ## 9. Review and release loop (CLAUDE.md)
 
-- [ ] 9.1 Open a PR from `step-6-simulator-and-dashboard` to `main`; verify CI is green and the preview (Vercel + Neon branch + per-PR DOKS namespace with Prometheus) is deployed, including the deployed-preview e2e job
-- [ ] 9.2 Run the three adversarial reviewers in parallel (correctness: run lifecycle, stop, frame accuracy, reconnect; security and data: sim token scope, simulated address trust, rehearsal isolation, internal port, no personal data in metrics; spec and scale: every scenario tested, run bounds, resource limits, operability); verify each report is attached to the PR
-- [ ] 9.3 Fix every confirmed finding or record in the PR why it is rejected, then re-run the affected tests; verify CI is green again
-- [ ] 9.4 On the deployed preview run a 2,000-fan rehearsal with an A outage, then Playwright (desktop and phone, RO and EN where text changed, no console errors, no horizontal scroll) on the simulator panel, dashboard and degrade mode, plus API checks (run refused on a real sale, stream refused for another organiser); verify all pass
-- [ ] 9.5 Squash-merge to `main`; verify the merge commit is on `main`
-- [ ] 9.6 Run the production smoke test: a rehearsal of the sample sale with 10% bots and an A outage at the production cap, with Playwright checking the dashboard updates, shows the failover and ends with a summary; record the run's measured numbers for the video (not a 100k claim)
+- [x] 9.1 Open a PR from `step-6-simulator-and-dashboard` to `main`; verify CI is green and the preview (Vercel + Neon branch + per-PR DOKS namespace with Prometheus) is deployed, including the deployed-preview e2e job
+- [x] 9.2 Run the three adversarial reviewers in parallel (correctness: run lifecycle, stop, frame accuracy, reconnect; security and data: sim token scope, simulated address trust, rehearsal isolation, internal port, no personal data in metrics; spec and scale: every scenario tested, run bounds, resource limits, operability); verify each report is attached to the PR
+- [x] 9.3 Fix every confirmed finding or record in the PR why it is rejected, then re-run the affected tests; verify CI is green again
+- [x] 9.4 On the deployed preview run a 2,000-fan rehearsal with an A outage, then Playwright (desktop and phone, RO and EN where text changed, no console errors, no horizontal scroll) on the simulator panel, dashboard and degrade mode, plus API checks (run refused on a real sale, stream refused for another organiser); verify all pass
+- [x] 9.5 Squash-merge to `main`; verify the merge commit is on `main`
+- [x] 9.6 Run the production smoke test: a rehearsal of the sample sale with 10% bots and an A outage at the production cap, with Playwright checking the dashboard updates, shows the failover and ends with a summary; record the run's measured numbers for the video (not a 100k claim)
 
 ## Workflow follow-up
 
