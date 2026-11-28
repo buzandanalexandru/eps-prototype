@@ -25,6 +25,12 @@ type Engine struct {
 	Poll, Report time.Duration
 	// Finish is how long fans in flight may finish after the run's end (default 60 s).
 	Finish time.Duration
+	// MaxRPS caps the simulator's requests per second over all fans (default 1,500; review D-b).
+	MaxRPS int
+	// Lease, when set, is the cluster-wide right to run (one rehearsal at a time on shared nodes).
+	Lease Lease
+	// LostAfter stops every fan when no report has succeeded for this long (default 25 s; review D-e).
+	LostAfter time.Duration
 }
 
 var (
@@ -59,6 +65,22 @@ func (e *Engine) Run(ctx context.Context) {
 		log = slog.Default()
 	}
 	for ctx.Err() == nil {
+		if e.Lease != nil {
+			if !e.pending(ctx) {
+				sleep(ctx, poll)
+				continue
+			}
+			ok, err := e.Lease.Acquire(ctx)
+			if err != nil {
+				log.Warn("simulator cluster lease unavailable", "error", err.Error())
+			}
+			if !ok || err != nil {
+				// Fail closed: tell the core so a waiting run ends with a clear reason.
+				e.claimBusy(ctx)
+				sleep(ctx, poll)
+				continue
+			}
+		}
 		a, err := e.claim(ctx)
 		if err != nil {
 			log.Warn("simulator claim failed", "error", err.Error())
@@ -67,10 +89,32 @@ func (e *Engine) Run(ctx context.Context) {
 			log.Info("simulation run started", "run", a.RunID, "fans", a.Knobs.Fans, "opensAt", a.OpensAt)
 			e.Drive(ctx, a)
 			log.Info("simulation run ended", "run", a.RunID)
+			if e.Lease != nil {
+				e.Lease.Release(context.WithoutCancel(ctx))
+			}
 			continue
+		}
+		if e.Lease != nil {
+			e.Lease.Release(ctx)
 		}
 		sleep(ctx, poll)
 	}
+}
+
+// pending asks the core whether a run waits (without claiming it).
+func (e *Engine) pending(ctx context.Context) bool {
+	c := &caller{http: e.client(), slots: make(chan struct{}, 1), st: &stats{}}
+	ans := c.do(ctx, "claim", http.MethodPost, e.Endpoints.Internal+"/internal/sim/claim", map[string]string{"Authorization": "Bearer " + e.Token}, map[string]any{"peek": true})
+	var out struct {
+		Pending bool `json:"pending"`
+	}
+	return ans.ok() && json.Unmarshal(ans.body, &out) == nil && out.Pending
+}
+
+// claimBusy tells the core that the cluster's lease is held elsewhere (pending runs end with that).
+func (e *Engine) claimBusy(ctx context.Context) {
+	c := &caller{http: e.client(), slots: make(chan struct{}, 1), st: &stats{}}
+	_ = c.do(ctx, "claim", http.MethodPost, e.Endpoints.Internal+"/internal/sim/claim", map[string]string{"Authorization": "Bearer " + e.Token}, map[string]any{"clusterBusy": true})
 }
 
 func (e *Engine) claim(ctx context.Context) (*Assignment, error) {
@@ -127,7 +171,11 @@ func (e *Engine) Drive(ctx context.Context, a *Assignment) {
 	}
 	r := &runner{a: a, ep: e.Endpoints, minter: e.Minter, t: &tally{fans: map[string]int{}, bots: map[string]int{}, state: map[int]string{}},
 		qty: NewWeighted(a.Knobs.QtyMix), pay: NewWeighted(a.Knobs.PaymentMix)}
-	r.call = &caller{http: e.client(), slots: make(chan struct{}, n), st: &stats{start: time.Now()}}
+	rps := e.MaxRPS
+	if rps <= 0 {
+		rps = 1500
+	}
+	r.call = &caller{http: e.client(), slots: make(chan struct{}, n), st: &stats{start: time.Now()}, pace: newPacer(rps)}
 	var total int64
 	for _, o := range a.Offers {
 		total += max(1, o.Weight)
@@ -176,6 +224,11 @@ func (e *Engine) Drive(ctx context.Context, a *Assignment) {
 	end := a.OpensAt.Add(time.Duration(a.Knobs.DurationSeconds) * time.Second)
 	var finishing time.Time
 	phase := "running"
+	lost := e.LostAfter
+	if lost <= 0 {
+		lost = 25 * time.Second
+	}
+	lastOK, lastLease := time.Now(), time.Now()
 	for {
 		select {
 		case <-allDone:
@@ -198,16 +251,30 @@ func (e *Engine) Drive(ctx context.Context, a *Assignment) {
 			e.report(ctx, r, "done")
 			return
 		}
-		if rep := e.report(ctx, r, phase); rep.Stop {
+		rep, ok := e.report(ctx, r, phase)
+		if ok {
+			lastOK = now
+		}
+		// The core is unreachable: stop every fan rather than drive traffic nobody can stop.
+		if rep.Stop || now.Sub(lastOK) > lost {
 			stopAll()
 			<-allDone
 			e.report(ctx, r, "done")
 			return
 		}
+		if e.Lease != nil && now.Sub(lastLease) >= 10*time.Second {
+			if held, err := e.Lease.Acquire(ctx); err != nil || !held {
+				stopAll() // the cluster's lease was lost: stop at once
+				<-allDone
+				e.report(ctx, r, "done")
+				return
+			}
+			lastLease = now
+		}
 	}
 }
 
-func (e *Engine) report(ctx context.Context, r *runner, phase string) Reply {
+func (e *Engine) report(ctx context.Context, r *runner, phase string) (Reply, bool) {
 	now := time.Now()
 	r.t.mu.Lock()
 	rep := Report{Phase: phase, Truth: r.t.truth, Fans: copyMap(r.t.fans), Bots: copyMap(r.t.bots)}
@@ -234,7 +301,7 @@ func (e *Engine) report(ctx context.Context, r *runner, phase string) Reply {
 	} else if ans.status == http.StatusNotFound {
 		reply.Stop = true
 	}
-	return reply
+	return reply, ans.ok()
 }
 
 func copyMap(m map[string]int) map[string]int {

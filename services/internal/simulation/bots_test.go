@@ -25,13 +25,21 @@ func TestBotsAgainstTheDefences(t *testing.T) {
 	if tr.BotsSent != 45 || tr.FansSent != 105 {
 		t.Fatalf("sent: %d bots, %d fans", tr.BotsSent, tr.FansSent)
 	}
-	skippers := tr.BotsSent / len(simulation.BotKinds)
+	skippers, headless := 0, 0
+	for j := 0; j < tr.BotsSent; j++ {
+		switch simulation.BotKind(j) {
+		case simulation.BotSkipper:
+			skippers++
+		case simulation.BotHeadless:
+			headless++
+		}
+	}
 	if tr.SkipsRefused != 2*skippers {
 		t.Fatalf("skips refused %d, want %d (no pass and a forged pass, per skipper)", tr.SkipsRefused, 2*skippers)
 	}
 	// Headless bots (no proof of work, an automation agent, a hosting address) are suspects.
-	if sum.BotsFlagged < skippers {
-		t.Fatalf("bots flagged %d, want at least the %d headless bots", sum.BotsFlagged, skippers)
+	if sum.BotsFlagged < headless {
+		t.Fatalf("bots flagged %d, want at least the %d headless bots", sum.BotsFlagged, headless)
 	}
 	if sum.FansFlagged != 0 {
 		t.Fatalf("%d real fans flagged", sum.FansFlagged)

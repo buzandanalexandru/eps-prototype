@@ -306,3 +306,26 @@ func TestOutageSchedule(t *testing.T) {
 		t.Fatal("a run past its duration and grace is not told to stop")
 	}
 }
+
+// Review D-e: the simulator stops every fan by itself when the core stops answering its reports.
+func TestSimulatorStopsWhenTheCoreIsGone(t *testing.T) {
+	s := simtest.Start(t)
+	ev, real := s.RealSale(t, 1000, 20)
+	ctx := s.Context(t)
+	rh, _ := s.Sim.CreateRehearsal(ctx, ev.Org, real.ID, "test")
+	run, err := s.Sim.Start(ctx, ev.Org, rh.ID, "test", simulation.Knobs{Fans: 200, OpensInSeconds: 30, ProviderA: &simulation.ProviderPlan{Mode: "none"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Engine.LostAfter = 3 * time.Second
+	s.RunSimulator(ctx)
+	waitState(t, s, ev.Org, run.ID, 20*time.Second, simulation.Running)
+	time.Sleep(time.Second)
+	s.Internal.Close() // the core's internal API is gone (a network split, a dead core)
+	time.Sleep(6 * time.Second)
+	hits := s.GatewayHits.Load()
+	time.Sleep(4 * time.Second)
+	if after := s.GatewayHits.Load(); after != hits {
+		t.Fatalf("%d requests after the simulator lost the core", after-hits)
+	}
+}

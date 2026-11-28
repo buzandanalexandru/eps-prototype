@@ -117,6 +117,23 @@ AS $fn$
     ORDER BY s.created_at LIMIT least(greatest(p_limit, 1), 100)
 $fn$;
 -- +goose StatementEnd
+-- +goose StatementBegin
+-- Real sale moments whose waiting room may be live at p_now (pre-queue open, or opened within 72
+-- hours): a run is refused while any of them has fans (review D-b). Ids and times only.
+CREATE FUNCTION sales.real_sales_near(p_now timestamptz, p_limit int)
+RETURNS TABLE (organiser_id uuid, event_id uuid, sale_id uuid, opens_at timestamptz)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $fn$
+    SELECT s.organiser_id, s.event_id, s.id, v.opens_at FROM sales.sales s
+    JOIN sales.sale_settings v ON v.organiser_id = s.organiser_id AND v.sale_id = s.id AND v.version = s.settings_version
+    WHERE s.rehearsal_of_event IS NULL AND s.deleted_at IS NULL
+      AND v.opens_at - make_interval(mins => v.prequeue_minutes) <= p_now AND v.opens_at > p_now - interval '72 hours'
+    ORDER BY v.opens_at DESC LIMIT least(greatest(p_limit, 1), 200)
+$fn$;
+-- +goose StatementEnd
+GRANT SELECT (prequeue_minutes) ON sales.sale_settings TO eps_sales_index;
+REVOKE ALL ON FUNCTION sales.real_sales_near(timestamptz, int) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sales.real_sales_near(timestamptz, int) TO eps_core;
 REVOKE ALL ON FUNCTION sales.rehearsal_source(uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.simulation_runs_in(text[], int) FROM PUBLIC;
 REVOKE ALL ON FUNCTION sales.rehearsals_to_clean(timestamptz, int) FROM PUBLIC;
@@ -127,6 +144,7 @@ GRANT CREATE ON SCHEMA sales TO eps_sales_index;
 ALTER FUNCTION sales.rehearsal_source(uuid) OWNER TO eps_sales_index;
 ALTER FUNCTION sales.simulation_runs_in(text[], int) OWNER TO eps_sales_index;
 ALTER FUNCTION sales.rehearsals_to_clean(timestamptz, int) OWNER TO eps_sales_index;
+ALTER FUNCTION sales.real_sales_near(timestamptz, int) OWNER TO eps_sales_index;
 REVOKE CREATE ON SCHEMA sales FROM eps_sales_index;
 
 -- The simulator's runs write their own events.

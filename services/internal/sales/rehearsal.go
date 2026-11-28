@@ -223,3 +223,40 @@ func (s *Service) MarkCleaned(ctx context.Context, org, saleID string) error {
 		return err
 	})
 }
+
+// CloseRehearsal moves a rehearsal's opening back to the horizon and pauses it once its run ended
+// (review D-c): nobody can join it, and its waiting room admits nobody, until the next run.
+func (s *Service) CloseRehearsal(ctx context.Context, org, saleID, by string) error {
+	cur, _, err := s.Get(ctx, org, saleID)
+	if err != nil || cur.Rehearsal == nil {
+		return err
+	}
+	if err := s.forceClose(ctx, org, cur, by); err != nil {
+		return err
+	}
+	s.Refresh(ctx, org, cur.EventID)
+	return nil
+}
+
+func (s *Service) forceClose(ctx context.Context, org string, cur *Sale, by string) error {
+	return db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		locked, err := scanSale(tx.QueryRow(ctx, `select `+cols+` from sales.sales s join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id
+			and v.version = s.settings_version where s.id = $1 and s.deleted_at is null for update of s`, cur.ID))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		next := locked.Settings
+		next.OpensAt, next.Paused = s.now().Add(RehearsalHorizon).UTC().Truncate(time.Second), true
+		v := locked.Version + 1
+		if _, err := tx.Exec(ctx, `update sales.sales set settings_version = $2 where id = $1`, cur.ID, v); err != nil {
+			return err
+		}
+		if err := insertVersion(ctx, tx, org, cur.ID, v, next, by); err != nil {
+			return err
+		}
+		return writeEvent(ctx, tx, org, cur.EventID, cur.ID, "sale.settings_changed", v)
+	})
+}

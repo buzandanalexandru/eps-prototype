@@ -20,6 +20,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/outbox"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/sales"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 )
@@ -87,8 +88,10 @@ type Service struct {
 	// Knobs are the providers' admin APIs by provider id ("a", "b").
 	Knobs  map[string]*payments.Knobs
 	Limits Limits
-	Log    *slog.Logger
-	Now    func() time.Time
+	// Production applies the shared sample's rules (EPS_ENV=prod).
+	Production bool
+	Log        *slog.Logger
+	Now        func() time.Time
 	// Usage reads a rehearsal's paid orders and attempts for the summary (nil: none).
 	Facts func(ctx context.Context, org, event, sale string) (Facts, error)
 }
@@ -261,6 +264,13 @@ func (s *Service) Start(ctx context.Context, org, saleID, by string, k Knobs) (*
 	if sale.Rehearsal == nil {
 		return nil, apperr.New(http.StatusUnprocessableEntity, apperr.SimInvalid, "A run needs a rehearsal: create one from this sale moment first.", false).With("field", "sale")
 	}
+	// Every rule is checked before the rehearsal is touched (review D-e).
+	if p := s.sampleRule(ctx, sale, k); p != nil {
+		return nil, p
+	}
+	if err := s.preflight(ctx, org); err != nil {
+		return nil, err
+	}
 	prev, err := s.List(ctx, org, sale.ID, 1)
 	if err != nil {
 		return nil, err
@@ -310,12 +320,18 @@ func (s *Service) Start(ctx context.Context, org, saleID, by string, k Knobs) (*
 		return nil, err
 	}
 	runsStarted.Inc()
+	s.log().Info("simulation run requested", "organiser", org, "by", by, "run", id, "sale", sale.ID, "fans", k.Fans, "botShare", *k.BotShare, "providerA", k.ProviderA.Mode)
 	s.watch(ctx, sale.ID)
 	return s.Get(ctx, org, id)
 }
 
 // Stop asks the simulator to end a run; a run not yet claimed stops at once.
-func (s *Service) Stop(ctx context.Context, org, id string) (*Run, error) {
+func (s *Service) Stop(ctx context.Context, org, id string, by ...string) (*Run, error) {
+	who := ""
+	if len(by) > 0 {
+		who = by[0]
+	}
+	s.log().Info("simulation run stop requested", "organiser", org, "by", who, "run", id)
 	r, err := s.Get(ctx, org, id)
 	if err != nil {
 		return nil, err
@@ -334,6 +350,98 @@ func (s *Service) Stop(ctx context.Context, org, id string) (*Run, error) {
 		return nil, err
 	}
 	return s.Get(ctx, org, id)
+}
+
+// DegradeAllowed: in production the shared sample's real sale is never switched to degraded mode
+// (anyone can sign in to it); its rehearsals can be (review D-b).
+func (s *Service) DegradeAllowed(ctx context.Context, sale *sales.Sale) *apperr.Problem {
+	if !s.Production || sale.Rehearsal != nil || s.Snaps == nil {
+		return nil
+	}
+	if snap, err := s.Snaps.Load(ctx, sale.EventID); err == nil && snap.IsSample {
+		return apperr.New(http.StatusForbidden, apperr.Forbidden, "The shared sample's real sale cannot be switched to degraded mode. Use a rehearsal.", false)
+	}
+	return nil
+}
+
+// RunsPerHour bounds the runs one organiser starts in an hour (review D-b).
+const RunsPerHour = 3
+
+// sampleRule: in production the shared sample organiser runs only at the default size (review D-b).
+func (s *Service) sampleRule(ctx context.Context, sale *sales.Sale, k Knobs) *apperr.Problem {
+	if !s.Production || s.Snaps == nil {
+		return nil
+	}
+	snap, err := s.Snaps.Load(ctx, sale.EventID)
+	if err != nil || !snap.IsSample {
+		return nil
+	}
+	d := Knobs{}.Defaults()
+	if k.Fans > d.Fans || k.DurationSeconds > d.DurationSeconds || *k.BotShare > *d.BotShare {
+		return apperr.New(http.StatusUnprocessableEntity, apperr.SimInvalid, "The shared sample runs at the default size only (1,000 fans, 10% bots, 5 minutes).", false).
+			With("field", "fans").With("min", 10).With("max", d.Fans)
+	}
+	return nil
+}
+
+// preflight refuses a run while the organiser started too many this hour, while any run is active
+// in the environment, or while a real sale here has fans in its waiting room (review D-b).
+func (s *Service) preflight(ctx context.Context, org string) error {
+	var recent int
+	if err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `select count(*) from sales.simulation_runs where created_at > now() - interval '1 hour'`).Scan(&recent)
+	}); err != nil {
+		return err
+	}
+	if recent >= RunsPerHour {
+		return apperr.New(http.StatusTooManyRequests, apperr.RateLimited, "At most 3 rehearsal runs an hour per organiser.", true).With("max", RunsPerHour)
+	}
+	var near []Run
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+		active, err := activeAnywhere(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, a := range active {
+			if a.OrganiserID == org {
+				return apperr.New(http.StatusConflict, apperr.SimActive, "One of your rehearsals is already running.", false).With("runId", a.ID).With("saleId", a.SaleID)
+			}
+		}
+		if len(active) > 0 {
+			return apperr.New(http.StatusConflict, apperr.SimBusy, "Another rehearsal is running on this platform. Try again in a few minutes.", true)
+		}
+		rows, err := tx.Query(ctx, `select organiser_id::text, event_id::text, sale_id::text, opens_at from sales.real_sales_near(now(), 200)`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r Run
+			var at time.Time
+			if err := rows.Scan(&r.OrganiserID, &r.EventID, &r.SaleID, &at); err != nil {
+				return err
+			}
+			r.OpensAt = &at
+			near = append(near, r)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	for _, r := range near {
+		busy := now.Before(*r.OpensAt) // its pre-queue is open
+		if !busy && s.Redis != nil {
+			if c, err := queue.CountsOf(ctx, s.Redis, r.OrganiserID, r.EventID, r.SaleID, now); err == nil {
+				busy = c.State == "shuffling" || c.Prequeue+c.Line+c.Slow+c.Active > 0
+			}
+		}
+		if busy {
+			return apperr.New(http.StatusConflict, apperr.SimBusy, "A real sale on this platform has fans in its waiting room. Rehearse when it is over.", true).With("reason", "real_sale_live")
+		}
+	}
+	return nil
 }
 
 // watch adds a sale to the aggregator's watched set for a while (design D-6).

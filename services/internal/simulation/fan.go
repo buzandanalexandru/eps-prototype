@@ -27,8 +27,14 @@ const (
 	BotCapper   = "capper"
 )
 
-// BotKinds are spread evenly over the bot share.
+// BotKinds are the behaviours. Refresh spammers are one in nine bots (review D-b: they are the
+// heaviest load per client), the others share the rest evenly.
 var BotKinds = []string{BotSpammer, BotFarm, BotHeadless, BotSkipper, BotCapper}
+
+var botCycle = []string{BotFarm, BotHeadless, BotSkipper, BotCapper, BotSpammer, BotFarm, BotHeadless, BotSkipper, BotCapper}
+
+// BotKind is the behaviour of the j-th bot of a run.
+func BotKind(j int) string { return botCycle[j%len(botCycle)] }
 
 const (
 	browserUA  = "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36"
@@ -101,7 +107,7 @@ func population(a *Assignment, now time.Time, rng *mrand.Rand) []*client {
 	}
 	farmPrint := randHex(16)
 	for j := 0; j < bots; j++ {
-		kind := BotKinds[j%len(BotKinds)]
+		kind := BotKind(j)
 		c := &client{i: fans + j, bot: kind, ip: BotAddress(kind, j), ua: browserUA, print: randHex(16)}
 		switch kind {
 		case BotHeadless:

@@ -79,4 +79,12 @@ func TestFanJourney(t *testing.T) {
 	if n := count(t, s, `select count(*) from sales.orders where event_id = $1`, ev.Event); n != 0 {
 		t.Fatalf("real event orders: %d", n)
 	}
+	// Review D-c: the rehearsal closes after its run.
+	closed, _, err := s.Sales.Get(ctx, ev.Org, r.SaleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !closed.Settings.Paused || closed.Settings.OpensAt.Before(time.Now().Add(24*time.Hour)) {
+		t.Fatalf("rehearsal still open after its run: %+v", closed.Settings)
+	}
 }

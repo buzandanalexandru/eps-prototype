@@ -42,9 +42,21 @@ func (s *Server) SetSaleDegraded(ctx context.Context, req api.SetSaleDegradedReq
 	if req.Body == nil {
 		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
 	}
+	cur, _, err := s.OnSale.Sales.Get(ctx, org, req.SaleId.String())
+	if err != nil {
+		return s.fail(ctx, err), nil
+	}
+	if s.Sim != nil && req.Body.Degraded {
+		if p := s.Sim.DegradeAllowed(ctx, cur); p != nil {
+			return problemRaw(ctx, p), nil
+		}
+	}
 	x, err := s.OnSale.Sales.SetDegraded(ctx, org, req.SaleId.String(), by(ctx), req.Body.Degraded)
 	if err != nil {
 		return s.fail(ctx, err), nil
+	}
+	if s.Shop != nil && s.Shop.Log != nil {
+		s.Shop.Log.Info("degraded mode switched", "organiser", org, "by", by(ctx), "sale", x.ID, "degraded", x.Degraded)
 	}
 	return okRaw(s.view(ctx, x, nil, true)), nil
 }
@@ -165,7 +177,7 @@ func (s *Server) StopSimulation(ctx context.Context, req api.StopSimulationReque
 	if !ok {
 		return r, nil
 	}
-	run, err := s.Sim.Stop(ctx, org, req.RunId.String())
+	run, err := s.Sim.Stop(ctx, org, req.RunId.String(), by(ctx))
 	if err != nil {
 		return s.fail(ctx, err), nil
 	}

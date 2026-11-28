@@ -173,7 +173,7 @@ func Simulation(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, sv
 	if n := envInt("SIM_MAX_FANS", 0); n >= 10 && n <= 200_000 {
 		l.MaxFans = n
 	}
-	return &simulation.Service{Pool: pool, Redis: rdb, Sales: sv, Snaps: snaps, Knobs: knobs, Limits: l, Log: log}
+	return &simulation.Service{Pool: pool, Redis: rdb, Sales: sv, Snaps: snaps, Knobs: knobs, Limits: l, Log: log, Production: env("EPS_ENV", "dev") == "prod"}
 }
 
 // DegradedOf tells the availability answer whether a current sale of an event is degraded.

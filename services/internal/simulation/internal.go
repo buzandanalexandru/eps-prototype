@@ -231,6 +231,39 @@ func (s *Service) prepare(ctx context.Context, r *Run) (*Assignment, error) {
 		OpensAt: sale.Settings.OpensAt, CapPerOrder: sale.Settings.CapPerOrder, Knobs: r.Knobs, Offers: offers}, nil
 }
 
+// PendingCount is how many runs wait for a simulator.
+func (s *Service) PendingCount(ctx context.Context) (int, error) {
+	var n int
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `select count(*) from sales.simulation_runs_in($1, 100)`, []string{Pending}).Scan(&n)
+	})
+	return n, err
+}
+
+// RefusePending ends every pending run with why (the simulator cannot take them now).
+func (s *Service) RefusePending(ctx context.Context, why string) {
+	var list []Run
+	_ = db.WithTx(ctx, s.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `select id::text, organiser_id::text, sale_id::text, event_id::text, state, last_report_at, created_at
+			from sales.simulation_runs_in($1, 20)`, []string{Pending})
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r Run
+			if err := rows.Scan(&r.ID, &r.OrganiserID, &r.SaleID, &r.EventID, &r.State, &r.LastReportAt, &r.CreatedAt); err != nil {
+				return err
+			}
+			list = append(list, r)
+		}
+		return rows.Err()
+	})
+	for i := range list {
+		s.fail(ctx, &list[i], why)
+	}
+}
+
 // fail ends a run as failed and restores its rehearsal's providers.
 func (s *Service) fail(ctx context.Context, r *Run, why string) {
 	_ = db.WithTx(ctx, s.Pool, db.RoleCore, r.OrganiserID, func(tx pgx.Tx) error {
@@ -239,6 +272,14 @@ func (s *Service) fail(ctx context.Context, r *Run, why string) {
 		return err
 	})
 	s.restoreKnobs(context.WithoutCancel(ctx), r.OrganiserID, r.EventID)
+	s.closeRehearsal(context.WithoutCancel(ctx), r)
+}
+
+// closeRehearsal shuts the run's rehearsal again (review D-c).
+func (s *Service) closeRehearsal(ctx context.Context, r *Run) {
+	if err := s.Sales.CloseRehearsal(ctx, r.OrganiserID, r.SaleID, "simulator"); err != nil {
+		s.log().Warn("rehearsal not closed after its run", "run", r.ID, "error", err.Error())
+	}
 }
 
 // ApplySchedule changes provider A on the plan's times, once each (design D-2).
@@ -342,6 +383,7 @@ func (s *Service) ReceiveReport(ctx context.Context, org, runID string, rep Repo
 	}
 	if ended != nil {
 		s.restoreKnobs(context.WithoutCancel(ctx), ended.OrganiserID, ended.EventID)
+		s.closeRehearsal(context.WithoutCancel(ctx), ended)
 	}
 	if s.Redis != nil && saleID != "" {
 		s.watch(ctx, saleID)
@@ -523,6 +565,25 @@ func (h *InternalHTTP) guard(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (h *InternalHTTP) claim(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		ClusterBusy bool `json:"clusterBusy"`
+		Peek        bool `json:"peek"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&body)
+	if body.Peek {
+		n, err := h.Svc.PendingCount(r.Context())
+		if err != nil {
+			httpx.WriteProblem(w, r, http.StatusServiceUnavailable, "EPS-UNAVAILABLE", "")
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]bool{"pending": n > 0})
+		return
+	}
+	if body.ClusterBusy {
+		h.Svc.RefusePending(r.Context(), "Another rehearsal is running on this cluster. Try again in a few minutes.")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	a, err := h.Svc.Claim(r.Context())
 	if err != nil {
 		httpx.WriteProblem(w, r, http.StatusServiceUnavailable, "EPS-UNAVAILABLE", "")

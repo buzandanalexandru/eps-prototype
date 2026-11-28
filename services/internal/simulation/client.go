@@ -157,6 +157,32 @@ type caller struct {
 	http  *http.Client
 	slots chan struct{}
 	st    *stats
+	pace  *pacer
+}
+
+// pacer spaces requests to at most rate a second over all fans (review D-b).
+type pacer struct {
+	mu   sync.Mutex
+	gap  time.Duration
+	next time.Time
+}
+
+func newPacer(rate int) *pacer { return &pacer{gap: time.Second / time.Duration(rate)} }
+
+// wait blocks until the request's turn (false when ctx ended first).
+func (p *pacer) wait(ctx context.Context) bool {
+	if p == nil {
+		return true
+	}
+	p.mu.Lock()
+	now := time.Now()
+	if p.next.Before(now) {
+		p.next = now
+	}
+	at := p.next
+	p.next = p.next.Add(p.gap)
+	p.mu.Unlock()
+	return sleep(ctx, time.Until(at))
 }
 
 func (c *caller) do(ctx context.Context, step, method, u string, hdr map[string]string, body any) answer {
@@ -169,6 +195,9 @@ func (c *caller) do(ctx context.Context, step, method, u string, hdr map[string]
 			j, _ := json.Marshal(b)
 			rd = bytes.NewReader(j)
 		}
+	}
+	if !c.pace.wait(ctx) {
+		return answer{status: 0, code: "cancelled"}
 	}
 	select {
 	case c.slots <- struct{}{}:
