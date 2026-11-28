@@ -27,6 +27,8 @@ CREATE TABLE sales.tickets (
     generation       int         NOT NULL DEFAULT 1 CHECK (generation BETWEEN 1 AND 65535),
     holder_kind      text        NOT NULL CHECK (holder_kind IN ('account', 'guest', 'erased')),
     holder_id        text        NOT NULL CHECK (length(holder_id) BETWEEN 1 AND 200),
+    -- The holder before the last reissue: they are told the ticket has moved instead of "not found".
+    prev_holder_id   text        CHECK (prev_holder_id IS NULL OR length(prev_holder_id) <= 200),
     state            text        NOT NULL DEFAULT 'valid' CHECK (state IN ('valid', 'suspended', 'cancelled')),
     cancel_reason    text        CHECK (cancel_reason IS NULL OR length(cancel_reason) <= 40),
     holder_name      text        CHECK (holder_name IS NULL OR length(holder_name) BETWEEN 1 AND 120),

@@ -17,6 +17,8 @@ import (
 const (
 	LinkResume = "resume"
 	LinkView   = "view"
+	// LinkTickets opens a guest's tickets with live codes (step 7) until two days after the event.
+	LinkTickets = "tickets"
 )
 
 // ViewLinkLife is how long a guest's order link works.
@@ -90,4 +92,31 @@ func (l *Links) ResumeLink(o *Order) string { return l.Sign(o.ID, LinkResume, o.
 // ViewLink is the signed order-status token of an order (30 days).
 func (l *Links) ViewLink(o *Order) string {
 	return l.Sign(o.ID, LinkView, o.CreatedAt.Add(ViewLinkLife))
+}
+
+// OrderOf reads the order id inside a token without checking it (the caller then checks the token
+// for that order with Check).
+func (l *Links) OrderOf(token string) string {
+	enc, _, ok := strings.Cut(token, ".")
+	if !ok || len(token) > 400 {
+		return ""
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(enc)
+	if err != nil {
+		return ""
+	}
+	id, _, _ := strings.Cut(string(raw), "|")
+	if len(id) != 36 {
+		return ""
+	}
+	return id
+}
+
+// TicketsLinkFor is a guest order's tickets token, valid until `until` (the event's end plus two
+// days, at most 400 days).
+func (l *Links) TicketsLinkFor(orderID string, until time.Time) string {
+	if max := l.now().Add(400 * 24 * time.Hour); until.After(max) {
+		until = max
+	}
+	return l.Sign(orderID, LinkTickets, until)
 }

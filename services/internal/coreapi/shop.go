@@ -224,6 +224,7 @@ type OrderView struct {
 	Access          string                 `json:"access"`
 	ResumeToken     string                 `json:"resumeToken,omitempty"`
 	ViewToken       string                 `json:"viewToken,omitempty"`
+	TicketsToken    string                 `json:"ticketsToken,omitempty"`
 	Wallet          *walletOption          `json:"wallet,omitempty"`
 	SavedCards      []payments.SavedMethod `json:"savedCards"`
 }
@@ -335,6 +336,10 @@ func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) O
 	}
 	if access == accessBuyer && o.BuyerKind == "guest" {
 		v.ViewToken = sh.Checkout.Links.ViewLink(o)
+	}
+	// A guest's tickets open from a signed link once issued (step 7).
+	if (access == accessBuyer || access == accessViewLink) && s.Tickets != nil && s.Tickets.Svc != nil {
+		v.TicketsToken = s.Tickets.Svc.LinkFor(ctx, o)
 	}
 	return v
 }

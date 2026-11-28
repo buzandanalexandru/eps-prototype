@@ -29,6 +29,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/sales"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/simulation"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/tickets"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wallet"
 )
 
@@ -240,4 +241,25 @@ func ServeInternal(log *slog.Logger, sim *simulation.Service) {
 		}
 	}()
 	log.Info("simulator API on", "port", port)
+}
+
+// Tickets wires step 7's tickets service over the checkout's links and the wallet (late check-in
+// fees). keys may be nil in the worker, which issues but never signs codes.
+func Tickets(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, s *Services, keys *tickets.KeyRing, log *slog.Logger) *tickets.Service {
+	return &tickets.Service{Pool: pool, Snaps: snaps, Keys: keys, Links: s.Checkout.Links, Redis: rdb, Pay: s.Wallet.PayFeeTx,
+		IdentitySecret: IdentitySecret(), Log: log, CodesPerMinute: envInt("TICKET_CODES_PER_MINUTE", 30)}
+}
+
+// TicketKeys reads the ticket signing key (TICKET_SIGNING_KEY from eps-runtime, the core only).
+// Outside EPS_ENV=dev the core stops without it (fail closed: no unsigned or unverifiable codes).
+func TicketKeys(log *slog.Logger) *tickets.KeyRing {
+	r, err := tickets.KeyRingFromEnv(os.Getenv)
+	if err != nil {
+		log.Error("ticket signing key", "error", err.Error())
+		os.Exit(1)
+	}
+	if r.Ephemeral() {
+		log.Warn("TICKET_SIGNING_KEY not set (dev): ticket codes use a per-process key")
+	}
+	return r
 }

@@ -40,6 +40,8 @@ type Server struct {
 	OnSale *OnSale
 	// Rehearsals and simulation runs (step 6): nil without a database.
 	Sim *simulation.Service
+	// Tickets, codes, the trip wallet and the door (step 7): nil without a database.
+	Tickets *Tickets
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
