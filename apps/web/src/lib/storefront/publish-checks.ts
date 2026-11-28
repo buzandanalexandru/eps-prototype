@@ -57,7 +57,7 @@ export function publishProblems(raw: unknown, ctx: Ctx): PublishProblem[] {
   const doc: StorefrontDocument = parsed.doc;
   const locales = doc.locales.enabled;
   const out: PublishProblem[] = [];
-  for (const c of contrastFailures(doc.tokens)) out.push({ code: "contrast", path: `tokens.${c.scheme}.${c.fix}`, detail: `${c.fg}/${c.bg}` });
+  for (const c of contrastFailures(doc.tokens)) out.push({ code: "contrast", path: `tokens.${c.scheme}.${c.fix}`, detail: c.over ? `${c.fg} over the hero image` : `${c.fg}/${c.bg}` });
   out.push(...textProblems(doc.messages.email.footer, false, locales, { path: "messages.email.footer" }));
   doc.pages.forEach((p, pi) => {
     const pagePath = `pages.${pi}`;

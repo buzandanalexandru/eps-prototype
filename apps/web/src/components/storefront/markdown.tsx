@@ -11,7 +11,7 @@ function inline(xs: Inline[], hrefBase: string, interactive: boolean): React.Rea
     if (x.t === "i") return <em key={i}>{inline(x.c, hrefBase, interactive)}</em>;
     const href = shopHref(x.href, hrefBase);
     return (
-      <a key={i} href={href} rel={href.startsWith("/") ? undefined : "noopener noreferrer nofollow"} className="underline text-[var(--eps-primary)]" data-eps-link={interactive ? undefined : "inert"}>
+      <a key={i} href={href} rel={href.startsWith("/") ? undefined : "noopener noreferrer nofollow"} className="font-semibold underline decoration-[var(--eps-primary)] decoration-2 underline-offset-2" data-eps-link={interactive ? undefined : "inert"}>
         {inline(x.c, hrefBase, interactive)}
       </a>
     );

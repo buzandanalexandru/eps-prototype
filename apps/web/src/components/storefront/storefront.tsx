@@ -53,7 +53,7 @@ export function StorefrontView({ doc, page, ctx, fontClass, selectedSectionId, s
           {nav.length > 0 && (
             <nav aria-label={ctx.labels.navigation} className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-sm">
               {nav.map((p) => (
-                <a key={p.id} href={`${ctx.hrefBase}${pagePath(p, ctx.catalogue)}`} data-eps-page={p.id} className={p.id === page.id ? "font-semibold text-[var(--eps-primary)] underline" : "hover:underline"}>
+                <a key={p.id} href={`${ctx.hrefBase}${pagePath(p, ctx.catalogue)}`} data-eps-page={p.id} className={p.id === page.id ? "font-semibold underline decoration-[var(--eps-primary)] decoration-2 underline-offset-4" : "hover:underline"}>
                   {tx(p.title, ctx.locale)}
                 </a>
               ))}

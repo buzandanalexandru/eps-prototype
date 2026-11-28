@@ -95,7 +95,18 @@ export type PairCheck = {
   ratio: number;
   ok: boolean;
   suggestion: string | null;
+  /** Text over a hero image: the page colour mixed with the darkest or lightest possible pixel. */
+  over?: "dark-image" | "light-image";
 };
+
+/** The hero image shows at this opacity over the page colour (sections.tsx: opacity-25). */
+export const HERO_IMAGE_OPACITY = 0.25;
+
+function mix(a: string, b: string, t: number): string {
+  const x = hexToRgb(a);
+  const y = hexToRgb(b);
+  return rgbToHex([0, 1, 2].map((i) => x[i] * (1 - t) + y[i] * t) as Rgb);
+}
 
 // Text pairs need 4.5:1, accents and controls against the page 3:1 (WCAG 2.2 AA, 1.4.3 and 1.4.11).
 // The fix changes the colour the organiser is most likely to have picked for the brand: the button
@@ -109,7 +120,29 @@ const PAIRS: { fg: PaletteKey; bg: PaletteKey; fix: PaletteKey; min: number }[] 
 ];
 
 function checkPalette(p: Palette, scheme: "light" | "dark"): PairCheck[] {
-  return PAIRS.map(({ fg, bg, fix, min }) => {
+  // Primary and accent appear only as large text (ticket prices), fills, borders and underlines;
+  // small text always uses the text colours, so 3:1 is the bar for them (WCAG 1.4.11, 1.4.3 large).
+  const overlay = (["dark-image", "light-image"] as const).map((over): PairCheck => {
+    const bg = (pal: Palette) => mix(pal.surface, over === "dark-image" ? "#000000" : "#ffffff", HERO_IMAGE_OPACITY);
+    const ratio = contrastRatio(p.onSurface, bg(p));
+    const ok = ratio >= 4.5;
+    let suggestion: string | null = null;
+    if (!ok) {
+      // Move the text colour; check against both extremes so the fix holds for any image.
+      const [L, C, h] = hexToOklch(p.onSurface);
+      for (let d = 0.005; d <= 1 && !suggestion; d += 0.005)
+        for (const cand of [L - d, L + d]) {
+          if (cand < 0 || cand > 1) continue;
+          const hex = oklchToHex(cand, C, h);
+          if (contrastRatio(hex, mix(p.surface, "#000000", HERO_IMAGE_OPACITY)) >= 4.5 && contrastRatio(hex, mix(p.surface, "#ffffff", HERO_IMAGE_OPACITY)) >= 4.5) {
+            suggestion = hex;
+            break;
+          }
+        }
+    }
+    return { scheme, fg: "onSurface", bg: "surface", fix: "onSurface", min: 4.5, ratio: Math.round(ratio * 100) / 100, ok, suggestion, over };
+  });
+  return [...PAIRS.map(({ fg, bg, fix, min }) => {
     const ratio = contrastRatio(p[fg], p[bg]);
     const ok = ratio >= min;
     let suggestion: string | null = null;
@@ -118,7 +151,7 @@ function checkPalette(p: Palette, scheme: "light" | "dark"): PairCheck[] {
       suggestion = suggestLightness(p[fix], other, min);
     }
     return { scheme, fg, bg, fix, min, ratio: Math.round(ratio * 100) / 100, ok, suggestion };
-  });
+  }), ...overlay];
 }
 
 /** Every pair in every scheme the brand uses (dark too when the mode is dark or automatic). */

@@ -37,7 +37,7 @@ describe("contrast", () => {
     d.tokens.mode = "auto";
     d.tokens.dark.onSurface = "#333333"; // dark text on a dark page
     const failing = contrastFailures(d.tokens);
-    expect(failing.map((c) => `${c.scheme}:${c.fg}`)).toEqual(["dark:onSurface"]);
+    expect([...new Set(failing.map((c) => `${c.scheme}:${c.fg}`))]).toEqual(["dark:onSurface"]);
     expect(publishProblems(d, { knownEvents: new Set([EVENT_ID]) })).toContainEqual(expect.objectContaining({ code: "contrast", path: "tokens.dark.onSurface" }));
     // In light mode the dark palette is not used, so it is not checked.
     d.tokens.mode = "light";
@@ -69,4 +69,27 @@ describe("contrast", () => {
     expect(contrastFailures({ mode: "auto", ...p })).toEqual([]);
     expect(paletteFromPixels([255, 255, 255, 255])).toBeNull();
   });
+
+  it("hero text is checked over the image: the page colour mixed with the darkest and lightest pixel", () => {
+    const d = clone(doc());
+    d.tokens.mode = "light";
+    d.tokens.light.surface = "#ffffff";
+    d.tokens.light.onSurface = "#6b6b6b"; // 5.3:1 on white, too weak over a dark image
+    const checks = checkContrast(d.tokens);
+    expect(checks.find((c) => c.over === undefined && c.fg === "onSurface")!.ok).toBe(true);
+    const over = checks.find((c) => c.over === "dark-image")!;
+    expect(over.ok).toBe(false);
+    let tokens = d.tokens;
+    for (let i = 0; i < 3; i++) for (const c of contrastFailures(tokens)) tokens = acceptSuggestion(tokens, c);
+    expect(contrastFailures(tokens)).toEqual([]);
+  });
+
+  it("primary and accent never colour small text in the shop (only large text, fills and lines)", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const f of ["sections.tsx", "storefront.tsx", "markdown.tsx"]) {
+      const src = readFileSync(`src/components/storefront/${f}`, "utf8");
+      for (const m of src.matchAll(/className="([^"]*text-\[var\(--eps-(?:primary|accent)\)\][^"]*)"/g)) expect(m[1], f).toMatch(/text-2xl|text-3xl|text-4xl/);
+    }
+  });
 });
+

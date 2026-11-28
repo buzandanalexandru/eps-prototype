@@ -68,7 +68,7 @@ function Hero({ s, ctx }: S<{ heading: Localized; subheading: Localized; image: 
     <div className="relative overflow-hidden">
       {img && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={img} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
+        <img src={img} alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />
       )}
       <div className={`relative mx-auto flex min-h-[18rem] max-w-5xl flex-col justify-center gap-4 px-4 py-14 sm:min-h-[24rem] ${center ? "items-center text-center" : "items-start"}`}>
         <h1 className="font-[family-name:var(--eps-font-heading)] text-4xl font-bold break-words sm:text-6xl">{tx(s.settings.heading, ctx.locale)}</h1>
@@ -105,7 +105,7 @@ function Lineup({ s, ctx }: S<{ heading: Localized; layout: "grid" | "list" }>) 
         <div className="space-y-6">
           {[...byDay].map(([date, slots]) => (
             <div key={date} className="space-y-2">
-              <h3 className="text-sm font-semibold tracking-wide text-[var(--eps-accent)] uppercase">{fmtDay(date, ctx.locale)}</h3>
+              <h3 className="border-l-4 border-[var(--eps-accent)] pl-2 text-sm font-semibold tracking-wide uppercase">{fmtDay(date, ctx.locale)}</h3>
               <ul className={s.settings.layout === "grid" ? "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" : "divide-y divide-[color-mix(in_srgb,var(--eps-on-surface)_15%,transparent)]"}>
                 {slots.map((l, i) => (
                   <li key={i} className={s.settings.layout === "grid" ? `${card} p-4` : "flex flex-wrap justify-between gap-2 py-2"}>
