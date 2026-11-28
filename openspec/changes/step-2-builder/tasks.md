@@ -40,9 +40,9 @@
 
 - [x] 7.1 Run the step's tests locally, then the full suite once; verify all pass
 - [x] 7.2 Run `npx openspec validate step-2-builder --strict`; verify it passes
-- [ ] 7.3 Open the PR to `main`; verify CI is green and the preview is deployed and seeded
+- [x] 7.3 Open the PR to `main`; verify CI is green and the preview is deployed and seeded
 - [ ] 7.4 Run the three adversarial reviewers in parallel (correctness; security and data, including injection through documents and postMessage; spec and scale), fix every confirmed finding or record its rejection, re-run affected tests; verify no open confirmed finding
-- [ ] 7.5 Run Playwright against the deployed preview URL (builder, live preview, publish, preview link, rollback; desktop and phone, RO and EN, no console errors, no horizontal scroll); verify all pass
+- [x] 7.5 Run Playwright against the deployed preview URL (builder, live preview, publish, preview link, rollback; desktop and phone, RO and EN, no console errors, no horizontal scroll); verify all pass
 - [ ] 7.6 Squash-merge when green; verify the production deploy and the Playwright smoke test pass
 
 ## Workflow follow-up
