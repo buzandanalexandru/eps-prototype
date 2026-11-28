@@ -2,7 +2,7 @@
 // "Dangerous link", "Layout key on checkout"; the JSON Schema export for the copilot.
 import { describe, expect, it } from "vitest";
 import { addSection, canAddSection, moveSection, removeSection, toggleHidden } from "@/lib/storefront/edit";
-import { documentJsonSchema, LIMITS, parseDocument } from "@/lib/storefront/schema";
+import { documentJsonSchema, LIMITS, parseDocument, STRICT_TOOL_KEYWORDS, strictToolSchemas } from "@/lib/storefront/schema";
 import { isSafeLink, parseImageRef } from "@/lib/storefront/links";
 import { clone, doc } from "./storefront-fixtures";
 
@@ -182,6 +182,29 @@ describe("storefront document schema", () => {
     for (let r = addSection(d, pid, "text"); r.id; r = addSection(d, pid, "text")) d = r.doc;
     expect(canAddSection(d.pages[0])).toBe(false);
     expect(addSection(d, pid, "faq")).toEqual({ doc: d, id: null });
+  });
+
+  it("per-part schemas for the copilot's strict tools use only supported keywords, keep patterns and refuse extra keys", () => {
+    const parts = strictToolSchemas();
+    const seen = new Set<string>();
+    const walk = (n: unknown): void => {
+      if (Array.isArray(n)) return n.forEach(walk);
+      if (!n || typeof n !== "object") return;
+      for (const [k, v] of Object.entries(n)) {
+        seen.add(k);
+        if (k === "properties" || k === "$defs") Object.values(v as object).forEach(walk);
+        else walk(v);
+      }
+      const o = n as Record<string, unknown>;
+      if (o.type === "object") expect(o.additionalProperties).toBe(false);
+    };
+    for (const p of Object.values(parts)) walk(p);
+    for (const k of seen) expect(STRICT_TOOL_KEYWORDS as readonly string[], k).toContain(k);
+    expect(seen.has("oneOf")).toBe(false);
+    expect(seen.has("not")).toBe(false);
+    expect(seen.has("pattern")).toBe(true);
+    expect(JSON.stringify(parts.section)).toContain('"anyOf"');
+    expect((parts.tokens.properties as Record<string, { enum?: string[] }>).mode.enum).toEqual(["light", "dark", "auto"]);
   });
 });
 

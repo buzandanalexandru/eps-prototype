@@ -302,6 +302,9 @@ function Footer({ s, ctx }: S<{ note: Localized }>) {
           </a>
           <span className="text-[var(--eps-muted)]">{ctx.labels.poweredBy}</span>
         </nav>
+        <p className="w-full text-xs text-[var(--eps-muted)]" data-testid="shop-privacy">
+          {ctx.labels.privacy}
+        </p>
       </div>
     </footer>
   );

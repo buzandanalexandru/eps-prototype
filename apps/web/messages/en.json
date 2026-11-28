@@ -792,6 +792,7 @@
   "terms": {
     "title": "Terms and conditions",
     "lead": "Tickets on EPS shops are sold by the organiser named on each shop. EPS runs the platform and shows every fee in the price.",
-    "prototype": "This is a prototype: no real payments are taken and no tickets are valid for entry."
+    "prototype": "This is a prototype: no real payments are taken and no tickets are valid for entry.",
+    "privacy": "Privacy: shops built on EPS load pages, images and fonts from EPS only. They use no ads, no tracking and no third-party services; venue maps are static images saved from OpenStreetMap (© OpenStreetMap contributors), so your browser never contacts a map service."
   }
 }

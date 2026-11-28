@@ -12,6 +12,7 @@ export default async function TermsPage() {
     <section className="max-w-2xl space-y-3">
       <h1 className="text-2xl font-bold">{t("title")}</h1>
       <p>{t("lead")}</p>
+      <p data-testid="terms-privacy">{t("privacy")}</p>
       <p className="text-sm text-muted-foreground">{t("prototype")}</p>
     </section>
   );

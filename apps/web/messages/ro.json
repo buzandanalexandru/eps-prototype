@@ -792,6 +792,7 @@
   "terms": {
     "title": "Termeni și condiții",
     "lead": "Biletele din magazinele EPS sunt vândute de organizatorul numit în fiecare magazin. EPS operează platforma și include toate comisioanele în preț.",
-    "prototype": "Acesta este un prototip: nu se fac plăți reale și niciun bilet nu este valabil pentru intrare."
+    "prototype": "Acesta este un prototip: nu se fac plăți reale și niciun bilet nu este valabil pentru intrare.",
+    "privacy": "Confidențialitate: magazinele EPS încarcă pagini, imagini și fonturi doar de pe EPS. Nu folosesc reclame, urmărire sau servicii terțe; hărțile locațiilor sunt imagini statice salvate de pe OpenStreetMap (© contributorii OpenStreetMap), deci browserul tău nu contactează niciun serviciu de hărți."
   }
 }

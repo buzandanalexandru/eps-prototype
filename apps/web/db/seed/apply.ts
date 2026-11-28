@@ -34,6 +34,7 @@ import { demoOrganiserEmail } from "@/lib/auth/demo-plugin";
 import { ensureStorefront, getStorefront, publishDraft, saveDraft } from "@/lib/storefront/domain";
 import type { StorefrontDocument } from "@/lib/storefront/schema";
 import { buildTemplate } from "@/lib/storefront/templates";
+import { ensureTiles, mapTilesForDocument, type TileFetcher } from "@/lib/storefront/maps";
 import { nibiru } from "./nibiru";
 import { sunwave } from "./sunwave";
 import type { SampleOrganiser, SampleStorefront } from "./types";
@@ -103,7 +104,7 @@ async function ids(c: pg.ClientBase, table: string, where = "true", args: unknow
   return new Set((await c.query<{ id: string }>(`select id::text from control.${table} where ${where}`, args)).rows.map((r) => r.id));
 }
 
-async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now: Date; userId: string | null }): Promise<SeedResult> {
+async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now: Date; userId: string | null; tileFetcher?: TileFetcher }): Promise<SeedResult> {
   const id = organiserId(o);
   // Team: the demo organiser as the only owner; pending invitations are cleared.
   await c.query("delete from control.invitations");
@@ -237,6 +238,8 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
     let revision = fresh!.draft_revision;
     if (canonical(fresh!.document) !== canonical(doc)) revision = (await saveDraft(c, sf.id, { revision, document: doc })).revision;
     if (!fresh!.live_version_id) await publishDraft(c, { storefrontId: sf.id, revision, userId: opts.userId });
+    // Static map tiles for the sample shops' map sections (best effort; the map shows a link without).
+    await ensureTiles(c, await mapTilesForDocument(c, doc), opts.tileFetcher, 3);
   }
 
   // Venues and brands a visitor added go only when nothing uses them any more.

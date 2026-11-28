@@ -183,9 +183,50 @@ export function parseDocument(raw: unknown): ParseResult {
   return { ok: false, path: first.path.join("."), code };
 }
 
-/** The document schema as JSON Schema, for the AI copilot's tool definitions (step 11). */
+/** The document schema as JSON Schema (the full shape, with zod's limits). */
 export function documentJsonSchema(): Record<string, unknown> {
   return z.toJSONSchema(documentSchema, { unrepresentable: "any" }) as Record<string, unknown>;
+}
+
+/**
+ * Keywords a strict tool input schema may use (Claude structured outputs): types, properties,
+ * required, additionalProperties: false, items, enum, const, anyOf, allOf, $ref/$defs, string
+ * formats and patterns. Numeric, length and count limits are not supported there: the copilot's
+ * output is parsed with the same zod schema afterwards, which enforces them (and every superRefine
+ * rule: footer last, unique ids, reserved slugs, ...).
+ */
+export const STRICT_TOOL_KEYWORDS = ["type", "properties", "required", "additionalProperties", "items", "enum", "const", "anyOf", "allOf", "$ref", "$defs", "format", "pattern", "description"] as const;
+
+function strictNode(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(strictNode);
+  if (!node || typeof node !== "object") return node;
+  const src = node as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (k === "properties" || k === "$defs") {
+      out[k] = Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([name, sch]) => [name, strictNode(sch)]));
+    } else if (k === "oneOf" || k === "anyOf") {
+      out.anyOf = (v as unknown[]).map(strictNode); // discriminated unions: anyOf (oneOf is not supported)
+    } else if (k === "items") {
+      const it = v as Record<string, unknown>;
+      // An array that must stay empty (z.never items): no item can satisfy {not: {}}; zod enforces it.
+      if (it && typeof it === "object" && "not" in it) continue;
+      out.items = strictNode(v);
+    } else if ((STRICT_TOOL_KEYWORDS as readonly string[]).includes(k)) {
+      out[k] = strictNode(v);
+    }
+  }
+  if (out.type === "array" && !("items" in out)) out.description = "Always an empty array.";
+  return out;
+}
+
+/**
+ * Per-part JSON Schemas for the AI copilot's strict tools (step 11): tokens, a page, a section. Only
+ * the keywords strict tool schemas support; the result is validated with the zod schemas after.
+ */
+export function strictToolSchemas(): { tokens: Record<string, unknown>; page: Record<string, unknown>; section: Record<string, unknown> } {
+  const part = (s: z.ZodType) => strictNode(z.toJSONSchema(s, { unrepresentable: "any", target: "draft-2020-12" })) as Record<string, unknown>;
+  return { tokens: part(tokensSchema), page: part(pageSchema), section: part(sectionSchema) };
 }
 
 /** Fresh ids for sections, blocks and pages inside a document (not database ids). */
