@@ -25,7 +25,7 @@ Creating an order SHALL hold the requested quantities from every capacity pool t
 - Test: services/internal/checkout/hold_race_test.go
 
 ### Requirement: Holds follow the live snapshot's capacity and terms
-Holds and order confirmation SHALL never take a pool instance above its capacity in the live sale snapshot, and an instance whose sold and held units reach or exceed that capacity MUST be treated as sold out. The core SHALL re-price every order from snapshot `v`, refuse hidden products and off-sale events, and apply the per-order and per-account maxima again, whatever the checkout URL says.
+Holds and order confirmation SHALL never take a pool instance above its capacity in the live sale snapshot, and an instance whose sold and held units reach or exceed that capacity MUST be treated as sold out. The core SHALL refuse hidden products and off-sale events and apply the per-order and per-account maxima again, whatever the checkout URL says.
 
 #### Scenario: Capacity lowered below what is taken
 - **WHEN** a pool instance has 1,000 units sold or held and a publish sets its capacity to 900 (the step 3 gate was bypassed or raced)
@@ -36,6 +36,14 @@ Holds and order confirmation SHALL never take a pool instance above its capacity
 - **WHEN** a checkout URL names a hidden product, a product of another snapshot, or an event that is off sale
 - **THEN** the hold is refused and nothing is taken
 - Test: services/internal/checkout/hold_test.go
+
+### Requirement: Prices only from the live snapshot
+The core SHALL price every order only from the live snapshot. A hand-off made from an earlier version (`v` not live) SHALL be answered with `EPS-PRICES-CHANGED` and the live total, nothing SHALL be held until the fan continues at the new prices, and the questions and consents asked SHALL be the live version's.
+
+#### Scenario: Prices changed since the page was loaded
+- **WHEN** a fan continues from a shop page of snapshot version 1 after version 2 was published
+- **THEN** nothing is held, the answer is `EPS-PRICES-CHANGED` with version 2's all-in total, and the checkout says "Prices changed, please review" with a button to continue at the new prices
+- Test: services/internal/checkout/regression_test.go
 
 ### Requirement: Visible countdown and automatic release
 The checkout SHALL show the time left on the hold, counting down from the server's deadline. When the deadline passes without a payment in progress, the system SHALL release the stock within 5 seconds and move the order to `expired`.
@@ -56,12 +64,21 @@ The checkout SHALL show the time left on the hold, counting down from the server
 - Test: services/internal/checkout/sweeper_test.go
 
 ### Requirement: One live hold per buyer per sale
-The system SHALL allow at most one order in `held`, `paying` or `payment_failed` per buyer (account or guest session) per sale. A new hold request while one is live SHALL return the existing order instead of taking more stock.
+The system SHALL allow at most one order in `held`, `paying` or `payment_failed` per buyer (account or guest session) per sale. A new hold request while one is live SHALL return the existing order instead of taking more stock, and the checkout SHALL say how many tickets the fan already holds.
 
 #### Scenario: Second hold returns the first order
 - **WHEN** a fan with a live held order sends another hold request for the same sale
 - **THEN** no extra stock is taken and the response points to the existing order
 - Test: services/internal/checkout/hold_test.go
+- Test: apps/web/tests/e2e/checkout-hold.spec.ts
+
+### Requirement: Hold requests limited per client
+The core SHALL limit new holds per client address (the browser's address the web app puts in the core token): a number per minute and a number of live holds at once, both configurable per environment. A request over a limit SHALL be refused with `EPS-RATE-LIMITED` and take nothing.
+
+#### Scenario: Too many holds from one address
+- **WHEN** one address asks for more holds in a minute than its limit
+- **THEN** the next request is refused with `EPS-RATE-LIMITED` and another address is not affected
+- Test: services/internal/coreapi/shop_test.go
 
 ### Requirement: Idempotent order creation
 Order creation SHALL accept an idempotency key; a repeated request with the same key and body SHALL return the same order without taking stock again.
@@ -90,7 +107,7 @@ Every order SHALL be in exactly one of `held`, `paying`, `payment_failed`, `paid
 - Test: services/internal/checkout/order_state_test.go
 
 ### Requirement: Honest order status page
-The order status page SHALL show the order's current state from the server, refreshing at least every 2 seconds while the state can still change. It SHALL show "paid" only after the payment is confirmed by the provider, and SHALL show the reason and an error code for every failure.
+The order status page SHALL show the order's current state from the server, asked every 2 seconds while a payment is in progress, every 15 seconds while the order is held or its payment failed (the hold timer counts down in the browser from the server's deadline), and again whenever the page gets focus. It SHALL show "paid" only after the payment is confirmed by the provider, and SHALL show the reason and an error code for every failure.
 
 #### Scenario: Waiting for the bank
 - **WHEN** the fan returns from the provider page before the webhook arrives
@@ -138,16 +155,23 @@ A held or payment-failed order SHALL have a signed resume link that reopens the 
 
 #### Scenario: Expired link
 - **WHEN** the resume link is opened after the hold deadline
-- **THEN** the page says the hold ended and offers to start a new order, with no payment button
+- **THEN** the page shows the order's state only (no name, email, answers or history), says the hold ended and offers to start a new order, with no payment button; 30 days later the link shows nothing
 - Test: services/internal/checkout/resume_test.go
+- Test: services/internal/coreapi/shop_test.go
 
 #### Scenario: Tampered link
 - **WHEN** the resume link's order id or deadline is changed by hand
-- **THEN** the signature check fails and the page shows "Link not valid"
+- **THEN** the signature check fails and the page shows "Order not found", exactly as for an order that does not exist
 - Test: services/internal/checkout/resume_test.go
+- Test: services/internal/coreapi/shop_test.go
+
+#### Scenario: Paying through a link
+- **WHEN** someone holding a resume link but not signed in as the buyer pays
+- **THEN** only card, Apple Pay and Google Pay are accepted; the wallet and saved cards need the buyer's own session
+- Test: services/internal/coreapi/shop_test.go
 
 ### Requirement: Guest checkout
-A fan SHALL be able to buy without an account by giving an email address and the required contact details. The guest SHALL receive an order link that opens the order status page without signing in.
+A fan SHALL be able to buy without an account by giving an email address and the required contact details. The guest SHALL be shown an order link with a copy button and the note "Save this link"; it opens the order status page without signing in for 30 days. (This prototype sends no email.)
 
 #### Scenario: Guest buys
 - **WHEN** a guest completes checkout with an email address
@@ -155,11 +179,16 @@ A fan SHALL be able to buy without an account by giving an email address and the
 - Test: apps/web/tests/e2e/guest-checkout.spec.ts
 
 ### Requirement: Claim guest orders into an account
-A signed-in fan whose email is verified SHALL be able to claim guest orders placed with the same email, after which those orders belong to the account. Orders placed with another email SHALL NOT be claimable.
+A signed-in fan whose email is verified SHALL be able to claim paid guest orders placed with the same email, after which those orders, and only the saved cards of their own instalment plans, belong to the account. Orders placed with another email, and orders not yet paid, SHALL NOT be claimable.
 
 #### Scenario: Claim succeeds
 - **WHEN** a fan signs in with the verified email used for two guest orders and presses "Add to my account"
 - **THEN** both orders now belong to the account and show in its order list
+- Test: services/internal/checkout/claim_test.go
+
+#### Scenario: Not paid yet
+- **WHEN** a fan tries to claim a guest order that is still held
+- **THEN** the claim is refused and the order stays with the guest
 - Test: services/internal/checkout/claim_test.go
 
 #### Scenario: Different email
@@ -176,7 +205,7 @@ An organiser SHALL be able to add up to 5 questions or consents (short text, sin
 - Test: apps/web/tests/e2e/checkout-questions.spec.ts
 
 ### Requirement: Instalment checkout
-When a product allows instalments, checkout SHALL offer the plan, show the full schedule (dates and amounts in the shop's currency) before payment, and charge the deposit now. The parts SHALL add up exactly to the all-in total, and the order SHALL become `paid` when the deposit succeeds.
+When a product allows instalments, checkout SHALL offer the plan, show the full schedule (dates in the event's time zone and amounts in the shop's currency) before payment, and charge the deposit now. The parts SHALL add up exactly to the all-in total, and the order SHALL become `paid` when the deposit succeeds.
 
 #### Scenario: Schedule adds up
 - **WHEN** a fan picks a 10 RON deposit plus the monthly payments for a 539 RON order
@@ -196,6 +225,19 @@ When a product allows instalments, checkout SHALL offer the plan, show the full 
 #### Scenario: Later instalment fails
 - **WHEN** a scheduled part is charged and the simulated provider declines it
 - **THEN** the part becomes `overdue` with a 7-day grace period and the fan sees "Pay now" and "Change card"
+- Test: services/internal/checkout/instalments_test.go
+
+### Requirement: Instalment plan follows the payment
+The plan SHALL follow the payment that succeeds: a payment in full never activates a plan, and a deposit that succeeds after its order expired activates its plan again if the stock can still be taken. When an overdue part is not paid within its grace, the plan SHALL default: order cancelled, tickets released, remaining parts cancelled, and what was paid kept (nothing is refunded in this prototype).
+
+#### Scenario: Full payment after a declined deposit
+- **WHEN** a fan's instalment deposit is declined and the fan then pays in full
+- **THEN** the order is paid in full and no instalment plan is active
+- Test: services/internal/payments/regression_test.go
+
+#### Scenario: Grace ends
+- **WHEN** an overdue part is still unpaid when its 7-day grace ends
+- **THEN** the plan is defaulted, its open parts cancelled, the order cancelled and its stock released
 - Test: services/internal/checkout/instalments_test.go
 
 ### Requirement: All-in total at checkout

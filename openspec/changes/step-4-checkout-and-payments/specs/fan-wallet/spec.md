@@ -56,16 +56,17 @@ Checkout SHALL offer the wallet when the balance covers the order total. Paying 
 - Test: services/internal/wallet/pay_test.go
 
 ### Requirement: Simulated stand payment
-A simple stand screen SHALL let an organiser's stand take a payment from a fan's balance for that organiser, recorded in the ledger as a stand sale.
+A simple stand screen SHALL let an organiser's stand take a payment from a fan's balance for that organiser, recorded in the ledger as a stand sale. The stand SHALL enter the fan's wallet code and the 6-digit pay code the fan's wallet page shows (valid 2 minutes, one use), and the same request key SHALL charge once.
 
 #### Scenario: Pay at a stand
 - **WHEN** a stand charges 25 RON to a fan's wallet
 - **THEN** the balance drops by 25 RON and the ledger shows a stand sale
 - Test: services/internal/wallet/ledger_test.go
+- Test: services/internal/wallet/season_credit_test.go
 - Test: manual check on the deployed preview (open the stand screen, charge a fan's wallet, see the balance and history change)
 
 ### Requirement: Season credit
-An organiser SHALL be able to close a season, which SHALL move each fan's unspent balance to next-season credit with an expiry date. Credit SHALL be spendable like a balance on that organiser's shops.
+An organiser SHALL be able to close a season, which SHALL move each fan's unspent balance to next-season credit with an expiry date at least 30 days ahead. Credit already past its expiry SHALL be written off first with its own ledger entry. Credit SHALL be spendable like a balance on that organiser's shops until it expires.
 
 #### Scenario: Season closes
 - **WHEN** the organiser closes the season while a fan holds 80 RON

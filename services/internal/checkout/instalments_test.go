@@ -104,3 +104,49 @@ func TestLaterInstalmentFails(t *testing.T) {
 		t.Fatalf("second part %s", p.Parts[1].State)
 	}
 }
+
+// Review D-c: when an overdue part's 7-day grace ends, the plan defaults: the order is cancelled,
+// its stock goes back, the open parts are cancelled and what was paid is kept.
+func TestGraceEndsPlanDefaults(t *testing.T) {
+	env := salestest.Setup(t)
+	ctx := context.Background()
+	env.Svc.Now = at("2026-12-05T10:00:00Z")
+	sale := env.NewSale(t, 100, 100)
+	o := sale.Hold(t, salestest.Buyer(), checkout.Item{ProductID: salestest.ProductPlus, Qty: 1})
+	offer, _ := env.Svc.Offer(ctx, o)
+	err := db.WithTx(ctx, env.Pool, db.RoleCore, sale.Org, func(tx pgx.Tx) error {
+		if _, err := checkout.CreatePlanTx(ctx, tx, o, offer); err != nil {
+			return err
+		}
+		return checkout.ActivatePlanTx(ctx, tx, o.ID, "")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := env.Svc.Complete(ctx, sale.Org, o.ID, "deposit", "deposit paid", nil); err != nil || !out.Paid {
+		t.Fatalf("deposit: %v", err)
+	}
+	runner := &checkout.InstalmentRunner{Svc: env.Svc, Charger: decliningCharger{env}}
+	if _, err := env.Svc.SimulateNextDue(ctx, sale.Org, o.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := runner.RunOnce(ctx); n != 1 {
+		t.Fatal("no part charged")
+	}
+	// Eight days later on the plan's clock.
+	env.Svc.Now = at("2026-12-13T10:00:00Z")
+	if n, err := (&checkout.DefaultRunner{Svc: env.Svc}).RunOnce(ctx); err != nil || n != 1 {
+		t.Fatalf("defaulted %d (%v)", n, err)
+	}
+	got, _ := env.Svc.GetIn(ctx, sale.Org, o.ID)
+	if got.State != checkout.Cancelled {
+		t.Fatalf("order %s", got.State)
+	}
+	p, _ := env.Svc.PlanOf(ctx, sale.Org, o.ID)
+	if p.State != "defaulted" || p.Parts[0].State != "cancelled" || p.Parts[1].State != "cancelled" {
+		t.Fatalf("plan %+v", p)
+	}
+	if used := sale.Used(t)[salestest.PoolPlus]; used != 0 {
+		t.Fatalf("stock used %d", used)
+	}
+}

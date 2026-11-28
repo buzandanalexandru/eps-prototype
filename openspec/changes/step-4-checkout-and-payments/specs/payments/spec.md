@@ -38,7 +38,7 @@ Every payment request SHALL carry an idempotency key. A repeat with the same key
 - Test: services/internal/payments/idempotency_test.go
 
 ### Requirement: Two simulated providers with live knobs
-The platform SHALL run two simulated providers, A and B, as a separate service reached over the network. Each SHALL have live settings for failure rate, decline rate, latency, outage, dropped or delayed webhooks and the share of charges needing a challenge code, changeable from Studio without a restart.
+The platform SHALL run two simulated providers, A and B, as a separate service reached over the network. Each SHALL have live settings for failure rate, decline rate, latency, outage (answering 503 by default, or hanging), dropped or delayed webhooks and the share of charges needing a challenge code, per organiser, changeable from Studio without a restart; changed settings SHALL go back to normal 15 minutes after the last change, and Studio SHALL show when.
 
 #### Scenario: Outage switched on
 - **WHEN** an operator switches on provider A's outage in Studio
@@ -78,7 +78,7 @@ When a provider's circuit breaker is open, new attempts SHALL go to the other pr
 - Test: services/internal/payments/router_test.go
 
 ### Requirement: Circuit breaker
-Each provider SHALL have one breaker shared by all core instances. It SHALL open when, over the last 20 seconds, at least 20 calls were made and half or more failed (errors or timeouts, not declines), or after 5 failures in a row; it SHALL try the provider again after 15 seconds with a few probe payments and close when they succeed.
+Each provider SHALL have one breaker per organiser (merchant account) shared by all cores. It SHALL open when, in the last 20 seconds, at least 20 calls were made and half failed (refused connections or the provider's 503; not declines), or after 5 failures in a row; after 15 seconds it SHALL let up to 5 probe payments through, close when 4 succeed, and reopen for twice as long (at most 120 seconds) when a second probe fails. A probe slot not used within 10 seconds SHALL be given out again.
 
 #### Scenario: Opens under failure
 - **WHEN** 12 of 20 calls to A in 20 seconds fail
@@ -91,7 +91,7 @@ Each provider SHALL have one breaker shared by all core instances. It SHALL open
 - Test: services/internal/payments/breaker_test.go
 
 ### Requirement: Unknown outcomes are resolved before failover
-When a call to a provider times out with no answer, the attempt SHALL be `unknown` and SHALL be resolved by asking that provider for the charge by its idempotency key. Another provider SHALL be tried only once the first reports no such charge.
+When a call to a provider times out or ends without a usable answer (a reset connection, a 502, 504 or another 5xx than 503), the attempt SHALL be `unknown` and SHALL be resolved by asking that provider for the charge by its idempotency key. Another provider SHALL be tried only once the first reports no such charge.
 
 #### Scenario: Timeout, charge did happen
 - **WHEN** A accepts a charge but its response is lost, and the status check finds the charge succeeded
@@ -161,6 +161,11 @@ A signed-in fan SHALL be able to save a card during a payment; the provider SHAL
 - **WHEN** a request uses a saved-card token that belongs to another account
 - **THEN** it is refused and nothing is charged
 - Test: services/internal/payments/saved_cards_test.go
+
+#### Scenario: Card of an active plan
+- **WHEN** the fan tries to delete the card an active instalment plan charges
+- **THEN** it is refused with `EPS-SAVED-CARD-IN-USE` and stays until the plan ends
+- Test: services/internal/payments/regression_test.go
 
 #### Scenario: Delete a saved card
 - **WHEN** the fan deletes a saved card

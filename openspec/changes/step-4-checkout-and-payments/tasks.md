@@ -71,6 +71,15 @@
 - [ ] 10.5 Squash-merge to `main`; verify the merge commit is on `main`
 - [ ] 10.6 Run the Playwright production smoke test (hold, pay with A, pay with failover to B, pay from wallet); verify it passes on production
 
+## 11. Review fixes (three adversarial reviews of PR #6)
+
+- [x] 11.1 Checkout: live prices only (EPS-PRICES-CHANGED), row-locked late payments with deterministic re-holds, Postgres-first batched sweeper (1,000 holds within 5 s), capped hold extensions, plan reset per payment, plan defaults after grace, claims of paid orders only, rebuild lock, sold-out never stored under a key; verify `checkout/regression_test.go`, `sweeper_test.go`, `instalments_test.go`, `claim_test.go`
+- [x] 11.2 Payments: breaker in Lua with reusable probe slots, Allow right before the call, unknown for resets and 5xx other than 503, plan per attempt, failed presses leave payment_failed, per-buyer keys, amount checks, webhook dedup first, bounded reconciler with rechecks, cards of active plans kept; verify `payments/regression_test.go`, `breaker_test.go`
+- [x] 11.3 Wallet and providers: stock after ledger with compensation, 30-day season credit with write-off, stand pay codes and idempotency, organiser currency check, knobs reset after 15 minutes, outage 503 by default, merchant and order on the provider page; verify `wallet/season_credit_test.go`, `fakepsp/charges_test.go`
+- [x] 11.4 Core API: link-holder methods, redacted expired links, 404 for changed links, brand hostnames as return origins, view in one transaction, per-client hold limits, pay codes; verify `coreapi/shop_test.go`
+- [x] 11.5 Web, Helm, worker: polling by state, localised states, prices-changed review, already-holding notice, save-this-link, coming-soon label, pay codes; AOF, required payment keys, hold limits; worker pools, purge, consumer takeover, polling relay; verify the step's Playwright specs and `helm lint`
+- [x] 11.6 Design D-16, spec text where behaviour changed, test lines; verify `npx openspec validate --all --strict`
+
 ## Workflow follow-up
 
 - Archive with `/opsx:archive`: merge the deltas into `openspec/specs/`, add `## Status` to the proposal (what was built, deviations, checks with results) and tick step 4 in `docs/planning/build-plan.md`.

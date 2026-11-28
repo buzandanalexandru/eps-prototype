@@ -18,6 +18,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/apperr"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/idem"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 )
 
@@ -36,6 +37,8 @@ type CreateRequest struct {
 	Items   []Item `json:"items"`
 	Locale  string `json:"locale"`
 }
+
+var holdsCreated = metrics.NewCounter("eps_holds_created_total", "Holds taken for new orders.")
 
 // Hold length rules (D-7).
 const (
@@ -405,6 +408,7 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		return nil, false, err
 	}
 	o.History = []HistoryEntry{{To: Held, Reason: "hold", At: now}}
+	holdsCreated.Inc()
 	return o, false, nil
 }
 
