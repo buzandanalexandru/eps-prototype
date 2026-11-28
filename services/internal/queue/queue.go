@@ -139,10 +139,13 @@ func PowOK(saleID, sid, nonce string) bool {
 
 // SolvePow finds a nonce (tests and the load scripts; the page does the same in JavaScript).
 func SolvePow(saleID, sid string) string {
+	prefix := []byte(saleID + ":" + sid + ":")
+	buf := make([]byte, 0, len(prefix)+20)
 	for i := 0; ; i++ {
-		n := strconv.Itoa(i)
-		if PowOK(saleID, sid, n) {
-			return n
+		buf = strconv.AppendInt(append(buf[:0], prefix...), int64(i), 10)
+		h := sha256.Sum256(buf)
+		if h[0] == 0 && h[1] == 0 {
+			return strconv.Itoa(i)
 		}
 	}
 }

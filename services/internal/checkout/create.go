@@ -341,21 +341,6 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		fanFee += st.FanFeeMinor * int64(qty)
 		net += st.OrganiserNetMinor * int64(qty)
 	}
-	// The per-account maximum counts tickets this buyer already bought for the event.
-	if live.Rules.MaxPerAccount != nil && *live.Rules.MaxPerAccount > 0 {
-		have, err := s.ticketsOf(ctx, org, req.EventID, b.ID, live)
-		if err != nil {
-			return nil, false, err
-		}
-		if have+tickets > *live.Rules.MaxPerAccount {
-			return nil, false, apperr.New(http.StatusUnprocessableEntity, apperr.HoldLimit, fmt.Sprintf("At most %d tickets per person for this event.", *live.Rules.MaxPerAccount), false).
-				With("max", *live.Rules.MaxPerAccount).With("have", have)
-		}
-	}
-	if req.Version != live.Version {
-		return nil, false, apperr.New(http.StatusUnprocessableEntity, apperr.PricesChanged, "Prices changed, please review.", true).
-			With("version", live.Version).With("totalMinor", total).With("currency", live.Currency)
-	}
 	id := uuid.NewString()
 	holdMinutes := HoldMinutes(live.Rules)
 	// Step 5 (D-11): the sale's pass, cap per order and cap per person, before any stock is taken.
@@ -373,6 +358,22 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		if g != nil && g.HoldMinutes >= MinHoldMinutes && g.HoldMinutes <= MaxHoldMinutes {
 			holdMinutes = g.HoldMinutes
 		}
+	}
+	// The per-account maximum counts tickets this buyer already bought for the event (with a sale
+	// moment, the gate applies the stricter of it and the sale's cap per person instead).
+	if gate == nil && live.Rules.MaxPerAccount != nil && *live.Rules.MaxPerAccount > 0 {
+		have, err := s.ticketsOf(ctx, org, req.EventID, b.ID, live)
+		if err != nil {
+			return nil, false, err
+		}
+		if have+tickets > *live.Rules.MaxPerAccount {
+			return nil, false, apperr.New(http.StatusUnprocessableEntity, apperr.HoldLimit, fmt.Sprintf("At most %d tickets per person for this event.", *live.Rules.MaxPerAccount), false).
+				With("max", *live.Rules.MaxPerAccount).With("have", have)
+		}
+	}
+	if req.Version != live.Version {
+		return nil, false, apperr.New(http.StatusUnprocessableEntity, apperr.PricesChanged, "Prices changed, please review.", true).
+			With("version", live.Version).With("totalMinor", total).With("currency", live.Currency)
 	}
 	deadline := now.Add(time.Duration(holdMinutes) * time.Minute).Truncate(time.Millisecond)
 	if gate != nil && gate.Taken != nil {

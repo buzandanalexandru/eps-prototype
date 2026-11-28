@@ -67,7 +67,14 @@ func Setup(t *testing.T) *Env {
 	base := salestest.Setup(t)
 	clk := &Clock{t: time.Now()}
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
-	sv := &sales.Service{Pool: base.Pool, Redis: base.Redis, MACKey: []byte("test-key"), Now: clk.Now}
+	sv := &sales.Service{Pool: base.Pool, Redis: base.Redis, MACKey: []byte("test-key"), Now: clk.Now,
+		Published: func(ctx context.Context, event string) (string, error) {
+			s, err := base.Store.Load(ctx, event)
+			if err != nil {
+				return "", nil
+			}
+			return s.OrganiserID, nil
+		}}
 	scorer := &botdefence.Scorer{Redis: base.Redis}
 	caps := &botdefence.Caps{Redis: base.Redis}
 	engine := &queue.Engine{Redis: base.Redis, Sales: sv, Signer: queue.NewSigner(priv), Scorer: scorer, Now: clk.Now, JoinsPerMinute: 100000}
