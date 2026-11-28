@@ -59,6 +59,7 @@ func main() {
 	rate := flag.Int("rate", 60000, "the sale's admission rate per minute")
 	out := flag.String("out", "/tmp/loadkit.json", "where to write the kit")
 	life := flag.Duration("life", 5*time.Minute, "token life (at most 5 minutes)")
+	pow := flag.Bool("pow", true, "with -queue: solve each client's proof of work (about 10 ms each)")
 	flag.Parse()
 	if env := os.Getenv("EPS_ENV"); env != "" && env != "dev" {
 		log.Fatal("loadkit runs only with EPS_ENV=dev (it writes into the database directly)")
@@ -135,7 +136,7 @@ func main() {
 		s, err := tok.SignedString(priv)
 		must(err)
 		c := client{Token: s, Session: hex.EncodeToString([]byte(sid))[:48], IP: fmt.Sprintf("10.%d.%d.%d", 64+i/65536%64, i/256%256, i%256)}
-		if k.Sale != "" {
+		if k.Sale != "" && *pow {
 			c.Pow = queue.SolvePow(k.Sale, queue.SessionHash(c.Session))
 		}
 		k.Clients = append(k.Clients, c)

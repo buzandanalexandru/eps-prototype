@@ -9,14 +9,19 @@
 // iterations), p95 of a hold under 50 ms, no unexpected errors, and never more units held or sold
 // than the capacity.
 import http from "k6/http";
-import { check } from "k6";
+import { check, sleep } from "k6";
 import { Counter, Rate, Trend } from "k6/metrics";
 import exec from "k6/execution";
 import { SharedArray } from "k6/data";
 
 // One copy of the kit for every VU (SharedArray), not one per VU.
 const kitFile = __ENV.KIT || "/tmp/load.json";
-const kit = new SharedArray("kit", () => [JSON.parse(open(kitFile))])[0];
+const clients = new SharedArray("clients", () => JSON.parse(open(kitFile)).clients);
+const kit = new SharedArray("meta", () => {
+  const k = JSON.parse(open(kitFile));
+  delete k.clients;
+  return [k];
+})[0];
 const CORE = (__ENV.CORE || "http://localhost:8080").replace(/\/$/, "");
 const RATE = Number(__ENV.RATE || 1000);
 const DURATION = __ENV.DURATION || "30s";
@@ -37,9 +42,11 @@ export const options = {
   },
 };
 
+let shown = 0;
+
 export default function () {
-  const i = exec.scenario.iterationInScenario;
-  const c = kit.clients[i % kit.clients.length];
+  const i = exec.scenario.iterationInTest;
+  const c = clients[i % clients.length];
   const qty = (i % 4) + 1;
   const res = http.post(`${CORE}/v1/shop/orders`, JSON.stringify({ eventId: kit.eventId, version: kit.version, locale: "en", items: [{ productId: kit.productId, qty }] }), {
     headers: { Authorization: `Bearer ${c.token}`, "Content-Type": "application/json" },
@@ -49,9 +56,18 @@ export default function () {
   const ok = res.status === 201 || res.status === 200;
   const out = res.status === 409 && String(res.body).includes("EPS-HOLD-SOLD-OUT");
   unexpected.add(!ok && !out);
+  if (!ok && !out && shown++ < 5) console.warn(`unexpected answer ${res.status}: ${String(res.body).slice(0, 200)}`);
   if (res.status === 201) unitsHeld.add(qty);
   if (out) soldOut.add(1);
   check(res, { "held or sold out": () => ok || out });
+}
+
+// The kit's signing key is new to the core: one call first lets it load the key.
+export function setup() {
+  for (let i = 0; i < 20; i++) {
+    if (http.get(`${CORE}/v1/whoami`, { headers: { Authorization: `Bearer ${clients[0].token}` } }).status === 200) return;
+    sleep(0.5);
+  }
 }
 
 export function teardown() {

@@ -275,9 +275,14 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		}
 		merged[k] += it.Qty
 	}
-	sold, err := s.ProductSold(ctx, org, req.EventID)
-	if err != nil {
-		return nil, false, err
+	// Units sold per product only matter to a ladder with a step by units sold (step 5: one query
+	// fewer per hold on the common date-only ladders).
+	sold := map[string]int64{}
+	var err error
+	if ladderBySold(live) {
+		if sold, err = s.ProductSold(ctx, org, req.EventID); err != nil {
+			return nil, false, err
+		}
 	}
 	perProduct := map[string]int{}
 	tickets := 0
@@ -589,4 +594,16 @@ func instancesOf(s *snapshot.Snapshot) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ladderBySold reports whether any product's price ladder has a step reached by units sold.
+func ladderBySold(s *snapshot.Snapshot) bool {
+	for _, p := range s.Products {
+		for _, st := range p.PriceSteps {
+			if st.Mode != "by_date" {
+				return true
+			}
+		}
+	}
+	return false
 }

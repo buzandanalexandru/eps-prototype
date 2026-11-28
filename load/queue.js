@@ -7,14 +7,19 @@
 // Each client joins once (with its session secret and a precomputed proof of work), then polls its
 // status. Thresholds: p95 under 200 ms and errors under 0.1% at the given rates.
 import http from "k6/http";
-import { check } from "k6";
+import { check, sleep } from "k6";
 import { Rate, Trend } from "k6/metrics";
 import exec from "k6/execution";
 import { SharedArray } from "k6/data";
 
 // One copy of the kit for every VU (SharedArray), not one per VU.
 const kitFile = __ENV.KIT || "/tmp/queue.json";
-const kit = new SharedArray("kit", () => [JSON.parse(open(kitFile))])[0];
+const clients = new SharedArray("clients", () => JSON.parse(open(kitFile)).clients);
+const kit = new SharedArray("meta", () => {
+  const k = JSON.parse(open(kitFile));
+  delete k.clients;
+  return [k];
+})[0];
 const GW = (__ENV.GATEWAY || "http://localhost:8081").replace(/\/$/, "");
 const JOINS = Number(__ENV.JOINS || 5000);
 const POLLS = Number(__ENV.POLLS || 10000);
@@ -36,6 +41,17 @@ export const options = {
   },
 };
 
+// The kit's signing key is new to the gateway: wait until it verifies (it reads the keys the core
+// publishes to Redis).
+export function setup() {
+  const c = clients[0];
+  for (let i = 0; i < 40; i++) {
+    const r = http.post(`${GW}/v1/queue/${kit.saleId}/join`, JSON.stringify({ pow: c.pow }), { headers: headers(c) });
+    if (r.status === 200) return;
+    sleep(0.5);
+  }
+}
+
 // Queue tokens of the clients this VU joined (k6 VUs share nothing; each polls its own joins).
 const mine = [];
 
@@ -44,8 +60,8 @@ function headers(c, extra) {
 }
 
 export function join() {
-  const i = exec.scenario.iterationInScenario;
-  const c = kit.clients[i % kit.clients.length];
+  const i = exec.scenario.iterationInTest;
+  const c = clients[i % clients.length];
   const res = http.post(`${GW}/v1/queue/${kit.saleId}/join`, JSON.stringify({ pow: c.pow }), { headers: headers(c, { "X-EPS-Client-UA": "k6 load test (Mozilla/5.0)" }), tags: { name: "join" } });
   joinTime.add(res.timings.duration);
   const ok = res.status === 200;
@@ -62,7 +78,7 @@ export function poll() {
     join();
     return;
   }
-  const p = mine[exec.scenario.iterationInScenario % mine.length];
+  const p = mine[exec.scenario.iterationInTest % mine.length];
   const res = http.get(`${GW}/v1/queue/${kit.saleId}/status`, { headers: headers(p.c, { "X-EPS-Queue-Token": p.qt }), tags: { name: "status" } });
   statusTime.add(res.timings.duration);
   const ok = res.status === 200;
