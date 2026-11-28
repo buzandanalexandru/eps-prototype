@@ -11,8 +11,8 @@ Every Go service (gateway, core, worker, simulated providers, simulator) SHALL e
 
 #### Scenario: Metrics present
 - **WHEN** the core's metrics are scraped after one paid order
-- **THEN** the listed core series are present and the paid order and its tickets are counted
-- Test: services/internal/metrics/series_test.go
+- **THEN** the listed core series are present and the paid order and its tickets are counted; a degraded refusal is counted in `eps_degrade_refused_total`; after a run the simulator's series (`sim_requests_total`, `sim_request_seconds`, `sim_fans`, `sim_bots`), `eps_sim_reports_total`, `eps_sim_runs_total`, the providers' `fakepsp_charges_total` and `fakepsp_knob_changes_total`, and rehearsal-labelled paid orders are present
+- Test: services/internal/metrics/series_test.go, services/internal/onsale/degrade_test.go, services/internal/simulation/fan_test.go
 
 ### Requirement: No personal data in metrics or logs
 Metric labels SHALL hold only service, route, organiser, event, sale, pool, provider, method and result values, never emails, names, IP addresses or tokens; logs SHALL NOT contain card-like data, tokens or full emails.
