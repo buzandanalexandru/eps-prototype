@@ -497,3 +497,32 @@ func Next(list []Sale, t time.Time) *Sale {
 	}
 	return next
 }
+
+// RefreshActive rewrites the Redis copies of every event with a sale opening within a day either
+// side of now (the worker, every minute), so the gateway finds them after a Redis restart.
+func (s *Service) RefreshActive(ctx context.Context) (int, error) {
+	var pairs [][2]string
+	now := s.now()
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `select organiser_id::text, event_id::text from sales.events_with_sales($1, $2)`, now.Add(-72*time.Hour), now.Add(24*time.Hour))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var a, b string
+			if err := rows.Scan(&a, &b); err != nil {
+				return err
+			}
+			pairs = append(pairs, [2]string{a, b})
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range pairs {
+		s.Refresh(ctx, p[0], p[1])
+	}
+	return len(pairs), nil
+}

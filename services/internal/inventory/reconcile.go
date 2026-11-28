@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -268,6 +269,9 @@ func (r *Reconciler) event(ctx context.Context, org, event string) ([]Correction
 	if err != nil {
 		return out, err
 	}
+	for in := range insts {
+		stockGauges(org, event, in, snaps[in])
+	}
 	for in, capacity := range insts {
 		if paid1[in] != paid2[in] {
 			reconSkips.Inc()
@@ -393,4 +397,30 @@ func (r *Reconciler) Run(ctx context.Context, interval time.Duration) {
 			_, _ = r.RunOnce(ctx)
 		}
 	}
+}
+
+// Stock gauges per instance (step 6's dashboard reads them): free, held and sold units as of the
+// reconciler's last round.
+var stock sync.Map // key -> *[3]atomic.Int64
+
+func stockGauges(org, event, instance string, sh []ShardState) {
+	key := event + "/" + instance
+	v, loaded := stock.LoadOrStore(key, &[3]atomic.Int64{})
+	vals := v.(*[3]atomic.Int64)
+	var free, held, sold int64
+	for _, x := range sh {
+		free += max(0, x.Alloc-x.Used)
+		held += x.Held
+		sold += x.Sold
+	}
+	vals[0].Store(free)
+	vals[1].Store(held)
+	vals[2].Store(sold)
+	if loaded {
+		return
+	}
+	l := `{organiser="` + org + `",event="` + event + `",instance="` + strings.ReplaceAll(instance, `"`, "") + `"}`
+	metrics.NewGauge("eps_inventory_free"+l, func() float64 { return float64(vals[0].Load()) })
+	metrics.NewGauge("eps_inventory_held"+l, func() float64 { return float64(vals[1].Load()) })
+	metrics.NewGauge("eps_inventory_sold"+l, func() float64 { return float64(vals[2].Load()) })
 }

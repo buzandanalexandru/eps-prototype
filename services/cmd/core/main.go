@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"time"
 
 	dbfiles "github.com/buzandanalexandru/eps-prototype/services/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/auth"
@@ -70,6 +71,10 @@ func main() {
 	issuers := auth.IssuersFromEnv(os.Getenv)
 	verifier := auth.NewVerifier(keys, issuers...)
 	verifier.Start(ctx)
+	if pool != nil && rdb != nil {
+		// The gateway verifies core tokens with the keys the core publishes to Redis (step 5).
+		go auth.RunPublisher(ctx, keys, rdb, []byte(os.Getenv("SNAPSHOT_CACHE_KEY")), time.Minute)
+	}
 	metrics.NewGauge("eps_auth_key_loads", func() float64 { return float64(verifier.Loads()) })
 	log.Info("token issuers", "issuers", issuers)
 	h, err := coreapi.NewHandler(srv, coreapi.Options{

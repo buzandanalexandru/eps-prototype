@@ -1,8 +1,9 @@
 // Command gateway is the EPS gateway: the waiting rooms (step 5) - join and status for fans, the
 // draw at opening and the admitter that lets fans in at each sale's rate and signs their passes -
-// plus health, readiness and version. Its readiness depends only on Redis: the gateway keeps
-// admitting fans from Redis state when the database is slow (graceful degradation, step 6). It
-// reads Postgres only for the core-token keys and a sale's settings when Redis has no copy.
+// plus health, readiness and version. It holds no Postgres pool and its readiness depends only on
+// Redis: the gateway keeps admitting fans from Redis state when the database is slow (graceful
+// degradation, step 6). The core publishes the core-token keys and each sale's settings to Redis,
+// signed with SNAPSHOT_CACHE_KEY.
 package main
 
 import (
@@ -27,7 +28,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	rdb := service.Redis(log)
-	pool := service.Postgres(ctx, log)
 	checks := []health.Checker{health.Redis(rdb)}
 	cors := httpx.NewCORS(service.Env("CORS_ALLOWED_ORIGINS", ""))
 	priv, _, err := queue.KeysFromEnv(true)
@@ -37,14 +37,11 @@ func main() {
 	}
 	var extra func(*http.ServeMux)
 	if rdb != nil {
-		var keys auth.KeySource = auth.DBKeySource{Pool: pool}
-		if pool == nil {
-			keys = auth.StaticKeys{}
-		}
-		verifier := auth.NewVerifier(keys, auth.IssuersFromEnv(os.Getenv)...)
+		mac := []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))
+		verifier := auth.NewVerifier(auth.RedisKeySource{Redis: rdb, MACKey: mac}, auth.IssuersFromEnv(os.Getenv)...)
 		verifier.Start(ctx)
 		perMin, _ := strconv.Atoi(os.Getenv("QUEUE_JOINS_PER_MINUTE"))
-		engine := &queue.Engine{Redis: rdb, Sales: wire.SalesService(pool, rdb, nil), Signer: queue.NewSigner(priv), Scorer: &botdefence.Scorer{Redis: rdb}, JoinsPerMinute: perMin}
+		engine := &queue.Engine{Redis: rdb, Sales: wire.SalesService(nil, rdb, nil), Signer: queue.NewSigner(priv), Scorer: &botdefence.Scorer{Redis: rdb}, JoinsPerMinute: perMin}
 		go (&queue.Admitter{Engine: engine, Log: log}).Run(ctx)
 		h := &queue.HTTP{Engine: engine, Verifier: verifier, Log: log}
 		extra = h.Routes

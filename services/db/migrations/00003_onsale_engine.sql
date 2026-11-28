@@ -148,3 +148,24 @@ REVOKE CREATE ON SCHEMA sales FROM eps_sales_index;
 -- The reconciler's and the waiting room's events get their own topics.
 ALTER TABLE sales.outbox DROP CONSTRAINT outbox_topic_check;
 ALTER TABLE sales.outbox ADD CONSTRAINT outbox_topic_check CHECK (topic IN ('orders', 'payments', 'wallet', 'inventory', 'sales'));
+
+-- +goose StatementBegin
+-- Events with a sale opening (or opened) around now: the worker keeps their sales' signed copies in
+-- Redis, so the gateway (which has no database) always finds them.
+CREATE FUNCTION sales.events_with_sales(p_from timestamptz, p_to timestamptz)
+RETURNS TABLE (organiser_id uuid, event_id uuid)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $fn$
+    SELECT DISTINCT s.organiser_id, s.event_id FROM sales.sales s
+    JOIN sales.sale_settings v ON v.organiser_id = s.organiser_id AND v.sale_id = s.id AND v.version = s.settings_version
+    WHERE v.opens_at BETWEEN p_from AND p_to LIMIT 1000
+$fn$;
+-- +goose StatementEnd
+GRANT SELECT (id, organiser_id, event_id, settings_version) ON sales.sales TO eps_sales_index;
+GRANT SELECT (organiser_id, sale_id, version, opens_at) ON sales.sale_settings TO eps_sales_index;
+CREATE POLICY sales_index ON sales.sale_settings FOR SELECT TO eps_sales_index USING (true);
+REVOKE ALL ON FUNCTION sales.events_with_sales(timestamptz, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sales.events_with_sales(timestamptz, timestamptz) TO eps_core;
+GRANT CREATE ON SCHEMA sales TO eps_sales_index;
+ALTER FUNCTION sales.events_with_sales(timestamptz, timestamptz) OWNER TO eps_sales_index;
+REVOKE CREATE ON SCHEMA sales FROM eps_sales_index;

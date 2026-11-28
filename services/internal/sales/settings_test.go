@@ -222,3 +222,23 @@ func TestHistory(t *testing.T) {
 		}
 	}
 }
+
+// The worker rewrites the signed copies after Redis lost them, so the gateway finds the sale.
+func TestRefreshActive(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	s := env.NewSale(t, env.Env.NewSale(t, 100, 100), env.Open())
+	if err := env.Redis.FlushAll(ctx).Err(); err != nil {
+		t.Fatal(err)
+	}
+	gw := &sales.Service{Redis: env.Redis, MACKey: []byte("test-key")}
+	if _, err := gw.Lookup(ctx, s.ID); err == nil {
+		t.Fatal("found without a copy")
+	}
+	if n, err := env.Sales.RefreshActive(ctx); err != nil || n != 1 {
+		t.Fatalf("refreshed %d (%v)", n, err)
+	}
+	if got, err := gw.Lookup(ctx, s.ID); err != nil || got.ID != s.ID {
+		t.Fatalf("after the refresh: %v", err)
+	}
+}

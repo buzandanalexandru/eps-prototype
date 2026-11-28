@@ -108,6 +108,8 @@ func main() {
 		go (&inventory.ShardSweeper{Inv: inv, Log: log}).Run(ctx, time.Second)
 		go (&inventory.Reconciler{Inv: inv, Pool: recon.Checkout.Pool, Log: log}).Run(ctx, 15*time.Second)
 		go (&onsale.Audit{Redis: rdb, Pool: pool, Log: log}).Run(ctx, 2*time.Second)
+		salesSvc := wire.SalesService(pool, rdb, snaps)
+		go every(ctx, time.Minute, func() { _, _ = salesSvc.RefreshActive(ctx) })
 		life := &onsale.Lifecycle{Checkout: svc.Checkout, Engine: &queue.Engine{Redis: rdb}, Caps: &botdefence.Caps{Redis: rdb}}
 		go (&outbox.Consumer{Redis: rdb, Topic: outbox.TopicOrders, Group: "onsale", Name: host, Log: log, Handle: life.Handle}).Run(ctx)
 		log.Info("worker loops started", "sweeper", "1s", "reconciler", "5s", "instalments", "5s", "relay", "200ms")

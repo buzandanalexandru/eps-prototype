@@ -105,7 +105,7 @@ func Shop(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, log *slo
 func SalesService(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store) *sales.Service {
 	svc := &sales.Service{Redis: rdb, MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))}
 	if pool != nil {
-		svc.Pool = pool
+		svc.Pool = pool // a nil *pgxpool.Pool must not become a non-nil interface
 	}
 	if snaps != nil {
 		svc.Published = func(ctx context.Context, event string) (string, error) {
