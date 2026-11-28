@@ -32,8 +32,19 @@ type Wallet struct {
 
 // Wallet reads a fan's wallet at an organiser (an empty one if none exists yet).
 func (s *Service) Wallet(ctx context.Context, org, owner, currency string) (*Wallet, error) {
-	w := &Wallet{OrganiserID: org, Currency: currency, History: []Movement{}}
+	var w *Wallet
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		var err error
+		w, err = WalletTx(ctx, tx, org, owner, currency)
+		return err
+	})
+	return w, err
+}
+
+// WalletTx reads a fan's wallet inside a transaction of the organiser.
+func WalletTx(ctx context.Context, tx pgx.Tx, org, owner, currency string) (*Wallet, error) {
+	w := &Wallet{OrganiserID: org, Currency: currency, History: []Movement{}}
+	err := func() error {
 		rows, err := tx.Query(ctx, `select id::text, kind, balance_minor, coalesce(code, ''), expires_at from sales.wallet_accounts
 			where owner = $1 and currency = $2 and kind in ('fan_balance', 'fan_season_credit')`, owner, currency)
 		if err != nil {
@@ -75,7 +86,7 @@ func (s *Service) Wallet(ctx context.Context, org, owner, currency string) (*Wal
 			w.History = append(w.History, m)
 		}
 		return hrows.Err()
-	})
+	}()
 	return w, err
 }
 

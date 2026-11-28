@@ -440,6 +440,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/shop/wallets/{organiserId}/pay-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A 6-digit code for one stand payment within 2 minutes
+         * @description The fan shows the wallet code and this pay code at a stand; the code works once.
+         */
+        post: operations["createPayCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/organiser/wallet/stand-payments": {
         parameters: {
             query?: never;
@@ -449,7 +469,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Charge a fan's wallet at a stand (simulated) */
+        /**
+         * Charge a fan's wallet at a stand (simulated)
+         * @description Needs the fan's wallet code and current pay code; the same Idempotency-Key charges once.
+         */
         post: operations["standPayment"];
         delete?: never;
         options?: never;
@@ -661,9 +684,17 @@ export interface components {
             /** @enum {string} */
             locale?: "ro" | "en";
         };
+        PayCode: {
+            walletCode: string;
+            payCode: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
         StandPaymentRequest: {
             /** @description The wallet code the fan shows at the stand. */
             code: string;
+            /** @description The fan's current pay code (2 minutes, single use). */
+            payCode: string;
             /** Format: int64 */
             amountMinor: number;
             label?: string;
@@ -689,6 +720,11 @@ export interface components {
             webhook_delay_ms?: number;
             webhook_drop_rate?: number;
             challenge_rate?: number;
+            /**
+             * Format: date-time
+             * @description When changed knobs go back to normal by themselves (15 minutes after the last change).
+             */
+            readonly resets_at?: string;
         };
         ProviderList: {
             /** @enum {string} */
@@ -875,8 +911,13 @@ export interface components {
             payment?: components["schemas"]["PaymentAttempt"];
             /** @description The caller may pay now (held or payment failed, the hold live, buyer or a live resume link). */
             canPay: boolean;
-            /** @enum {string} */
-            access: "buyer" | "link" | "expired_link";
+            /**
+             * @description buyer: the order's own buyer; link: a live resume link (may pay by card, Apple Pay or
+             *     Google Pay only); view_link: a guest's order link; expired_link: a resume link after the
+             *     hold ended (state only, no personal details).
+             * @enum {string}
+             */
+            access: "buyer" | "link" | "view_link" | "expired_link";
             /** @description The signed resume link token, until the hold deadline (live orders only). */
             resumeToken?: string;
             /** @description A guest's order-link token (30 days). */
@@ -1533,10 +1574,38 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    createPayCode: {
+        parameters: {
+            query?: {
+                currency?: "RON" | "EUR";
+            };
+            header?: never;
+            path: {
+                organiserId: components["parameters"]["OrganiserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The codes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayCode"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     standPayment: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Created when the fan presses the button; reused on retry and double click. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
             path?: never;
             cookie?: never;
         };

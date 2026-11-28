@@ -77,6 +77,15 @@ func (c *Consumer) ReadOnce(ctx context.Context, count int64) (int, error) {
 		count = 100
 	}
 	handled := 0
+	// Entries another consumer took and left unacknowledged for 30 s (it died) are taken over
+	// (review D-j).
+	if msgs, _, err := c.Redis.XAutoClaim(ctx, &redis.XAutoClaimArgs{Stream: StreamKey(c.Topic), Group: c.Group, Consumer: c.Name, MinIdle: ClaimIdle, Start: "0-0", Count: count}).Result(); err == nil {
+		for _, m := range msgs {
+			if c.handle(ctx, StreamKey(c.Topic), m) {
+				handled++
+			}
+		}
+	}
 	for _, start := range []string{"0", ">"} {
 		block := time.Duration(-1)
 		if start == ">" {
@@ -94,27 +103,34 @@ func (c *Consumer) ReadOnce(ctx context.Context, count int64) (int, error) {
 		}
 		for _, st := range res {
 			for _, m := range st.Messages {
-				raw, _ := m.Values["env"].(string)
-				var e Envelope
-				if json.Unmarshal([]byte(raw), &e) != nil {
-					_ = c.Redis.XAck(ctx, st.Stream, c.Group, m.ID).Err()
-					continue
-				}
-				ran, err := c.Apply(ctx, e)
-				if err != nil {
-					if c.Log != nil {
-						c.Log.Warn("consumer: handler failed", "group", c.Group, "type", e.Type, "error", err.Error())
-					}
-					continue // stays pending: retried by the next ReadOnce
-				}
-				if ran {
+				if c.handle(ctx, st.Stream, m) {
 					handled++
 				}
-				_ = c.Redis.XAck(ctx, st.Stream, c.Group, m.ID).Err()
 			}
 		}
 	}
 	return handled, nil
+}
+
+// ClaimIdle is how long an unacknowledged entry waits before another consumer takes it.
+const ClaimIdle = 30 * time.Second
+
+func (c *Consumer) handle(ctx context.Context, stream string, m redis.XMessage) bool {
+	raw, _ := m.Values["env"].(string)
+	var e Envelope
+	if json.Unmarshal([]byte(raw), &e) != nil {
+		_ = c.Redis.XAck(ctx, stream, c.Group, m.ID).Err()
+		return false
+	}
+	ran, err := c.Apply(ctx, e)
+	if err != nil {
+		if c.Log != nil {
+			c.Log.Warn("consumer: handler failed", "group", c.Group, "type", e.Type, "error", err.Error())
+		}
+		return false // stays pending: retried later
+	}
+	_ = c.Redis.XAck(ctx, stream, c.Group, m.ID).Err()
+	return ran
 }
 
 // Run consumes until ctx ends.

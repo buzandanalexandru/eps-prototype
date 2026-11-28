@@ -32,4 +32,3 @@ func TestCheckoutTotalIsTheShopsAllInPrice(t *testing.T) {
 		t.Fatalf("GA order %d / fee %d / net %d", o2.TotalMinor, o2.FanFeeMinor, o2.OrganiserNetMinor)
 	}
 }
-

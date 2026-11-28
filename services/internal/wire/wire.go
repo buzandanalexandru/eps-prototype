@@ -3,9 +3,11 @@
 package wire
 
 import (
+	"crypto/rand"
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +28,13 @@ func env(k, def string) string {
 	return def
 }
 
+func envInt(k string, def int) int {
+	if n, err := strconv.Atoi(os.Getenv(k)); err == nil && n >= 0 {
+		return n
+	}
+	return def
+}
+
 // Services are the step 4 services of one process.
 type Services struct {
 	Checkout *checkout.Service
@@ -40,11 +49,18 @@ type Services struct {
 func Build(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, log *slog.Logger) (*Services, *payments.Webhooks) {
 	linkKey := []byte(os.Getenv("ORDER_LINK_KEY"))
 	if len(linkKey) == 0 {
-		log.Warn("ORDER_LINK_KEY not set: order links use a per-process key")
-		linkKey = []byte(time.Now().String())
+		if env("EPS_ENV", "dev") != "dev" {
+			// Fail closed (review sec L6): order links must verify on every core.
+			log.Error("ORDER_LINK_KEY is required outside EPS_ENV=dev")
+			os.Exit(1)
+		}
+		log.Warn("ORDER_LINK_KEY not set (dev): order links use a per-process key")
+		b := make([]byte, 32)
+		_, _ = rand.Read(b)
+		linkKey = b
 	}
 	co := &checkout.Service{Pool: pool, Inv: &checkout.RedisInventory{Redis: rdb}, Snaps: snaps, Links: &checkout.Links{Key: linkKey}, Log: log}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: payments.SharedTransport}
 	apiKey := os.Getenv("PSP_API_KEY")
 	urls := map[string]string{"a": env("PSP_A_URL", "http://localhost:8091"), "b": env("PSP_B_URL", "http://localhost:8092")}
 	ps := &payments.Service{Pool: pool, Checkout: co, Providers: map[string]payments.Provider{}, Preferred: env("PSP_PREFERRED", "a"), Log: log}
@@ -56,7 +72,7 @@ func Build(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, log *sl
 	}
 	hookBase := strings.TrimRight(env("CORE_INTERNAL_URL", "http://localhost:8080"), "/")
 	ps.WebhookURL = func(p string) string { return hookBase + "/v1/webhooks/psp/" + p }
-	w := &wallet.Service{Pool: pool, Checkout: co, Payments: ps}
+	w := &wallet.Service{Pool: pool, Redis: rdb, Checkout: co, Payments: ps}
 	ps.Topups = w
 	hooks := &payments.Webhooks{Svc: ps, Log: log, Secrets: map[string][]byte{
 		"a": []byte(os.Getenv("PSP_WEBHOOK_SECRET_A")),
@@ -74,5 +90,6 @@ func Shop(pool *pgxpool.Pool, rdb *redis.Client, snaps *snapshot.Store, log *slo
 			origins = append(origins, strings.TrimRight(o, "/"))
 		}
 	}
-	return &coreapi.Shop{Checkout: s.Checkout, Payments: s.Payments, Wallet: s.Wallet, Knobs: s.Knobs, ReturnOrigins: origins, Log: log}, hooks
+	return &coreapi.Shop{Checkout: s.Checkout, Payments: s.Payments, Wallet: s.Wallet, Knobs: s.Knobs, ReturnOrigins: origins, Log: log,
+		Redis: rdb, HoldsPerMin: envInt("HOLD_RATE_PER_MINUTE", 10), LiveHoldsPer: envInt("HOLD_LIVE_PER_CLIENT", 10)}, hooks
 }

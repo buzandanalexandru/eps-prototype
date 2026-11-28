@@ -7,16 +7,23 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/api"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/apperr"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/auth"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/fakepsp"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/redisx"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wallet"
 )
 
@@ -31,6 +38,64 @@ type Shop struct {
 	// exact origins); localhost is allowed when the list is empty (local development).
 	ReturnOrigins []string
 	Log           *slog.Logger
+	// Hold limits per client (review D-h): new orders per minute and live holds at once; 0 off.
+	Redis        *redis.Client
+	HoldsPerMin  int
+	LiveHoldsPer int
+}
+
+// clientKey is the rate-limit identity of the caller: the browser's address the web app put in
+// the token, else the token's subject.
+func clientKey(ctx context.Context) string {
+	c, ok := auth.FromContext(ctx)
+	if !ok {
+		return ""
+	}
+	if c.ClientIP != "" && len(c.ClientIP) <= 64 && !strings.ContainsAny(c.ClientIP, " {}") {
+		return "ip-" + strings.ReplaceAll(c.ClientIP, ":", "_")
+	}
+	return "sub-" + strings.ReplaceAll(c.Subject, ":", "_")
+}
+
+var rateLimited = metrics.NewCounter("eps_holds_rate_limited_total", "Hold requests refused by the per-client limits.")
+
+// holdAllowed applies the per-client limits before a new hold.
+func (s *Server) holdAllowed(ctx context.Context) bool {
+	sh := s.Shop
+	who := clientKey(ctx)
+	if sh.Redis == nil || who == "" {
+		return true
+	}
+	now := time.Now()
+	if sh.HoldsPerMin > 0 {
+		k, _ := redisx.PlatformKey("rl", "holds", who, strconv.FormatInt(now.Unix()/60, 10))
+		n, err := sh.Redis.Incr(ctx, k).Result()
+		if err == nil {
+			_ = sh.Redis.Expire(ctx, k, 70*time.Second).Err()
+			if n > int64(sh.HoldsPerMin) {
+				return false
+			}
+		}
+	}
+	if sh.LiveHoldsPer > 0 {
+		k, _ := redisx.PlatformKey("rl", "live", who)
+		_ = sh.Redis.ZRemRangeByScore(ctx, k, "-inf", strconv.FormatInt(now.UnixMilli(), 10)).Err()
+		if n, err := sh.Redis.ZCard(ctx, k).Result(); err == nil && n >= int64(sh.LiveHoldsPer) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) holdTaken(ctx context.Context, o *checkout.Order) {
+	sh := s.Shop
+	who := clientKey(ctx)
+	if sh.Redis == nil || who == "" || sh.LiveHoldsPer <= 0 {
+		return
+	}
+	k, _ := redisx.PlatformKey("rl", "live", who)
+	_ = sh.Redis.ZAdd(ctx, k, redis.Z{Score: float64(o.HoldExpiresAt.UnixMilli()), Member: o.ID}).Err()
+	_ = sh.Redis.Expire(ctx, k, time.Hour).Err()
 }
 
 // raw answers any strict operation with a status and a JSON body (or a problem document).
@@ -74,6 +139,7 @@ func (r raw) VisitGetPaymentProvidersResponse(w http.ResponseWriter) error    { 
 func (r raw) VisitSetProviderKnobsResponse(w http.ResponseWriter) error       { return r.write(w) }
 func (r raw) VisitStandPaymentResponse(w http.ResponseWriter) error           { return r.write(w) }
 func (r raw) VisitCloseSeasonResponse(w http.ResponseWriter) error            { return r.write(w) }
+func (r raw) VisitCreatePayCodeResponse(w http.ResponseWriter) error          { return r.write(w) }
 
 func okRaw(v any) raw { return raw{status: http.StatusOK, body: v} }
 
@@ -158,13 +224,17 @@ type walletOption struct {
 // Access modes.
 const (
 	accessBuyer       = "buyer"
-	accessLink        = "link"
+	accessLink        = "link"      // a live resume link
+	accessViewLink    = "view_link" // a guest's 30-day order link
 	accessExpiredLink = "expired_link"
 )
 
-// orderFor loads an order the caller may see: its buyer, or a valid order link. Anything else is
-// "Order not found" (an order's existence is never confirmed to a stranger); a changed link is
-// EPS-LINK-INVALID.
+// ExpiredLinkLife is how long an expired resume link still shows the order's state.
+const ExpiredLinkLife = 30 * 24 * time.Hour
+
+// orderFor loads an order the caller may see: its buyer, or a valid order link. Anything else,
+// a changed link included, is "Order not found" (review D-f: an order's existence is never
+// confirmed to a stranger).
 func (s *Server) orderFor(ctx context.Context, id, token string) (*checkout.Order, string, error) {
 	o, err := s.Shop.Checkout.Get(ctx, id)
 	if err != nil {
@@ -177,63 +247,74 @@ func (s *Server) orderFor(ctx context.Context, id, token string) (*checkout.Orde
 		return nil, "", checkout.ErrNotFound
 	}
 	links := s.Shop.Checkout.Links
-	_, err = links.Check(token, o.ID, checkout.LinkResume)
+	until, err := links.Check(token, o.ID, checkout.LinkResume)
 	switch {
 	case err == nil:
 		return o, accessLink, nil
-	case errors.Is(err, checkout.ErrLinkExpired):
+	case errors.Is(err, checkout.ErrLinkExpired) && time.Since(until) < ExpiredLinkLife:
 		return o, accessExpiredLink, nil
 	}
 	if _, err := links.Check(token, o.ID, checkout.LinkView); err == nil {
-		return o, accessExpiredLink, nil // a view link shows the order; paying needs the buyer or a resume link
-	} else if errors.Is(err, checkout.ErrLinkExpired) {
-		return nil, "", checkout.ErrNotFound
+		return o, accessViewLink, nil
 	}
-	return nil, "", apperr.New(http.StatusForbidden, apperr.LinkInvalid, "Link not valid.", false)
+	return nil, "", checkout.ErrNotFound
 }
 
+// viewOf builds the order view in one read transaction (review D-k). An expired resume link sees
+// the state only: no name, email, answers or history (review D-f).
 func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) OrderView {
 	sh := s.Shop
 	v := OrderView{Order: o, ServerTime: time.Now().UTC(), Access: access, Questions: []checkout.Question{}, SavedCards: []payments.SavedMethod{}}
-	if qs, err := sh.Checkout.Questions(ctx, o); err == nil {
-		v.Questions = qs
-	}
-	if snap, err := s.Snapshots.LoadVersion(ctx, o.EventID, o.SnapshotVersion); err == nil {
-		v.EventName = snap.Event.Name
+	if access == accessExpiredLink {
+		red := *o
+		red.BuyerEmail, red.BuyerName, red.Answers, red.History = nil, nil, map[string]any{}, []checkout.HistoryEntry{}
+		v.Order = &red
+		return v
 	}
 	live := o.State == checkout.Held || o.State == checkout.PaymentFailed || o.State == checkout.Paying
 	holdLive := o.HoldExpiresAt.After(time.Now())
 	v.CanPay = (o.State == checkout.Held || o.State == checkout.PaymentFailed) && holdLive && (access == accessBuyer || access == accessLink)
-	if v.CanPay {
-		if off, err := sh.Checkout.Offer(ctx, o); err == nil {
-			v.InstalmentOffer = off
-		}
+	snap, err := s.Snapshots.Load(ctx, o.EventID)
+	if err != nil {
+		snap, _ = s.Snapshots.LoadVersion(ctx, o.EventID, o.SnapshotVersion)
 	}
-	if p, err := sh.Checkout.PlanOf(ctx, o.OrganiserID, o.ID); err == nil && p != nil {
-		pv := &planView{Plan: p}
-		if p.SavedMethodID != nil {
-			if m, err := sh.Payments.SavedMethod(ctx, o.OrganiserID, o.BuyerID, *p.SavedMethodID); err == nil {
-				pv.SavedCardLabel = m.Label
+	b, isBuyer := buyerOf(ctx)
+	account := isBuyer && b.Kind == "account" && b.ID == o.BuyerID
+	_ = db.WithTx(ctx, s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
+		if snap != nil {
+			v.EventName = snap.Event.Name
+			if qs, err := checkout.QuestionsTx(ctx, tx, snap); err == nil {
+				v.Questions = qs
+			}
+			if v.CanPay {
+				v.InstalmentOffer = checkout.OfferFor(snap, o, time.Now())
 			}
 		}
-		v.Plan = pv
-	}
-	if a, err := sh.Payments.LatestAttempt(ctx, o.OrganiserID, o.ID); err == nil && a != nil {
-		v.Payment = a
-	}
+		if p, err := checkout.PlanTx(ctx, tx, o.ID); err == nil && p != nil {
+			pv := &planView{Plan: p}
+			if p.SavedMethodID != nil {
+				pv.SavedCardLabel = payments.SavedLabelTx(ctx, tx, *p.SavedMethodID)
+			}
+			v.Plan = pv
+		}
+		if a, err := payments.LatestAttemptTx(ctx, tx, o.ID); err == nil && a != nil {
+			v.Payment = a
+		}
+		if account {
+			if w, err := wallet.WalletTx(ctx, tx, o.OrganiserID, b.ID, o.Currency); err == nil {
+				v.Wallet = &walletOption{BalanceMinor: w.BalanceMinor, CreditMinor: w.CreditMinor}
+			}
+			if cards, err := payments.SavedMethodsTx(ctx, tx, b.ID); err == nil {
+				v.SavedCards = cards
+			}
+		}
+		return nil
+	})
 	if live && holdLive && (access == accessBuyer || access == accessLink) {
 		v.ResumeToken = sh.Checkout.Links.ResumeLink(o)
 	}
 	if access == accessBuyer && o.BuyerKind == "guest" {
 		v.ViewToken = sh.Checkout.Links.ViewLink(o)
-	}
-	if b, ok := buyerOf(ctx); ok && b.Kind == "account" && b.ID == o.BuyerID {
-		if w, err := sh.Wallet.Wallet(ctx, o.OrganiserID, b.ID, o.Currency); err == nil {
-			v.Wallet = &walletOption{BalanceMinor: w.BalanceMinor, CreditMinor: w.CreditMinor}
-		}
-		if cards, err := sh.Payments.SavedMethods(ctx, o.OrganiserID, b.ID); err == nil {
-			v.SavedCards = cards
-		}
 	}
 	return v
 }
@@ -260,9 +341,16 @@ func (s *Server) CreateOrder(ctx context.Context, req api.CreateOrderRequestObje
 	if req.Params.IdempotencyKey != nil {
 		key = *req.Params.IdempotencyKey
 	}
+	if !s.holdAllowed(ctx) {
+		rateLimited.Inc()
+		return problemRaw(ctx, apperr.New(http.StatusTooManyRequests, apperr.RateLimited, "Too many holds from this connection. Wait a minute.", true)), nil
+	}
 	o, existing, err := s.Shop.Checkout.CreateOrder(ctx, b, checkout.CreateRequest(*req.Body), key)
 	if err != nil {
 		return s.fail(ctx, err), nil
+	}
+	if !existing {
+		s.holdTaken(ctx, o)
 	}
 	st := http.StatusCreated
 	if existing {
@@ -308,6 +396,9 @@ func (s *Server) mutable(ctx context.Context, id string, tok *string) (*checkout
 		return nil, "", err
 	}
 	if access != accessBuyer && access != accessLink {
+		if access == accessViewLink {
+			return nil, "", checkout.ErrNotFound
+		}
 		if o.State == checkout.Held || o.State == checkout.PaymentFailed {
 			return nil, "", apperr.New(http.StatusConflict, apperr.HoldExpired, "The hold ended and the tickets were released.", false)
 		}
@@ -334,25 +425,49 @@ func (s *Server) SetOrderDetails(ctx context.Context, req api.SetOrderDetailsReq
 	return okRaw(s.viewOf(ctx, o, access)), nil
 }
 
-// returnURL keeps a provider return address only on an allowed web origin.
-func (s *Server) returnURL(raw string) (string, bool) {
+// returnURL keeps a provider return address only on an allowed web origin: the web app's exact
+// origins, or https on one of the organiser's configured brand hostnames (review D-i).
+func (s *Server) returnURL(ctx context.Context, org, raw string) (string, bool) {
 	if raw == "" {
 		return "", true
 	}
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(raw) > 2000 {
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(raw) > 2000 || u.User != nil {
 		return "", false
 	}
 	origin := u.Scheme + "://" + u.Host
-	if len(s.Shop.ReturnOrigins) == 0 {
-		return raw, u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
-	}
 	for _, o := range s.Shop.ReturnOrigins {
 		if o == origin {
 			return raw, true
 		}
 	}
+	if len(s.Shop.ReturnOrigins) == 0 && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1") {
+		return raw, true
+	}
+	if u.Scheme != "https" || u.Port() != "" || s.Pool == nil {
+		return "", false
+	}
+	var n int
+	_ = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, "select count(*) from control.brand_hostnames where hostname = $1", strings.ToLower(u.Hostname())).Scan(&n)
+	})
+	if n > 0 {
+		return raw, true
+	}
 	return "", false
+}
+
+// brandName names the selling brand on the provider's page (review L7).
+func (s *Server) brandName(ctx context.Context, o *checkout.Order) string {
+	snap, err := s.Snapshots.LoadVersion(ctx, o.EventID, o.SnapshotVersion)
+	if err != nil || s.Pool == nil {
+		return ""
+	}
+	var name string
+	_ = db.WithTx(ctx, s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, "select name from control.brands where id = $1", snap.BrandID).Scan(&name)
+	})
+	return name
 }
 
 func (s *Server) PayOrder(ctx context.Context, req api.PayOrderRequestObject) (api.PayOrderResponseObject, error) {
@@ -369,7 +484,13 @@ func (s *Server) PayOrder(ctx context.Context, req api.PayOrderRequestObject) (a
 	}
 	body := req.Body
 	if access == accessLink {
-		// Paying through a resume link acts for the order's buyer (the link is the authority).
+		// A link holder pays by card, Apple Pay or Google Pay only; the wallet and saved cards need
+		// the buyer's own session (review D-e). The payment acts for the order's buyer.
+		switch string(body.Method) {
+		case payments.HostedCard, payments.ApplePay, payments.GooglePay:
+		default:
+			return problemRaw(ctx, apperr.New(http.StatusUnprocessableEntity, apperr.PayMethod, "Sign in as the buyer to pay with the wallet or a saved card.", false)), nil
+		}
 		b = checkout.Buyer{ID: o.BuyerID, Kind: o.BuyerKind}
 	}
 	if string(body.Method) == "wallet" {
@@ -379,11 +500,11 @@ func (s *Server) PayOrder(ctx context.Context, req api.PayOrderRequestObject) (a
 		}
 		return okRaw(map[string]any{"order": s.viewOf(ctx, paid, access)}), nil
 	}
-	ret, allowed := s.returnURL(token(body.ReturnUrl))
+	ret, allowed := s.returnURL(ctx, o.OrganiserID, token(body.ReturnUrl))
 	if !allowed {
 		return problemRaw(ctx, apperr.New(http.StatusUnprocessableEntity, "invalid_request", "returnUrl is not on an allowed origin.", false)), nil
 	}
-	pr := payments.PayRequest{Method: string(body.Method), ReturnURL: ret}
+	pr := payments.PayRequest{Method: string(body.Method), ReturnURL: ret, MerchantName: s.brandName(ctx, o)}
 	if body.SavedCardId != nil {
 		pr.SavedCardID = *body.SavedCardId
 	}
@@ -535,6 +656,9 @@ func (s *Server) GetWallet(ctx context.Context, req api.GetWalletRequestObject) 
 	if req.Params.Currency != nil {
 		cur = string(*req.Params.Currency)
 	}
+	if err := s.Shop.Wallet.CheckOrganiser(ctx, req.OrganiserId.String(), cur); err != nil {
+		return s.fail(ctx, err), nil
+	}
 	w, err := s.Shop.Wallet.Wallet(ctx, req.OrganiserId.String(), b.ID, cur)
 	if err != nil {
 		return s.fail(ctx, err), nil
@@ -553,7 +677,7 @@ func (s *Server) TopUpWallet(ctx context.Context, req api.TopUpWalletRequestObje
 	if req.Body == nil {
 		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
 	}
-	ret, allowed := s.returnURL(token(req.Body.ReturnUrl))
+	ret, allowed := s.returnURL(ctx, req.OrganiserId.String(), token(req.Body.ReturnUrl))
 	if !allowed {
 		return problemRaw(ctx, apperr.New(http.StatusUnprocessableEntity, "invalid_request", "returnUrl is not on an allowed origin.", false)), nil
 	}
@@ -686,11 +810,30 @@ func (s *Server) StandPayment(ctx context.Context, req api.StandPaymentRequestOb
 		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
 	}
 	label := token(req.Body.Label)
-	w, err := s.Shop.Wallet.Stand(ctx, org, req.Body.Code, req.Body.AmountMinor, label)
+	w, err := s.Shop.Wallet.Stand(ctx, org, req.Body.Code, req.Body.PayCode, req.Body.AmountMinor, label, req.Params.IdempotencyKey)
 	if err != nil {
 		return s.fail(ctx, err), nil
 	}
 	return okRaw(w), nil
+}
+
+func (s *Server) CreatePayCode(ctx context.Context, req api.CreatePayCodeRequestObject) (api.CreatePayCodeResponseObject, error) {
+	if s.Shop == nil {
+		return unavailable(ctx), nil
+	}
+	b, ok2 := buyerOf(ctx)
+	if !ok2 || b.Kind != "account" {
+		return problemRaw(ctx, apperr.New(http.StatusForbidden, apperr.Forbidden, "Sign in to use the wallet.", false)), nil
+	}
+	cur := "RON"
+	if req.Params.Currency != nil {
+		cur = string(*req.Params.Currency)
+	}
+	wc, pc, exp, err := s.Shop.Wallet.PayCode(ctx, req.OrganiserId.String(), b.ID, cur)
+	if err != nil {
+		return s.fail(ctx, err), nil
+	}
+	return okRaw(map[string]any{"walletCode": wc, "payCode": pc, "expiresAt": exp.UTC()}), nil
 }
 
 func (s *Server) CloseSeason(ctx context.Context, req api.CloseSeasonRequestObject) (api.CloseSeasonResponseObject, error) {

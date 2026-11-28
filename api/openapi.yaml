@@ -529,11 +529,37 @@ paths:
                 $ref: "#/components/schemas/ProviderList"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/shop/wallets/{organiserId}/pay-code:
+    post:
+      operationId: createPayCode
+      summary: A 6-digit code for one stand payment within 2 minutes
+      description: The fan shows the wallet code and this pay code at a stand; the code works once.
+      tags: [wallet]
+      parameters:
+        - $ref: "#/components/parameters/OrganiserId"
+        - name: currency
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [RON, EUR]
+      responses:
+        "200":
+          description: The codes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayCode"
+        default:
+          $ref: "#/components/responses/Problem"
   /v1/organiser/wallet/stand-payments:
     post:
       operationId: standPayment
       summary: Charge a fan's wallet at a stand (simulated)
+      description: Needs the fan's wallet code and current pay code; the same Idempotency-Key charges once.
       tags: [wallet]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyRequired"
       requestBody:
         required: true
         content:
@@ -942,14 +968,29 @@ components:
         locale:
           type: string
           enum: [ro, en]
+    PayCode:
+      type: object
+      required: [walletCode, payCode, expiresAt]
+      properties:
+        walletCode:
+          type: string
+        payCode:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
     StandPaymentRequest:
       type: object
-      required: [code, amountMinor]
+      required: [code, payCode, amountMinor]
       properties:
         code:
           type: string
           pattern: "^[A-Z0-9]{4}-[A-Z0-9]{4}$"
           description: The wallet code the fan shows at the stand.
+        payCode:
+          type: string
+          pattern: "^[0-9]{6}$"
+          description: The fan's current pay code (2 minutes, single use).
         amountMinor:
           type: integer
           format: int64
@@ -1006,6 +1047,11 @@ components:
           type: number
           minimum: 0
           maximum: 1
+        resets_at:
+          type: string
+          format: date-time
+          readOnly: true
+          description: When changed knobs go back to normal by themselves (15 minutes after the last change).
     ProviderList:
       type: object
       required: [providers, preferred]
@@ -1357,7 +1403,11 @@ components:
           description: The caller may pay now (held or payment failed, the hold live, buyer or a live resume link).
         access:
           type: string
-          enum: [buyer, link, expired_link]
+          enum: [buyer, link, view_link, expired_link]
+          description: |
+            buyer: the order's own buyer; link: a live resume link (may pay by card, Apple Pay or
+            Google Pay only); view_link: a guest's order link; expired_link: a resume link after the
+            hold ended (state only, no personal details).
         resumeToken:
           type: string
           description: The signed resume link token, until the hold deadline (live orders only).

@@ -135,13 +135,12 @@ func (r *Relay) relayOrganiser(ctx context.Context, org string, batch int) (int,
 	return n, err
 }
 
-// Run relays until ctx ends: on every LISTEN outbox notification and at least every interval.
+// Run relays every interval (200 ms by default) until ctx ends. The relay polls: no per-insert
+// notification on the hot path (review M3).
 func (r *Relay) Run(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = 200 * time.Millisecond
 	}
-	wake := make(chan struct{}, 1)
-	go r.listen(ctx, wake)
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for ctx.Err() == nil {
@@ -150,39 +149,7 @@ func (r *Relay) Run(ctx context.Context, interval time.Duration) {
 		}
 		select {
 		case <-ctx.Done():
-		case <-wake:
 		case <-t.C:
-		}
-	}
-}
-
-// listen forwards LISTEN outbox notifications to wake (reconnecting after errors).
-func (r *Relay) listen(ctx context.Context, wake chan<- struct{}) {
-	for ctx.Err() == nil {
-		func() {
-			conn, err := r.Pool.Acquire(ctx)
-			if err != nil {
-				return
-			}
-			defer conn.Release()
-			if _, err := conn.Exec(ctx, "listen outbox"); err != nil {
-				return
-			}
-			for {
-				if _, err := conn.Conn().WaitForNotification(ctx); err != nil {
-					// The connection may be unusable after an error: drop it from the pool.
-					_ = conn.Conn().Close(context.WithoutCancel(ctx))
-					return
-				}
-				select {
-				case wake <- struct{}{}:
-				default:
-				}
-			}
-		}()
-		select {
-		case <-ctx.Done():
-		case <-time.After(time.Second):
 		}
 	}
 }

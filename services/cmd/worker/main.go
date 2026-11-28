@@ -1,23 +1,45 @@
 // Command worker runs the background work of the sales side (step 4): the hold sweeper, the payment
-// reconciler, the instalment runner, the outbox relay to Redis Streams and the stub issuer that
-// marks paid orders issued until step 7 issues real tickets.
+// reconciler, the instalment runner and the plan defaults, the outbox relay to Redis Streams, the
+// purge of old idempotency keys and webhook ids, and the stub issuer that marks paid orders issued
+// until step 7 issues real tickets. Each loop has its own small connection pool (review M1), so a
+// slow provider never starves the sweeper.
 package main
 
 import (
 	"context"
+	"math"
 	"os"
 	"os/signal"
+	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/outbox"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wire"
 )
+
+func poolFor(ctx context.Context, name string, def int32) *pgxpool.Pool {
+	n := def
+	if v, err := strconv.Atoi(os.Getenv("WORKER_POOL_" + name)); err == nil && v > 0 && v <= 20 {
+		n = int32(v)
+	}
+	p, err := db.Open(ctx, os.Getenv("DATABASE_URL"), n)
+	if err != nil {
+		return nil
+	}
+	return p
+}
 
 func main() {
 	log := service.Logger("worker")
@@ -29,11 +51,37 @@ func main() {
 	if pool != nil && rdb != nil {
 		snaps := snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
 		svc, _ := wire.Build(pool, rdb, snaps, log)
+		// Loops with their own pools (falling back to the shared one).
+		with := func(name string, def int32) (*wire.Services, *pgxpool.Pool) {
+			p := poolFor(ctx, name, def)
+			if p == nil {
+				return svc, pool
+			}
+			s2, _ := wire.Build(p, rdb, snaps, log)
+			return s2, p
+		}
+		sweep, _ := with("SWEEPER", 2)
+		recon, _ := with("RECONCILER", 2)
+		inst, _ := with("INSTALMENTS", 1)
+		_, relayPool := with("RELAY", 1)
 		host, _ := os.Hostname()
-		go (&checkout.Sweeper{Svc: svc.Checkout, Log: log}).Run(ctx, time.Second)
-		go (&payments.Reconciler{Svc: svc.Payments, Log: log}).Run(ctx, 5*time.Second)
-		go (&checkout.InstalmentRunner{Svc: svc.Checkout, Charger: svc.Payments, Log: log}).Run(ctx, 5*time.Second)
-		go (&outbox.Relay{Pool: pool, Redis: rdb, Log: log}).Run(ctx, 200*time.Millisecond)
+		inv := &checkout.RedisInventory{Redis: rdb}
+		go (&checkout.Sweeper{Svc: sweep.Checkout, Log: log, Index: inv}).Run(ctx, time.Second)
+		go (&payments.Reconciler{Svc: recon.Payments, Log: log}).Run(ctx, 5*time.Second)
+		go (&checkout.InstalmentRunner{Svc: inst.Checkout, Charger: inst.Payments, Log: log}).Run(ctx, 5*time.Second)
+		go every(ctx, time.Minute, func() { _, _ = (&checkout.DefaultRunner{Svc: inst.Checkout, Log: log}).RunOnce(ctx) })
+		go (&outbox.Relay{Pool: relayPool, Redis: rdb, Log: log}).Run(ctx, 200*time.Millisecond)
+		go every(ctx, 10*time.Minute, func() {
+			_ = db.WithTx(ctx, pool, db.RoleCore, "", func(tx pgx.Tx) error {
+				var a, b int64
+				if err := tx.QueryRow(ctx, "select idempotency_keys, webhook_events from sales.purge_expired()").Scan(&a, &b); err != nil {
+					return err
+				}
+				log.Info("purged", "idempotency_keys", a, "webhook_events", b)
+				return nil
+			})
+		})
+		registerGauges(ctx, pool)
 		// Stub issuer (step 7 replaces it): order.paid → issued.
 		issuer := &outbox.Consumer{Redis: rdb, Topic: outbox.TopicOrders, Group: "issuer", Name: host, Log: log,
 			Handle: func(ctx context.Context, e outbox.Envelope) error {
@@ -52,4 +100,42 @@ func main() {
 		log.Info("worker loops started", "sweeper", "1s", "reconciler", "5s", "instalments", "5s", "relay", "200ms")
 	}
 	service.Serve(log, service.SimpleHandler("worker", log, checks, nil, nil))
+}
+
+func every(ctx context.Context, d time.Duration, f func()) {
+	t := time.NewTicker(d)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			f()
+		}
+	}
+}
+
+// registerGauges samples the outbox backlog and unresolved attempts every 10 s (metrics).
+func registerGauges(ctx context.Context, pool *pgxpool.Pool) {
+	var pending, oldest, unresolved atomic.Uint64
+	load := func(v *atomic.Uint64) func() float64 { return func() float64 { return math.Float64frombits(v.Load()) } }
+	metrics.NewGauge("eps_outbox_pending", load(&pending))
+	metrics.NewGauge("eps_outbox_oldest_seconds", load(&oldest))
+	metrics.NewGauge("eps_payment_attempts_unresolved", load(&unresolved))
+	go every(ctx, 10*time.Second, func() {
+		_ = db.WithTx(ctx, pool, db.RoleCore, "", func(tx pgx.Tx) error {
+			var p, u int64
+			var o float64
+			if err := tx.QueryRow(ctx, "select pending, oldest_seconds from sales.outbox_backlog()").Scan(&p, &o); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(ctx, "select sales.unresolved_count()").Scan(&u); err != nil {
+				return err
+			}
+			pending.Store(math.Float64bits(float64(p)))
+			oldest.Store(math.Float64bits(o))
+			unresolved.Store(math.Float64bits(float64(u)))
+			return nil
+		})
+	})
 }

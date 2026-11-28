@@ -176,9 +176,15 @@ func (s *Service) LatestAttempt(ctx context.Context, org, orderID string) (*Atte
 	var a *Attempt
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		var err error
-		a, err = scanAttempt(tx.QueryRow(ctx, "select "+attemptCols+" from sales.payment_attempts where order_id = $1 and purpose = 'order' order by created_at desc limit 1", orderID))
+		a, err = LatestAttemptTx(ctx, tx, orderID)
 		return err
 	})
+	return a, err
+}
+
+// LatestAttemptTx is LatestAttempt inside a transaction of the order's organiser.
+func LatestAttemptTx(ctx context.Context, tx pgx.Tx, orderID string) (*Attempt, error) {
+	a, err := scanAttempt(tx.QueryRow(ctx, "select "+attemptCols+" from sales.payment_attempts where order_id = $1 and purpose = 'order' order by created_at desc limit 1", orderID))
 	if errors.Is(err, ErrNoSuchCharge) {
 		return nil, nil
 	}

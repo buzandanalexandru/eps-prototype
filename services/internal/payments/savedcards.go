@@ -40,24 +40,39 @@ func saveMethodTx(ctx context.Context, tx pgx.Tx, a *Attempt, ch Charge) (string
 // SavedMethods lists an owner's cards for one organiser (a card saved for one organiser is never
 // offered at another's shop).
 func (s *Service) SavedMethods(ctx context.Context, org, owner string) ([]SavedMethod, error) {
-	out := []SavedMethod{}
+	var out []SavedMethod
 	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, `select id::text, provider, token, label, brand, created_at from sales.saved_payment_methods
-			where owner_id = $1 and deleted_at is null order by created_at`, owner)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var m SavedMethod
-			if err := rows.Scan(&m.ID, &m.Provider, &m.Token, &m.Label, &m.Brand, &m.CreatedAt); err != nil {
-				return err
-			}
-			out = append(out, m)
-		}
-		return rows.Err()
+		var err error
+		out, err = SavedMethodsTx(ctx, tx, owner)
+		return err
 	})
 	return out, err
+}
+
+// SavedMethodsTx is SavedMethods inside a transaction of the organiser.
+func SavedMethodsTx(ctx context.Context, tx pgx.Tx, owner string) ([]SavedMethod, error) {
+	out := []SavedMethod{}
+	rows, err := tx.Query(ctx, `select id::text, provider, token, label, brand, created_at from sales.saved_payment_methods
+		where owner_id = $1 and deleted_at is null order by created_at`, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m SavedMethod
+		if err := rows.Scan(&m.ID, &m.Provider, &m.Token, &m.Label, &m.Brand, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// SavedLabelTx is a saved card's label ("" when gone).
+func SavedLabelTx(ctx context.Context, tx pgx.Tx, id string) string {
+	var label string
+	_ = tx.QueryRow(ctx, `select label from sales.saved_payment_methods where id = $1`, id).Scan(&label)
+	return label
 }
 
 // SavedMethod returns one of an owner's cards for an organiser, or EPS-SAVED-CARD-REFUSED.

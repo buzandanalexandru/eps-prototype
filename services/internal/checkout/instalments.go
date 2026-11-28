@@ -188,6 +188,11 @@ func planTx(ctx context.Context, tx pgx.Tx, where string, arg any) (*Plan, error
 	return &p, rows.Err()
 }
 
+// PlanTx reads an order's plan inside a transaction of its organiser (nil when none).
+func PlanTx(ctx context.Context, tx pgx.Tx, orderID string) (*Plan, error) {
+	return planTx(ctx, tx, "order_id = $1", orderID)
+}
+
 // PlanByID reads a plan of a known organiser.
 func (s *Service) PlanByID(ctx context.Context, org, planID string) (*Plan, error) {
 	var p *Plan

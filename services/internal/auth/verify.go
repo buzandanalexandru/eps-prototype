@@ -36,6 +36,9 @@ type Claims struct {
 	// Email is the account's email, present only when it is verified (fan and organiser tokens;
 	// step 4's guest-order claim relies on it).
 	Email string `json:"email,omitempty"`
+	// ClientIP is the address of the browser the web app minted the token for (step 4 review:
+	// hold creation is rate limited per client).
+	ClientIP string `json:"cip,omitempty"`
 }
 
 // ErrInvalidToken is returned for every rejected token; the reason is only in the wrapped error,
