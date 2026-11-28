@@ -151,10 +151,14 @@ jobs:
           [[ "$(psql "$url" -tAc "select rolbypassrls from pg_roles where rolname = current_user")" == f ]]
 
   slug:
-    name: preview slug vectors (CI script)
+    name: preview slug vectors and Vercel ignore rule (CI scripts)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Vercel's ignored build step skips only commits the web app does not use
+        run: |
+          node --test deploy/scripts/web-paths.test.cjs .github/scripts/vercel-deployment.test.cjs
+          deploy/scripts/vercel-ignore.test.sh
       - run: |
           jq -c '.vectors[]' deploy/preview-slug-vectors.json | while read -r v; do
             branch=$(jq -r .branch <<<"$v"); want=$(jq -r .slug <<<"$v")

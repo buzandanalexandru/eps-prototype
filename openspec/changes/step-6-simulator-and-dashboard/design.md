@@ -94,3 +94,9 @@ Additive tables and columns; Prometheus, aggregator and simulator Job template a
 ## Open Questions
 
 - Cluster size for the demo recording (nodes in fra1) decides the default poll interval; it can be set by the knobs without changing the specs.
+
+## Deviation: fewer Vercel deployments (owner's request during step 6)
+
+Vercel Hobby has a daily deployment limit, so Vercel now skips building a commit that changes nothing the web app uses. `apps/web/vercel.json` has an `ignoreCommand` (`deploy/scripts/vercel-ignore.sh`) that compares the commit with the branch's last deployed commit (`VERCEL_GIT_PREVIOUS_SHA`; on production without it, `HEAD^`; a preview without it always builds, because its first deployment is what the preview workflow binds to the pull request's database). A build is needed when a path matches `apps/web/**`, `api/**`, `package.json`, `package-lock.json` or `.nvmrc` (`deploy/scripts/web-paths.cjs`; there is no other shared package); docs, specs, `services/**`, `deploy/**`, `load/**` and `.github/**` alone skip; anything unclear builds. The `wip/**` rule stays.
+
+The CI jobs that wait for Vercel (`preview.yml` web, `deploy.yml` web-smoke) use the same rule through `.github/scripts/vercel-deployment.cjs`: they find the newest ancestor with a ready Vercel deployment in the same environment and, when the files changed since it need no web build, use this commit's deployment if Vercel made one anyway, else that ancestor's (logged as `FALLBACK` with both commits). `EXPECT_WEB_COMMIT` follows the deployment actually used. When the web app did change, or no such ancestor exists, the strict wait for this commit's own deployment applies unchanged, as do the `vercel[bot]` and host checks. Tests: `deploy/scripts/web-paths.test.cjs`, `deploy/scripts/vercel-ignore.test.sh` and `.github/scripts/vercel-deployment.test.cjs` (CI job "slug").

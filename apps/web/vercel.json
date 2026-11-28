@@ -4,5 +4,6 @@
     "deploymentEnabled": {
       "wip/**": false
     }
-  }
+  },
+  "ignoreCommand": "bash ../../deploy/scripts/vercel-ignore.sh"
 }

@@ -168,7 +168,7 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - name: Wait for Vercel's production deployment of this commit
+      - name: Wait for Vercel's production deployment of this commit (or the current one when the build was skipped)
         id: vercel
         uses: actions/github-script@v7
         with:
@@ -217,7 +217,7 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: ${{ steps.bind.outputs.url || steps.vercel.outputs.url }}
           CORE_URL: ${{ needs.core.outputs.core_url }}
-          EXPECT_WEB_COMMIT: ${{ github.sha }}
+          EXPECT_WEB_COMMIT: ${{ steps.vercel.outputs.commit || github.sha }}
           EXPECT_CORE_COMMIT: ${{ github.sha }}
           # After the deployment itself passes, the production domain must serve this commit too.
           PRODUCTION_DOMAIN_URL: https://eps-prototype.vercel.app
