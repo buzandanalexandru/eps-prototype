@@ -33,6 +33,7 @@ A fan SHALL be able to top up the wallet by an amount within the organiser's lim
 #### Scenario: Top-up confirmed
 - **WHEN** a fan tops up 200 RON and the provider confirms
 - **THEN** the balance rises by 200 RON and the history shows the top-up
+- Test: services/internal/wallet/topup_test.go
 - Test: apps/web/tests/e2e/wallet.spec.ts
 
 #### Scenario: Top-up declined
@@ -46,6 +47,7 @@ Checkout SHALL offer the wallet when the balance covers the order total. Paying 
 #### Scenario: One-tap during a drop
 - **WHEN** a fan with 600 RON taps "Pay from wallet" for a 539 RON order
 - **THEN** the order is `paid` in one step, the balance is 61 RON, and no provider was called
+- Test: services/internal/wallet/pay_test.go
 - Test: apps/web/tests/e2e/wallet.spec.ts
 
 #### Scenario: Two payments race for one balance
@@ -59,6 +61,7 @@ A simple stand screen SHALL let an organiser's stand take a payment from a fan's
 #### Scenario: Pay at a stand
 - **WHEN** a stand charges 25 RON to a fan's wallet
 - **THEN** the balance drops by 25 RON and the ledger shows a stand sale
+- Test: services/internal/wallet/ledger_test.go
 - Test: manual check on the deployed preview (open the stand screen, charge a fan's wallet, see the balance and history change)
 
 ### Requirement: Season credit

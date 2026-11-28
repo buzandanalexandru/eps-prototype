@@ -65,6 +65,7 @@ When a provider's circuit breaker is open, new attempts SHALL go to the other pr
 - **WHEN** provider A returns errors for a payment and B is healthy
 - **THEN** the payment completes on B, the fan sees only a successful payment, and a failover event is recorded
 - Test: apps/web/tests/e2e/checkout-failover.spec.ts
+- Test: services/internal/payments/router_test.go
 
 #### Scenario: Decline is not failed over
 - **WHEN** provider A declines the card
@@ -132,6 +133,7 @@ A provider SHALL be able to ask for a one-time code before confirming a charge, 
 - **WHEN** the fan enters a wrong code three times
 - **THEN** the attempt is `declined` with `EPS-PAY-3DS-FAILED` and the order is `payment_failed` with its hold still live
 - Test: services/internal/fakepsp/challenge_test.go
+- Test: services/internal/payments/attempt_state_test.go
 
 ### Requirement: Simulated Apple Pay and Google Pay
 Checkout SHALL offer Apple Pay and Google Pay as one-tap methods that open a simulated wallet sheet from the provider, clearly labelled as simulated, and complete through the same attempt states, idempotency and failover as cards.
@@ -153,6 +155,7 @@ A signed-in fan SHALL be able to save a card during a payment; the provider SHAL
 - **WHEN** a fan with a saved "Test Visa •••• 4242" taps it at checkout
 - **THEN** the order is paid without opening the card page
 - Test: apps/web/tests/e2e/one-tap-payments.spec.ts
+- Test: services/internal/payments/saved_cards_test.go
 
 #### Scenario: Token from another account
 - **WHEN** a request uses a saved-card token that belongs to another account

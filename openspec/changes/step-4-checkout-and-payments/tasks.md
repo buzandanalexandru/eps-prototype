@@ -2,60 +2,60 @@
 
 ## 1. Branch, contract and schema
 
-- [ ] 1.1 Create branch `step-4-checkout-and-payments` from `main` and verify `git status` is clean on it
-- [ ] 1.2 Add the checkout, orders, payments, wallet, questions and provider-webhook paths with error-code schemas to `api/openapi.yaml`; verify the Go stubs and TypeScript types regenerate and both compile
-- [ ] 1.3 Add sales-schema migrations (orders, order_lines, order_answers, order_history, payment_attempts, idempotency_keys, webhook_events, saved_payment_methods, instalment_plans, instalment_parts, wallet_accounts, journal_entries, journal_lines, outbox) with `organiser_id` and row-level security on every table, the partial unique indexes on attempts and the zero-sum constraint trigger; verify migrations apply and roll back on a testcontainers Postgres and an RLS test shows organiser B reads none of A's rows
+- [x] 1.1 Create branch `step-4-checkout-and-payments` from `main` and verify `git status` is clean on it
+- [x] 1.2 Add the checkout, orders, payments, wallet, questions and provider-webhook paths with error-code schemas to `api/openapi.yaml`; verify the Go stubs and TypeScript types regenerate and both compile
+- [x] 1.3 Add sales-schema migrations (orders, order_lines, order_answers, order_history, payment_attempts, idempotency_keys, webhook_events, saved_payment_methods, instalment_plans, instalment_parts, wallet_accounts, journal_entries, journal_lines, outbox) with `organiser_id` and row-level security on every table, the partial unique indexes on attempts and the zero-sum constraint trigger; verify migrations apply and roll back on a testcontainers Postgres and an RLS test shows organiser B reads none of A's rows
 
 ## 2. Event stream (outbox and relay)
 
-- [ ] 2.1 Implement the outbox writer used inside business transactions and the event envelope; verify `services/internal/outbox/outbox_test.go` (rolled-back change has no event, committed change has one)
-- [ ] 2.2 Implement the worker relay (`SKIP LOCKED` batches, LISTEN wake-up, XADD with the outbox id, trimming) and the consumer helper with dedup; verify `relay_test.go` (crash resend, 1,000 events within 2 s) and `consumer_test.go` (dedup, organiser filter) pass against Redis and Postgres containers
+- [x] 2.1 Implement the outbox writer used inside business transactions and the event envelope; verify `services/internal/outbox/outbox_test.go` (rolled-back change has no event, committed change has one)
+- [x] 2.2 Implement the worker relay (`SKIP LOCKED` batches, LISTEN wake-up, XADD with the outbox id, trimming) and the consumer helper with dedup; verify `relay_test.go` (crash resend, 1,000 events within 2 s) and `consumer_test.go` (dedup, organiser filter) pass against Redis and Postgres containers
 
 ## 3. Holds and order states
 
-- [ ] 3.1 Implement the inventory interface (`Reserve`, `Extend`, `Commit`, `Release`) with the single-counter Lua scripts and the expiry index; verify `services/internal/checkout/hold_test.go` and `hold_race_test.go` (500 concurrent holds on 100 places give exactly 100)
-- [ ] 3.2 Implement order creation with idempotency key, snapshot version, all-in pricing and fee split, and one live hold per buyer per sale; verify `hold_test.go` and `pricing_test.go`
-- [ ] 3.3 Implement the order state machine with guarded transitions and history, cancel, and the stub issuer consumer (`order.paid` → `issued`); verify `order_state_test.go` (allowed path, racing transitions, forbidden transition, cancel)
-- [ ] 3.4 Implement the worker hold sweeper (1 s), including the in-flight payment exception; verify `sweeper_test.go`
+- [x] 3.1 Implement the inventory interface (`Reserve`, `Extend`, `Commit`, `Release`) with the single-counter Lua scripts and the expiry index; verify `services/internal/checkout/hold_test.go` and `hold_race_test.go` (500 concurrent holds on 100 places give exactly 100)
+- [x] 3.2 Implement order creation with idempotency key, snapshot version, all-in pricing and fee split, and one live hold per buyer per sale; verify `hold_test.go` and `pricing_test.go`
+- [x] 3.3 Implement the order state machine with guarded transitions and history, cancel, and the stub issuer consumer (`order.paid` → `issued`); verify `order_state_test.go` (allowed path, racing transitions, forbidden transition, cancel)
+- [x] 3.4 Implement the worker hold sweeper (1 s), including the in-flight payment exception; verify `sweeper_test.go`
 
 ## 4. Fake providers
 
-- [ ] 4.1 Implement `cmd/fakepsp` charges, status lookup by id and idempotency key, refunds, signed webhooks with retries, and Redis-backed charge storage; verify `services/internal/fakepsp/charges_test.go`
-- [ ] 4.2 Implement the knobs API (failure, decline, latency, outage hang/503, timeout, webhook delay/drop, challenge rate) and admin stats; verify `knobs_test.go` (outage within 2 s, 0.3 failure rate gives 250–350 of 1,000)
-- [ ] 4.3 Implement the hosted page (test outcome buttons, no card field), the simulated bank challenge and the Apple Pay / Google Pay sheets, in RO and EN; verify `challenge_test.go` and a page check that no input accepts a card number
-- [ ] 4.4 Add the psp-a and psp-b Helm releases with webhook-signing secrets generated by CI; verify `helm template` renders two deployments and `helm lint` passes
+- [x] 4.1 Implement `cmd/fakepsp` charges, status lookup by id and idempotency key, refunds, signed webhooks with retries, and Redis-backed charge storage; verify `services/internal/fakepsp/charges_test.go`
+- [x] 4.2 Implement the knobs API (failure, decline, latency, outage hang/503, timeout, webhook delay/drop, challenge rate) and admin stats; verify `knobs_test.go` (outage within 2 s, 0.3 failure rate gives 250–350 of 1,000)
+- [x] 4.3 Implement the hosted page (test outcome buttons, no card field), the simulated bank challenge and the Apple Pay / Google Pay sheets, in RO and EN; verify `challenge_test.go` and a page check that no input accepts a card number
+- [x] 4.4 Add the psp-a and psp-b Helm releases with webhook-signing secrets generated by CI; verify `helm template` renders two deployments and `helm lint` passes
 
 ## 5. Payments in the core
 
-- [ ] 5.1 Implement the provider adapter and the attempt state machine with idempotency records for client requests and attempt keys for provider calls; verify `attempt_state_test.go` and `idempotency_test.go`
-- [ ] 5.2 Implement the Redis-shared circuit breaker and the router with one in-press failover; verify `breaker_test.go` and `router_test.go` (A fails → B, decline not failed over, both down, Google Pay during failover)
-- [ ] 5.3 Implement the webhook endpoint (signature, age, dedup) and the worker payment reconciler for `submitted`, `challenge_required` and `unknown` attempts; verify `webhook_test.go`, `reconciler_test.go` and `unknown_outcome_test.go`
-- [ ] 5.4 Implement late-payment handling and automatic refunds of late or duplicate successes; verify `services/internal/checkout/late_payment_test.go` and `services/internal/payments/refund_test.go`
-- [ ] 5.5 Implement saved cards (save on charge, list, pay, delete, account and organiser binding); verify `saved_cards_test.go`
-- [ ] 5.6 Emit `payment.failover` and `payment.provider_state` events and expose breaker state on an admin endpoint; verify an outbox test sees one failover event per failover
+- [x] 5.1 Implement the provider adapter and the attempt state machine with idempotency records for client requests and attempt keys for provider calls; verify `attempt_state_test.go` and `idempotency_test.go`
+- [x] 5.2 Implement the Redis-shared circuit breaker and the router with one in-press failover; verify `breaker_test.go` and `router_test.go` (A fails → B, decline not failed over, both down, Google Pay during failover)
+- [x] 5.3 Implement the webhook endpoint (signature, age, dedup) and the worker payment reconciler for `submitted`, `challenge_required` and `unknown` attempts; verify `webhook_test.go`, `reconciler_test.go` and `unknown_outcome_test.go`
+- [x] 5.4 Implement late-payment handling and automatic refunds of late or duplicate successes; verify `services/internal/checkout/late_payment_test.go` and `services/internal/payments/refund_test.go`
+- [x] 5.5 Implement saved cards (save on charge, list, pay, delete, account and organiser binding); verify `saved_cards_test.go`
+- [x] 5.6 Emit `payment.failover` and `payment.provider_state` events and expose breaker state on an admin endpoint; verify an outbox test sees one failover event per failover
 
 ## 6. Wallet
 
-- [ ] 6.1 Implement the ledger (accounts, entries, zero-sum check, cached balances, reversing entries) and the ledger audit job; verify `services/internal/wallet/ledger_test.go`
-- [ ] 6.2 Implement top-ups through the providers and pay-from-balance in one transaction with hold commit; verify `topup_test.go` and `pay_test.go` (race of two 400 RON payments on 600 RON)
-- [ ] 6.3 Implement the stand payment endpoint and the season close action; verify `season_credit_test.go`
+- [x] 6.1 Implement the ledger (accounts, entries, zero-sum check, cached balances, reversing entries) and the ledger audit job; verify `services/internal/wallet/ledger_test.go`
+- [x] 6.2 Implement top-ups through the providers and pay-from-balance in one transaction with hold commit; verify `topup_test.go` and `pay_test.go` (race of two 400 RON payments on 600 RON)
+- [x] 6.3 Implement the stand payment endpoint and the season close action; verify `season_credit_test.go`
 
 ## 7. Instalments, resume, guests, claim
 
-- [ ] 7.1 Implement plan selection, schedule computation in minor units, deposit with saved card, the instalment runner, overdue and grace, and "simulate next due date"; verify `services/internal/checkout/instalments_test.go`
-- [ ] 7.2 Implement the signed resume link and its validation; verify `resume_test.go` (expired, tampered)
-- [ ] 7.3 Implement guest order tokens and the claim into a verified account; verify `claim_test.go`
+- [x] 7.1 Implement plan selection, schedule computation in minor units, deposit with saved card, the instalment runner, overdue and grace, and "simulate next due date"; verify `services/internal/checkout/instalments_test.go`
+- [x] 7.2 Implement the signed resume link and its validation; verify `resume_test.go` (expired, tampered)
+- [x] 7.3 Implement guest order tokens and the claim into a verified account; verify `claim_test.go`
 
 ## 8. Fan and Studio screens (Next.js)
 
-- [ ] 8.1 Build the checkout inside the locked checkout: server-driven timer, contact, questions and consents, payment choice (in full, instalments, wallet, card, Apple Pay, Google Pay, saved card) with an idempotency key per Pay press; verify `apps/web/tests/e2e/checkout-hold.spec.ts` and `one-tap-payments.spec.ts`
-- [ ] 8.2 Build the order status page (2 s refresh, every state, error codes, retry, cancel, resume link with copy); verify `order-status.spec.ts` and `resume-link.spec.ts`
-- [ ] 8.3 Build guest checkout and the "Add to my account" claim; verify `guest-checkout.spec.ts`
-- [ ] 8.4 Build the instalment option and schedule view; verify `instalment-checkout.spec.ts`
-- [ ] 8.5 Build the wallet screens (balance per organiser, top up, history, simulated-money notice) and the stand screen; verify `wallet.spec.ts`
-- [ ] 8.6 Build the Studio checkout-questions editor (Thin) and the Studio provider-knobs panel; verify by hand on the local stack that a required consent blocks payment and that the outage switch reaches psp-a
-- [ ] 8.7 Add RO and EN strings with correct diacritics for every new fan-facing text; verify the i18n check reports no missing keys
-- [ ] 8.8 Write the failover end-to-end flow (A outage on, fan pays, B completes, status page truthful); verify `checkout-failover.spec.ts` and `payment-hosted.spec.ts` pass on the local stack
+- [x] 8.1 Build the checkout inside the locked checkout: server-driven timer, contact, questions and consents, payment choice (in full, instalments, wallet, card, Apple Pay, Google Pay, saved card) with an idempotency key per Pay press; verify `apps/web/tests/e2e/checkout-hold.spec.ts` and `one-tap-payments.spec.ts`
+- [x] 8.2 Build the order status page (2 s refresh, every state, error codes, retry, cancel, resume link with copy); verify `order-status.spec.ts` and `resume-link.spec.ts`
+- [x] 8.3 Build guest checkout and the "Add to my account" claim; verify `guest-checkout.spec.ts`
+- [x] 8.4 Build the instalment option and schedule view; verify `instalment-checkout.spec.ts`
+- [x] 8.5 Build the wallet screens (balance per organiser, top up, history, simulated-money notice) and the stand screen; verify `wallet.spec.ts`
+- [x] 8.6 Build the Studio checkout-questions editor (Thin) and the Studio provider-knobs panel; verify by hand on the local stack that a required consent blocks payment and that the outage switch reaches psp-a (also automated: `checkout-questions.spec.ts`, `checkout-failover.spec.ts`)
+- [x] 8.7 Add RO and EN strings with correct diacritics for every new fan-facing text; verify the i18n check reports no missing keys
+- [x] 8.8 Write the failover end-to-end flow (A outage on, fan pays, B completes, status page truthful); verify `checkout-failover.spec.ts` and `payment-hosted.spec.ts` pass on the local stack
 
 ## 9. Local checks
 

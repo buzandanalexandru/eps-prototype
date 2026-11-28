@@ -2,6 +2,7 @@ package payments_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
@@ -46,5 +47,27 @@ func TestSecondAttemptWhileOneIsOpen(t *testing.T) {
 	}
 	if n := len(r.attempts(t, o.ID)); n != 1 {
 		t.Fatalf("%d attempts", n)
+	}
+}
+
+// Scenario "Challenge failed" (the order's side): a 3-D Secure failure declines the attempt with
+// EPS-PAY-3DS-FAILED and the order is payment_failed with its hold still live.
+func TestChallengeFailedDeclinesTheOrder(t *testing.T) {
+	r := newRig(t)
+	b, o := r.order(t)
+	res, err := r.press(t, b, o, payments.HostedCard, "press-3ds-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.pagePost(t, res.ActionURL, "decline_3ds")
+	got := r.waitState(t, o.ID, checkout.PaymentFailed)
+	if got.LastErrorCode == nil || *got.LastErrorCode != "EPS-PAY-3DS-FAILED" {
+		t.Fatalf("code %v", got.LastErrorCode)
+	}
+	if as := r.attempts(t, o.ID); as[0].State != payments.Declined {
+		t.Fatalf("attempt %s", as[0].State)
+	}
+	if got.HoldExpiresAt.Before(time.Now()) {
+		t.Fatal("hold not live")
 	}
 }
