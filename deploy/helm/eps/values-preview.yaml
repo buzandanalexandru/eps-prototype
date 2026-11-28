@@ -11,4 +11,5 @@ gateway:
   # The deployed e2e suite joins waiting rooms from one runner address.
   queueJoinsPerMinute: 100000
 worker:
+  replicas: 1
   database: { enabled: true, maxConns: 2 }

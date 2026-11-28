@@ -129,3 +129,5 @@ redis:
   resources:
     requests: { cpu: 50m, memory: 64Mi }
     limits: { cpu: 500m, memory: 256Mi }
+  # A block-storage volume for the append-only file (production; previews keep an emptyDir).
+  persistence: { enabled: false, storageClass: do-block-storage, size: 5Gi }

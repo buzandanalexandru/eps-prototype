@@ -63,9 +63,24 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+      {{- if not (and .Values.persistence .Values.persistence.enabled) }}
       volumes:
         - name: data
           emptyDir: {}
+      {{- end }}
+  {{- if and .Values.persistence .Values.persistence.enabled }}
+  # The append-only file on a block-storage volume (step 5 review D-h): it survives a pod being
+  # rescheduled, not only a process restart.
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: Service

@@ -81,3 +81,50 @@ func TestHeadlessAndHostingRanges(t *testing.T) {
 		t.Fatal("hosting ranges or subnets")
 	}
 }
+
+// Review D-e: the address signals do not add up and alone reach at most "risky"; a busy address
+// with any other signal is a suspect; IPv6 counts per /64.
+func TestAddressSignalsDoNotStack(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	sc := env.Scorer
+	key := "eps:{t:e:s}:qf:a"
+	_, _ = sc.Raise(ctx, key, botdefence.ManyPerIP)
+	n, _ := sc.Raise(ctx, key, botdefence.ManyPerSubnet)
+	if n != 25 {
+		t.Fatalf("address and /24 gave %d, want the larger (25)", n)
+	}
+	n, _ = sc.Raise(ctx, key, botdefence.BusyIP)
+	if n != 40 || n >= botdefence.SuspectAt {
+		t.Fatalf("a busy address alone gave %d, want 40 (risky, not suspect)", n)
+	}
+	if n, _ = sc.Add(ctx, key, botdefence.RegularPolling); n < botdefence.SuspectAt {
+		t.Fatalf("a busy address with regular polling gave %d, want suspect", n)
+	}
+	if botdefence.Address("2001:db8:1:2:aaaa::1") != botdefence.Address("2001:db8:1:2:bbbb::9") || botdefence.Address("2001:db8:1:3::1") == botdefence.Address("2001:db8:1:2::1") {
+		t.Fatal("IPv6 places are not counted per /64")
+	}
+	if !botdefence.InDataCentre("2a01:4f8:c0c:1234::1") {
+		t.Fatal("an IPv6 hosting range was missed")
+	}
+}
+
+// Review D-e: polls the server scheduled (even 2 s apart) and a second tab are not fast polling.
+func TestScheduledPollsAndTabsAreNotFast(t *testing.T) {
+	env := onsaletest.Setup(t)
+	ctx := context.Background()
+	key := "eps:{t:e:s}:qf:b"
+	now := int64(1_000_000)
+	for i := 0; i < 30; i++ {
+		gap := int64(1200 + (i%4)*250) // the server's own jittered schedule, under 2 s apart
+		env.Scorer.Told(ctx, key, "-", now+gap)
+		env.Scorer.Told(ctx, key, "other-tab", now+gap+700)
+		now += gap
+		_, _ = env.Scorer.Poll(ctx, key, "-", now)
+		_, _ = env.Scorer.Poll(ctx, key, "other-tab", now+700)
+	}
+	sig, _ := env.Scorer.Signals(ctx, key)
+	if sig["fast"] != 0 || sig["regular"] != 0 {
+		t.Fatalf("scheduled polls scored %v", sig)
+	}
+}
