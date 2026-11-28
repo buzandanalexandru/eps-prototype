@@ -29,7 +29,9 @@ Stored in `control.sale_snapshots (id uuid, organiser_id, event_id, version int,
 { schemaVersion: 1, snapshotId, organiserId, brandId, eventId, version, publishedAt,
   currency, timezone, isSample,
   fee: { policy: absorb|pass_on|split, bps, fixedMinor },
-  event: { name:{ro,en}, startsAt, endsAt, days:[{date, opensAt, closesAt}] },
+  event: { slug, name:{ro,en}, startsAt, endsAt, timezone,
+           venue: { name, address, lat, lng } | null,
+           days:[{date, opens, closes}], lineup:[{date, artist, stage, starts}] },
   rules: { minAge?, consentUnderAge?, maxPerAccount? },
   pools: [ { poolId, name, scope: event|day|slot,
              instances: [ { instanceId, date?, slotStart?, capacity } ] } ],
@@ -43,6 +45,7 @@ Stored in `control.sale_snapshots (id uuid, organiser_id, event_id, version int,
 - Instance ids are deterministic: `<poolId>` (event scope), `<poolId>@<YYYY-MM-DD>` (day), `<poolId>@<YYYY-MM-DDTHH:MM>` (slot, event local time), so step 5's stock counters and step 4's holds can name them before any sale.
 - Money is integer minor units; `allInMinor = faceMinor + fanFeeMinor` always; amounts come from step 1's `feeBreakdown`, so Go never computes fees. Instalment amounts per payment are derived from `allInMinor` by the same `instalmentSchedule` rule (deposit, equal parts, remainder on the last), which step 4 reimplements in Go against the shared vectors file.
 - The document holds no personal data and no draft-only fields.
+- **Renderer contract (decided in step 2's review):** the snapshot carries what step 2's shared renderer shows for an event: its `slug` (the canonical event address), the `venue` with coordinates, the `lineup`, and `days` as `{date, opens, closes}` (local `YYYY-MM-DD` and `HH:MM`). Published shops build `ShopEvent` (exported from `apps/web/src/lib/storefront/catalogue.ts`, the one shared type) from the live snapshot instead of from the draft catalogue; `venue.map` is the stored static map tile (`control.map_tiles`, see step 2) for the venue's coordinates, or null.
 
 ### D3.3 Narrow published-only reads
 `control.live_snapshot(event_id uuid)` and `control.public_storefront(brand_slug text | hostname text)` are `SECURITY DEFINER` functions owned by the migration role, returning only published rows (live storefront version, live snapshots, brand public fields). They are the only cross-organiser reads; `eps_core` and the storefront route get `EXECUTE` on them and nothing else new. After reading, Go scopes any sales write to the snapshot's `organiserId`.
@@ -58,7 +61,9 @@ Stored in `control.sale_snapshots (id uuid, organiser_id, event_id, version int,
 ### D3.6 Rendering and caching
 - Server components render with step 2's shared section renderer; catalogue sections read from the live snapshots (not draft tables) in published mode. Data loads are wrapped with Next.js cache tags `brand:<brandId>` and `event:<eventId>`; publish calls `revalidateTag` for the brand and its events. Pages are rendered on first request and then served from cache until revalidated.
 - The availability island is a small client component that fetches the core's public endpoint (gateway host in later steps) and updates status badges, "only N left" and the picker's limits; HTML never contains live stock, so it can be cached indefinitely.
-- Language and currency: `Intl.NumberFormat` with the shop currency (`552,48 RON` in Romanian, `RON 552.48` in English); dates in the event's time zone.
+- Language and currency: `formatMoney` from `lib/pricing` (`Intl.NumberFormat` `ro-RO` / `en-GB` with the shop currency shown as its code: `552,48 RON` in Romanian, `RON 552.48` in English); dates in the event's time zone.
+- Event pages are addressed by the EVENT's slug (`/e/<event-slug>`); page slugs are for info pages only and never one of `checkout`, `e`, `p`, `assets`, `api`, `s` (step 2's document validation refuses them).
+- Shop pages carry the CSP and framing headers set in step 2 (`src/proxy.ts`): no framing, scripts by nonce, images, fonts and connections from our origin only.
 - Sample organisers' shops show a "Sample data" / "Date de exemplu" banner and `noindex`.
 
 ### D3.7 All-in display rules

@@ -68,7 +68,7 @@ Every price a fan sees in the shop SHALL be the all-in amount they will pay, tak
 
 #### Scenario: Pass on policy
 - **WHEN** GA has face price 539.00 RON with fee policy "pass on"
-- **THEN** the ticket grid, the event's "from" price and the picker all show 552.48 RON, and the product detail adds "includes platform fee of 13.48 RON"
+- **THEN** the ticket grid, the event's "from" price and the picker all show "RON 552.48" in English ("552,48 RON" in Romanian), and the product detail adds "includes platform fee of RON 13.48"
 Test: apps/web/tests/e2e/storefront-prices.spec.ts
 
 #### Scenario: Absorb policy
@@ -78,7 +78,7 @@ Test: apps/web/tests/unit/storefront-prices.test.ts
 
 #### Scenario: "From" price
 - **WHEN** an event has visible products on sale at 552.48, 675.48 and 859.98 RON all-in and a hidden one at 100 RON
-- **THEN** its "from" price is 552.48 RON
+- **THEN** its "from" price is "RON 552.48" in English
 Test: apps/web/tests/unit/storefront-prices.test.ts
 
 ### Requirement: Honest price ladder notes
@@ -94,7 +94,7 @@ Where a product offers instalments, the shop SHALL show the deposit, the number 
 
 #### Scenario: Galaxia GA instalments
 - **WHEN** GA (552.48 RON all-in) offers 10 RON now and up to 7 monthly payments, viewed on 5 Dec 2026
-- **THEN** the shop shows "10.00 RON now + 7 × 77.49 RON" with a note that the last payment is 77.54 RON, totalling 552.48 RON (the number of payments is capped per buyer by the purchase date)
+- **THEN** the shop shows "RON 10.00 now + 7 × RON 77.49" in English with a note that the last payment is RON 77.54, totalling RON 552.48 (the number of payments is capped per buyer by the purchase date)
 Test: apps/web/tests/unit/storefront-prices.test.ts
 
 ### Requirement: Live availability in a cached page

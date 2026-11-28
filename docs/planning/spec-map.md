@@ -71,6 +71,10 @@ docs/                planning, research, deliverables
   - Go reads them only through `control.live_snapshot()`.
   - Pool instance ids are `<poolId>[@date[Ttime]]`. The date is the event's local calendar date: for a day pool the event day; for a slot pool the local date the slot **starts** on, so a slot after midnight (01:00 on the night of 1 Jul) is `<poolId>@<2 Jul>T01:00`. One time grid per slot pool (step 1 readiness rule).
   - Pool scopes: passes, flexible days and add-ons draw on event pools; day pools serve single-day products; slot pools serve time slots only.
+- **Storefront addresses (step 2 review):** home `/s/<brand>/<locale>`, event page `/s/<brand>/<locale>/e/<event-slug>` by the EVENT's slug (event pages store no slug), info page `/s/<brand>/<locale>/<page-slug>`. Reserved page slugs, refused by the document schema: `checkout`, `e`, `p`, `assets`, `api`, `s`.
+- **Shop renderer contract (step 2 review):** `ShopEvent` in `apps/web/src/lib/storefront/catalogue.ts` is the one type catalogue sections render. Step 2 builds it from the draft catalogue (builder, preview links); step 3 builds it from the live snapshot, which therefore carries the event `slug`, `venue` (name, address, coordinates), `lineup` and `days` as `{date, opens, closes}`. Venue maps are static tiles the server stores in `control.map_tiles` (`/assets/maps/<z>/<x>/<y>.png`); a fan's browser never calls a map service.
+- **Money display:** `formatMoney` (`lib/pricing`) is `Intl.NumberFormat` per locale with the currency code: `ro-RO` → `552,48 RON`, `en-GB` → `RON 552.48` (no-break space).
+- **Page security headers:** `X-Frame-Options: DENY` and `frame-ancestors 'none'` everywhere except the builder frame (`SAMEORIGIN` / `'self'`); Studio, preview links and `/s/` shops carry a nonce-based CSP (`src/lib/security-headers.ts`).
 - **Checkout:**
   - Entry route `/s/<brand>/<locale>/checkout?event=&v=&items=productId:qty[:instance]`.
   - Every order records the snapshot `(event, version)`.

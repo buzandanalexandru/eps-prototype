@@ -50,8 +50,18 @@ Test: apps/web/tests/e2e/builder.spec.ts
 - **THEN** it is refused with the reason
 Test: apps/web/tests/unit/storefront-assets.test.ts
 
+#### Scenario: Upload limits and who sees an upload
+- **WHEN** an organiser uploads the same image twice, goes past 200 files or 100 MB, or a user uploads more than 30 images in 10 minutes
+- **THEN** the same image is stored once and the others are refused with the reason; an upload is shown to visitors only while a published version or a valid preview link shows it, and one still used by any version cannot be deleted
+Test: apps/web/tests/unit/storefront-assets.test.ts
+
 ### Requirement: Contrast check with a suggested fix
 The builder SHALL check text and button colour pairs against WCAG 2.2 AA (4.5:1 for text, 3:1 for accents and controls) in every mode the brand uses, show each failing pair with a suggested colour that passes, and MUST block publishing while any pair fails.
+
+#### Scenario: Hero text over an image
+- **WHEN** the text colour passes on the page colour but not over a dark or light hero image
+- **THEN** the pair over the image is reported with a suggested text colour and blocks publishing
+Test: apps/web/tests/unit/storefront-contrast.test.ts
 
 #### Scenario: Failing pair
 - **WHEN** the organiser picks white text on a light yellow primary
@@ -99,6 +109,16 @@ Storefront text SHALL be plain text or a small formatting subset rendered escape
 - **THEN** it is rendered as visible text and nothing executes
 Test: apps/web/tests/unit/storefront-render-safety.test.tsx
 
+#### Scenario: Pages cannot take platform addresses
+- **WHEN** an info page's address is `checkout`, `e`, `p`, `assets`, `api` or `s`, or an event page sets an address of its own
+- **THEN** the save is refused; an event page is always at `/e/<event's address>`
+Test: apps/web/tests/unit/storefront-schema.test.ts
+
+#### Scenario: The shop cannot be framed and loads only from the platform
+- **WHEN** any page except the builder's preview frame is requested
+- **THEN** it refuses framing, and Studio and shop pages carry a content security policy that allows scripts only with the request's nonce and images, fonts and connections only from the platform
+Test: apps/web/tests/unit/security-headers.test.ts
+
 #### Scenario: Dangerous link
 - **WHEN** a hero button links to `javascript:alert(1)` or a `data:` URL
 - **THEN** the save is refused
@@ -111,6 +131,11 @@ Ticket grid, line-up and calendar sections SHALL reference an event and render i
 - **WHEN** the organiser changes a product's face price while the builder is open
 - **THEN** the next preview render shows the new all-in price
 Test: apps/web/tests/unit/storefront-catalogue-binding.test.ts
+
+#### Scenario: Venue map without a map service
+- **WHEN** a map section shows an event whose venue has coordinates
+- **THEN** the map is an image stored by the platform and served from its own address, credited to OpenStreetMap with a link out, and the fan's browser contacts no map service
+Test: apps/web/tests/unit/storefront-maps.test.ts
 
 #### Scenario: Event of another organiser
 - **WHEN** a document references an event id of another organiser
@@ -161,6 +186,11 @@ The organiser SHALL be able to create a private link that shows the current draf
 - **THEN** they see the current draft with the preview banner, and buy buttons say tickets are available after publishing
 Test: apps/web/tests/e2e/builder-publish.spec.ts
 
+#### Scenario: Many links
+- **WHEN** a storefront has 20 active preview links
+- **THEN** a 21st is refused until one is revoked, every active link is listed, and "revoke all" revokes them in one action
+Test: apps/web/tests/unit/preview-links.test.ts
+
 #### Scenario: Revoked or expired
 - **WHEN** the link is revoked or older than its expiry
 - **THEN** it returns not found
@@ -193,6 +223,11 @@ Test: apps/web/tests/unit/storefront-versions.test.ts
 - **WHEN** publish is sent twice for the same draft revision
 - **THEN** exactly one new version is created
 Test: apps/web/tests/unit/storefront-publish.test.ts
+
+#### Scenario: Publish or restore after the draft moved on
+- **WHEN** publish or restore is sent with a draft revision that is no longer the current one
+- **THEN** it is refused as changed elsewhere and nothing is published or overwritten
+Test: apps/web/tests/unit/storefront-versions.test.ts
 
 ### Requirement: Version history and rollback
 The builder SHALL list every published version and restore any of them in one action; a restore MUST publish that version's document as a new version, so history is never rewritten.
