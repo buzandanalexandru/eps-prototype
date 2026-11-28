@@ -71,6 +71,9 @@ type Sharded struct {
 	Redis *redis.Client
 	// Now is the clock (tests); nil means time.Now.
 	Now func() time.Time
+	// LiveOrders says which of these hold ids an order still carries as a live hold (the worker
+	// sets it from Postgres; nil: the shard sweeper leaves held records to the order sweeper).
+	LiveOrders func(ctx context.Context, org, event string, holdIDs []string) (map[string]bool, error)
 }
 
 var (
@@ -112,7 +115,10 @@ func (k keys) k(tag, kind string, rest ...string) string {
 	return key
 }
 
-func (k keys) ready() string                    { return k.k("0", "inv-ready") }
+// ready is the sharded engine's own "loaded" mark (step 5 review D-a): step 4's inv-ready meant the
+// single counters, so after the upgrade the first use rebuilds from Postgres.
+func (k keys) ready() string                    { return k.k("0", "sinv-ready") }
+func (k keys) empty(p string) string            { return k.k("0", "inv-empty", p) }
 func (k keys) shards() string                   { return k.k("0", "inv-shards") }
 func (k keys) insts() string                    { return k.k("0", "inv-insts") }
 func (k keys) meta(p string) string             { return k.k("0", "inv-meta", p) }
@@ -187,24 +193,28 @@ func shardsOf(ds []draw) []int {
 
 // meta is what the event's meta tag knows of one instance.
 type meta struct {
-	Cap  int64
-	N    int
-	Over bool
-	Ok   bool
+	Cap   int64
+	N     int
+	Over  bool
+	Ok    bool
+	Empty bool // a walk found nothing free a moment ago (the free-units hint, review spec L5)
 }
 
 func (s *Sharded) readMeta(ctx context.Context, k keys, parts []string) (bool, []meta, error) {
 	pipe := s.Redis.Pipeline()
 	ready := pipe.Exists(ctx, k.ready())
 	cmds := make([]*redis.SliceCmd, len(parts))
+	empties := make([]*redis.IntCmd, len(parts))
 	for i, p := range parts {
 		cmds[i] = pipe.HMGet(ctx, k.meta(p), "cap", "n", "over")
+		empties[i] = pipe.Exists(ctx, k.empty(p))
 	}
 	if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
 		return false, nil, err
 	}
 	out := make([]meta, len(parts))
 	for i, c := range cmds {
+		out[i].Empty = empties[i].Val() == 1
 		v := c.Val()
 		if len(v) == 3 && v[0] != nil && v[1] != nil {
 			out[i].Cap, _ = strconv.ParseInt(fmt.Sprint(v[0]), 10, 64)
@@ -215,6 +225,9 @@ func (s *Sharded) readMeta(ctx context.Context, k keys, parts []string) (bool, [
 	}
 	return ready.Val() == 1, out, nil
 }
+
+// errDue means a shard has nothing free but lapsed entries waiting for the sweeper.
+var errDue = errors.New("inventory: lapsed entries due")
 
 // errBusy means another core is re-splitting the instance; the caller retries.
 var errBusy = errors.New("inventory: resize in progress")
@@ -234,6 +247,12 @@ func (s *Sharded) resize(ctx context.Context, k keys, instance string, capacity 
 		return errBusy
 	}
 	defer s.Redis.Del(context.WithoutCancel(ctx), lk)
+	// No commit of this instance runs while its shards are re-split (review corr L1).
+	unlock, err := s.mutex(ctx, k.lock("inv-commit", p))
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	m, err := s.Redis.HMGet(ctx, k.meta(p), "cap", "n").Result()
 	if err != nil {
 		return err
@@ -375,6 +394,8 @@ func (s *Sharded) takeShard(ctx context.Context, k keys, i int, p, holdID string
 			continue
 		case -3:
 			return 0, nil // halted by the reconciler: no new holds
+		case -4:
+			return 0, errDue
 		}
 		return got, nil
 	}
@@ -416,23 +437,45 @@ func (s *Sharded) Reserve(ctx context.Context, h checkout.Hold, capacity map[str
 	}
 	for idx, in := range insts {
 		p := part(in)
+		if ms[idx].Empty {
+			undo()
+			return &checkout.ErrShort{Instance: in}
+		}
 		need := h.Draws[in]
 		n := ms[idx].N
 		start := startShard(h.ID, n)
-		for j := 0; j < n && need > 0; j++ {
-			i := (start + j) % n
-			got, err := s.takeShard(ctx, k, i, p, h.ID, need, h.Deadline)
-			if err != nil {
-				undo()
-				return err
+		for round := 0; round < 2 && need > 0; round++ {
+			var due []int
+			for j := 0; j < n && need > 0; j++ {
+				i := (start + j) % n
+				got, err := s.takeShard(ctx, k, i, p, h.ID, need, h.Deadline)
+				if errors.Is(err, errDue) {
+					due = append(due, i)
+					continue
+				}
+				if err != nil {
+					undo()
+					return err
+				}
+				if got > 0 {
+					taken = append(taken, draw{i, p, got})
+					need -= got
+				}
 			}
-			if got > 0 {
-				taken = append(taken, draw{i, p, got})
-				need -= got
+			if need == 0 || len(due) == 0 {
+				break
+			}
+			// Lapse the due entries of those shards now instead of waiting for the sweeper.
+			for _, i := range due {
+				_, _ = s.sweepShard(ctx, k, i, 200)
 			}
 		}
 		if need > 0 {
 			undo()
+			if need == h.Draws[in] {
+				// Nothing at all was free: tell the next holds for a moment (the free-units hint).
+				_ = s.Redis.Set(ctx, k.empty(p), "1", 250*time.Millisecond).Err()
+			}
 			return &checkout.ErrShort{Instance: in}
 		}
 	}
@@ -512,6 +555,11 @@ func (s *Sharded) Commit(ctx context.Context, org, event, holdID string, capacit
 		return nil
 	case "held":
 	default:
+		// Not loaded yet (first use after the upgrade or a Redis loss): the caller rebuilds from
+		// the orders and tries again (review D-a).
+		if n, err := s.Redis.Exists(ctx, k.ready()).Result(); err == nil && n == 0 {
+			return checkout.ErrNotReady
+		}
 		return checkout.ErrNoHold
 	}
 	ds := decodeDraws(fmt.Sprint(st[1]))
@@ -528,20 +576,20 @@ func (s *Sharded) Commit(ctx context.Context, org, event, holdID string, capacit
 	for in := range capacity {
 		ids[part(in)] = in
 	}
+	// Every capped instance is checked against its capacity under its commit lock (review corr L1:
+	// a resize takes the same lock), so nothing ever sells above the capacity.
 	var checked []string
 	for _, p := range insts {
 		in, ok := ids[p]
 		if !ok {
 			continue // not capped (an instance the live version no longer has)
 		}
-		ms, err := s.ensure(ctx, k, []string{in}, capacity)
-		if err != nil {
+		if _, err := s.ensure(ctx, k, []string{in}, capacity); err != nil {
 			return err
 		}
-		if ms[0].Over {
-			checked = append(checked, in)
-		}
+		checked = append(checked, in)
 	}
+	sort.Strings(checked)
 	var unlock []func()
 	defer func() {
 		for _, u := range unlock {
@@ -573,19 +621,30 @@ func (s *Sharded) Commit(ctx context.Context, org, event, holdID string, capacit
 	return nil
 }
 
-// mutex takes a short Redis lock, waiting for it.
+// mutex takes a short Redis lock, waiting for it; the unlock removes only this caller's lock.
 func (s *Sharded) mutex(ctx context.Context, key string) (func(), error) {
-	for try := 0; try < 500; try++ {
-		ok, err := s.Redis.SetNX(ctx, key, "1", 5*time.Second).Result()
+	tok := strconv.FormatInt(time.Now().UnixNano(), 36) + strconv.Itoa(int(fnvString(key)))
+	for try := 0; try < 1000; try++ {
+		ok, err := s.Redis.SetNX(ctx, key, tok, 5*time.Second).Result()
 		if err != nil {
 			return nil, err
 		}
 		if ok {
-			return func() { s.Redis.Del(context.WithoutCancel(ctx), key) }, nil
+			return func() {
+				_ = unlockScript.Run(context.WithoutCancel(ctx), s.Redis, []string{key}, tok).Err()
+			}, nil
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
 	return nil, errors.New("inventory: lock wait too long")
+}
+
+var unlockScript = redis.NewScript(`if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0`)
+
+func fnvString(s string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(s))
+	return h.Sum32()
 }
 
 // sum adds a counter field over every shard of an instance.
@@ -895,8 +954,29 @@ func (s *Sharded) Rebuild(ctx context.Context, org, event string, used, sold map
 		}
 		_ = s.Redis.SAdd(ctx, k.insts(), parts...).Err()
 	}
+	s.dropStep4(ctx, k, insts, holds)
 	s.index(ctx, org, event)
 	return nil
+}
+
+// dropStep4 deletes step 4's single-counter keys of an event once the sharded engine has taken it
+// over from Postgres (review D-a): its counters, its ready mark, its expiry index and the hold
+// hashes of the live holds just rebuilt, so nothing reads them again.
+func (s *Sharded) dropStep4(ctx context.Context, k keys, insts []string, holds []checkout.Hold) {
+	del := []string{k.k("0", "inv-ready"), k.k("0", "holds-exp")}
+	for _, in := range insts {
+		del = append(del, k.k("0", "inv-used", part(in)), k.k("0", "inv-sold", part(in)))
+	}
+	for _, h := range holds {
+		if validHold(h.ID) {
+			del = append(del, k.k("0", "hold", h.ID))
+		}
+	}
+	for len(del) > 0 {
+		n := min(500, len(del))
+		_ = s.Redis.Del(ctx, del[:n]...).Err()
+		del = del[n:]
+	}
 }
 
 // Lock serialises rebuilds of one event across cores.

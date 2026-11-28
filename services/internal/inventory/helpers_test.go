@@ -62,3 +62,5 @@ func (f *fixture) shards(t *testing.T, in string) []inventory.ShardState {
 	}
 	return s
 }
+
+func holdKey(f *fixture, id string) string { return inventory.HoldKey(f.org, f.event, id) }

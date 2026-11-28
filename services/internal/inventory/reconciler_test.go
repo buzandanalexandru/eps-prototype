@@ -120,6 +120,7 @@ func TestReconcilerOversellRisk(t *testing.T) {
 	k, _ := redisx.HotKey(sale.Org, sale.Event, "0", "inv", salestest.PoolArena)
 	_ = env.Redis.HIncrBy(ctx, k, "sold", -10).Err()
 	_ = env.Redis.HIncrBy(ctx, k, "used", -10).Err()
+	dropRecords(t, env, sale) // the old file had none of the paid holds' records either
 	for i := 0; i < 5; i++ {
 		sale.Hold(t, salestest.Buyer(), checkout.Item{ProductID: salestest.ProductGA, Qty: 3})
 	}
@@ -153,12 +154,49 @@ func TestReconcilerRaisesSold(t *testing.T) {
 	k, _ := redisx.HotKey(sale.Org, sale.Event, "0", "inv", salestest.PoolArena)
 	_ = env.Redis.HIncrBy(ctx, k, "sold", -4).Err()
 	_ = env.Redis.HIncrBy(ctx, k, "used", -4).Err()
+	dropRecords(t, env, sale)
 	_, _ = rec.RunOnce(ctx)
 	c, _ := rec.RunOnce(ctx)
 	if len(c) != 1 || c[0].Kind != "sold_raised" || c[0].Delta != 4 {
 		t.Fatalf("corrections %+v", c)
 	}
 	if l := level(t, inv, sale); l.Sold != 4 || l.Free != 96 || l.Halted {
+		t.Fatalf("level %+v", l)
+	}
+}
+
+// dropRecords deletes the event's committed hold records (what a store restarted from an old file
+// has lost along with the counters).
+func dropRecords(t *testing.T, env *salestest.Env, sale *salestest.Sale) {
+	t.Helper()
+	ctx := context.Background()
+	keys, err := env.Redis.Keys(ctx, "eps:{"+sale.Org+":"+sale.Event+":h*}:hold:*").Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range keys {
+		if st, _ := env.Redis.HGet(ctx, k, "state").Result(); st == "committed" {
+			_ = env.Redis.Del(ctx, k).Err()
+		}
+	}
+}
+
+// Review corr L2: a paid order whose hold the store still has as held (its commit not applied yet)
+// is not absorbed as "Postgres ahead": the orphan sweep commits it.
+func TestReconcilerLeavesPendingCommits(t *testing.T) {
+	env, sale, inv, rec := reconEnv(t, 100)
+	ctx := context.Background()
+	o := sale.Hold(t, salestest.Buyer(), checkout.Item{ProductID: salestest.ProductGA, Qty: 3})
+	// Marked paid in Postgres, stock not committed yet (the wallet path commits after its transaction).
+	if _, err := env.Pool.Exec(ctx, "update sales.orders set state = 'paid', paid_at = now() where id = $1", o.ID); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if c, _ := rec.RunOnce(ctx); len(c) != 0 {
+			t.Fatalf("round %d corrected %+v", i, c)
+		}
+	}
+	if l := level(t, inv, sale); l.Sold != 0 || l.Held != 3 {
 		t.Fatalf("level %+v", l)
 	}
 }

@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -312,8 +313,20 @@ func (r *Reconciler) event(ctx context.Context, org, event string) ([]Correction
 				r.record(ctx, c, "allocations set to the capacity")
 			}
 		}
-		// 3. Postgres ahead of the counters: raise sold from free stock, else stop new holds.
-		if d := paid1[in] - sold; d > 0 && r.confirm(key+"/s", d) {
+		// 3. Postgres ahead of the counters: raise sold from free stock, else stop new holds. Only
+		// units of paid orders whose hold the store has lost count (review corr L2): a paid order
+		// whose hold is still held will be committed by the orphan sweep, not absorbed here.
+		d := paid1[in] - sold
+		if d > 0 && r.confirm(key+"/s", d) {
+			lost, err := r.lostUnits(ctx, org, event)
+			if err != nil {
+				return out, err
+			}
+			d = min(d, lost[in])
+		} else {
+			d = 0
+		}
+		if d > 0 {
 			got := int64(0)
 			for _, x := range sh {
 				if got == d {
@@ -423,4 +436,64 @@ func stockGauges(org, event, instance string, sh []ShardState) {
 	metrics.NewGauge("eps_inventory_free"+l, func() float64 { return float64(vals[0].Load()) })
 	metrics.NewGauge("eps_inventory_held"+l, func() float64 { return float64(vals[1].Load()) })
 	metrics.NewGauge("eps_inventory_sold"+l, func() float64 { return float64(vals[2].Load()) })
+}
+
+// lostUnits is, per instance, the units of the event's paid orders whose hold record the store no
+// longer has as committed or held (a Redis loss).
+func (r *Reconciler) lostUnits(ctx context.Context, org, event string) (map[string]int64, error) {
+	type paidOrder struct {
+		ref   string
+		draws map[string]int64
+	}
+	var list []paidOrder
+	err := db.WithTx(ctx, r.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `select hold_ref, draws from sales.orders where event_id = $1 and state in ('paid', 'issued')`, event)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var p paidOrder
+			var b []byte
+			if err := rows.Scan(&p.ref, &b); err != nil {
+				return err
+			}
+			_ = json.Unmarshal(b, &p.draws)
+			list = append(list, p)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]int64{}
+	k, err := r.Inv.keysFor(org, event)
+	if err != nil {
+		return nil, err
+	}
+	for i := 0; i < len(list); i += 1000 {
+		batch := list[i:min(len(list), i+1000)]
+		pipe := r.Inv.Redis.Pipeline()
+		cmds := make([]*redis.StringCmd, len(batch))
+		for j, p := range batch {
+			if validHold(p.ref) {
+				cmds[j] = pipe.HGet(ctx, k.hold(p.ref), "state")
+			}
+		}
+		if _, err := pipe.Exec(ctx); err != nil && !errors.Is(err, redis.Nil) {
+			return nil, err
+		}
+		for j, p := range batch {
+			if cmds[j] == nil {
+				continue
+			}
+			if st := cmds[j].Val(); st == "committed" || st == "held" || st == "reserving" {
+				continue
+			}
+			for in, q := range p.draws {
+				out[in] += q
+			}
+		}
+	}
+	return out, nil
 }

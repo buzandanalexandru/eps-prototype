@@ -9,14 +9,20 @@ import "github.com/redis/go-redis/v9"
 // shardReserve takes up to ARGV[1] units of one instance on one shard.
 // KEYS: counter hash, the hold's entry on this shard, the shard's expiry index.
 // ARGV: need, deadline ms, hold id, instance part, now ms.
-// Returns the units taken, or -1 not loaded, -2 frozen (a resize is running), -3 halted.
+// Returns the units taken, or -1 not loaded, -2 frozen (a resize is running), -3 halted, -4 none
+// free but lapsed entries are due.
 var shardReserve = redis.NewScript(`
 local alloc = redis.call('HGET', KEYS[1], 'alloc')
 if not alloc then return -1 end
 if redis.call('HGET', KEYS[1], 'halt') == '1' then return -3 end
 if tonumber(redis.call('HGET', KEYS[1], 'frz') or '0') > tonumber(ARGV[5]) then return -2 end
 local free = tonumber(alloc) - tonumber(redis.call('HGET', KEYS[1], 'used') or '0')
-if free <= 0 then return 0 end
+if free <= 0 then
+  -- Nothing free: say so, and whether entries past their deadline wait for the sweeper (the
+  -- caller lapses them at once and tries again: review spec M6).
+  if #redis.call('ZRANGEBYSCORE', KEYS[3], '-inf', ARGV[5], 'LIMIT', 0, 1) > 0 then return -4 end
+  return 0
+end
 local take = math.min(free, tonumber(ARGV[1]))
 redis.call('HINCRBY', KEYS[1], 'used', take)
 redis.call('HINCRBY', KEYS[2], ARGV[4], take)

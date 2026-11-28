@@ -71,7 +71,9 @@ gateway:
 
 worker:
   enabled: true
-  replicas: 1
+  # Two replicas: the singleton loops run on the holder of the worker lease, the other is a hot
+  # standby; the order-event consumers run on both (step 5 review).
+  replicas: 2
   # The reconciler and instalment runner call the providers; the worker builds the same checkout
   # service as the core, which requires the order-link key outside dev (no webhook keys needed).
   paymentSecrets: [ORDER_LINK_KEY, PSP_API_KEY]

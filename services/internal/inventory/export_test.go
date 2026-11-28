@@ -31,3 +31,6 @@ func (s *Sharded) ReservePartial(ctx context.Context, h checkout.Hold, deadline 
 	s.index(ctx, h.OrganiserID, h.EventID)
 	return nil
 }
+
+// HoldKey names a hold's record (tests).
+func HoldKey(org, event, holdID string) string { return keys{org, event}.hold(holdID) }

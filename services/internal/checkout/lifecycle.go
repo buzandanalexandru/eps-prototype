@@ -255,6 +255,14 @@ func (s *Service) takeStock(ctx context.Context, o *Order, ref string) (string, 
 		return "", err
 	}
 	err = s.Inv.Commit(ctx, o.OrganiserID, o.EventID, o.HoldRef, caps)
+	if errors.Is(err, ErrNotReady) {
+		// The counters are not loaded (first use after an upgrade or a Redis loss): load them from
+		// the orders, which carry this hold, and commit it (step 5 review D-a).
+		if err := s.Rebuild(ctx, o.OrganiserID, o.EventID); err != nil {
+			return "", err
+		}
+		err = s.Inv.Commit(ctx, o.OrganiserID, o.EventID, o.HoldRef, caps)
+	}
 	if !errors.Is(err, ErrNoHold) {
 		return o.HoldRef, err
 	}
@@ -481,4 +489,26 @@ func capLedgerTx(ctx context.Context, tx pgx.Tx, o *Order) error {
 	_, err := tx.Exec(ctx, `insert into sales.cap_ledger (organiser_id, event_id, identity_hash, order_id, tickets) values ($1, $2, $3, $4, $5)
 		on conflict (organiser_id, order_id) do nothing`, o.OrganiserID, o.EventID, *o.CapIdentity, o.ID, *o.CapTickets)
 	return err
+}
+
+// LiveHoldRefs says which of these inventory holds an order of the event still carries as a live
+// hold (step 5: the shard sweeper lapses the others).
+func (s *Service) LiveHoldRefs(ctx context.Context, org, eventID string, refs []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `select hold_ref from sales.orders where event_id = $1 and hold_ref = any($2) and state = any($3)`, eventID, refs, LiveStates)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r string
+			if err := rows.Scan(&r); err != nil {
+				return err
+			}
+			out[r] = true
+		}
+		return rows.Err()
+	})
+	return out, err
 }

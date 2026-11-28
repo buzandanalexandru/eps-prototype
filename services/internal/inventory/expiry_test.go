@@ -67,3 +67,48 @@ func TestSweeperFollowsTheRecord(t *testing.T) {
 		t.Fatalf("an extended hold was swept: %+v", l)
 	}
 }
+
+// Review corr L3: a held record well past its deadline whose order does not exist (a core stopped
+// between taking stock and recording the order) lapses in the shard sweeper within seconds.
+func TestHeldRecordWithoutOrderLapses(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	clock := time.Now()
+	f.inv.Now = func() time.Time { return clock }
+	f.inv.LiveOrders = func(context.Context, string, string, []string) (map[string]bool, error) { return map[string]bool{}, nil }
+	if err := f.inv.Reserve(ctx, f.hold("no-order", map[string]int64{"arena": 4}, time.Second), map[string]int64{"arena": 100}); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(3 * time.Second)
+	(&inventory.ShardSweeper{Inv: f.inv}).RunOnce(ctx)
+	if l := f.level(t, "arena"); l.Held != 4 {
+		t.Fatalf("lapsed too early: %+v", l)
+	}
+	clock = clock.Add(10 * time.Second)
+	(&inventory.ShardSweeper{Inv: f.inv}).RunOnce(ctx)
+	if l := f.level(t, "arena"); l.Held != 0 || l.Free != 100 {
+		t.Fatalf("not lapsed: %+v", l)
+	}
+}
+
+// Review spec M6: a hold that finds no free stock but a lapsed entry lapses it at once instead of
+// waiting for the sweeper.
+func TestReserveLapsesDueEntries(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	caps := map[string]int64{"arena": 5}
+	if err := f.inv.Reserve(ctx, f.hold("old", map[string]int64{"arena": 5}, 100*time.Millisecond), caps); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.inv.ReleaseMany(ctx, f.org, f.event, nil); err != nil {
+		t.Fatal(err)
+	}
+	// The order ended (its record released) but the shard step was cut short.
+	if _, err := f.rdb.Eval(ctx, `return redis.call('HSET', KEYS[1], 'state', 'released')`, []string{holdKey(f, "old")}).Result(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if err := f.inv.Reserve(ctx, f.hold("new", map[string]int64{"arena": 5}, time.Minute), caps); err != nil {
+		t.Fatalf("the lapsed entry was not reused: %v", err)
+	}
+}
