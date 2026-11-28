@@ -16,9 +16,11 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for HealthStatus.
@@ -84,6 +86,30 @@ func (e IdentityRole) Valid() bool {
 	}
 }
 
+// Defines values for ProductAvailabilityStatus.
+const (
+	Ended   ProductAvailabilityStatus = "ended"
+	NotYet  ProductAvailabilityStatus = "not_yet"
+	OnSale  ProductAvailabilityStatus = "on_sale"
+	SoldOut ProductAvailabilityStatus = "sold_out"
+)
+
+// Valid indicates whether the value is a known member of the ProductAvailabilityStatus enum.
+func (e ProductAvailabilityStatus) Valid() bool {
+	switch e {
+	case Ended:
+		return true
+	case NotYet:
+		return true
+	case OnSale:
+		return true
+	case SoldOut:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessStatus.
 const (
 	NotReady ReadinessStatus = "not_ready"
@@ -100,6 +126,23 @@ func (e ReadinessStatus) Valid() bool {
 	default:
 		return false
 	}
+}
+
+// Activation defines model for Activation.
+type Activation struct {
+	EventId openapi_types.UUID `json:"eventId"`
+	Sha256  string             `json:"sha256"`
+	Version int                `json:"version"`
+}
+
+// Availability defines model for Availability.
+type Availability struct {
+	EventId     openapi_types.UUID    `json:"eventId"`
+	GeneratedAt time.Time             `json:"generatedAt"`
+	Products    []ProductAvailability `json:"products"`
+
+	// Version The live snapshot version the answer comes from.
+	Version int `json:"version"`
 }
 
 // Check defines model for Check.
@@ -145,6 +188,18 @@ type IdentityKind string
 // IdentityRole The exact membership role (organiser tokens only).
 type IdentityRole string
 
+// PoolUsage defines model for PoolUsage.
+type PoolUsage struct {
+	EventId   openapi_types.UUID `json:"eventId"`
+	Instances []struct {
+		// InstanceId `<poolId>`, `<poolId>@<date>` or `<poolId>@<date>T<HH:MM>`.
+		InstanceId string `json:"instanceId"`
+
+		// Used Units sold plus held.
+		Used int64 `json:"used"`
+	} `json:"instances"`
+}
+
 // Problem defines model for Problem.
 type Problem struct {
 	// Code Stable machine-readable error code, e.g. `unauthenticated`, `invalid_request`, `not_found`.
@@ -158,6 +213,24 @@ type Problem struct {
 	// Type A URI reference identifying the problem type.
 	Type string `json:"type"`
 }
+
+// ProductAvailability defines model for ProductAvailability.
+type ProductAvailability struct {
+	// AllInMinor What the fan pays for one unit now, in minor units.
+	AllInMinor int64 `json:"allInMinor"`
+
+	// OpensAt When sales open (status not_yet).
+	OpensAt        *time.Time         `json:"opensAt,omitempty"`
+	PriceStepIndex int                `json:"priceStepIndex"`
+	ProductId      openapi_types.UUID `json:"productId"`
+
+	// Remaining Present only when few are left (at most 50, or at most 5% of capacity).
+	Remaining *int64                    `json:"remaining,omitempty"`
+	Status    ProductAvailabilityStatus `json:"status"`
+}
+
+// ProductAvailabilityStatus defines model for ProductAvailability.Status.
+type ProductAvailabilityStatus string
 
 // Readiness defines model for Readiness.
 type Readiness struct {
@@ -185,6 +258,9 @@ type Version struct {
 	Service string `json:"service"`
 }
 
+// EventId defines model for EventId.
+type EventId = openapi_types.UUID
+
 // GetReadyzParams defines parameters for GetReadyz.
 type GetReadyzParams struct {
 	// Verbose Include every check, not only the failing ones.
@@ -199,6 +275,15 @@ type ServerInterface interface {
 	// GetReadyz Readiness
 	// (GET /readyz)
 	GetReadyz(w http.ResponseWriter, r *http.Request, params GetReadyzParams)
+	// GetPoolUsage Units sold or held per pool instance
+	// (GET /v1/organiser/events/{eventId}/pool-usage)
+	GetPoolUsage(w http.ResponseWriter, r *http.Request, eventId EventId)
+	// ActivateSnapshot Make a published snapshot version the one the core serves
+	// (POST /v1/organiser/events/{eventId}/snapshots/{version}/activate)
+	ActivateSnapshot(w http.ResponseWriter, r *http.Request, eventId EventId, version int)
+	// GetAvailability Public availability of an event's products
+	// (GET /v1/public/events/{eventId}/availability)
+	GetAvailability(w http.ResponseWriter, r *http.Request, eventId EventId)
 	// GetVersion Build and schema version of this service
 	// (GET /v1/version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
@@ -254,6 +339,93 @@ func (siw *ServerInterfaceWrapper) GetReadyz(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadyz(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPoolUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetPoolUsage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPoolUsage(w, r, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ActivateSnapshot operation middleware
+func (siw *ServerInterfaceWrapper) ActivateSnapshot(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "version" -------------
+	var version int
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ActivateSnapshot(w, r, eventId, version)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAvailability operation middleware
+func (siw *ServerInterfaceWrapper) GetAvailability(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAvailability(w, r, eventId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -415,6 +587,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadyz)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/version", wrapper.GetVersion)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/whoami", wrapper.GetWhoami)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/events/{eventId}/snapshots/{version}/activate", wrapper.ActivateSnapshot)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/organiser/events/{eventId}/pool-usage", wrapper.GetPoolUsage)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/public/events/{eventId}/availability", wrapper.GetAvailability)
 
 	return m
 }
@@ -484,6 +659,244 @@ type GetReadyzdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response GetReadyzdefaultApplicationProblemPlusJSONResponse) VisitGetReadyzResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPoolUsageRequestObject struct {
+	EventId EventId `json:"eventId"`
+}
+
+type GetPoolUsageResponseObject interface {
+	VisitGetPoolUsageResponse(w http.ResponseWriter) error
+}
+
+type GetPoolUsage200JSONResponse PoolUsage
+
+func (response GetPoolUsage200JSONResponse) VisitGetPoolUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPoolUsage401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetPoolUsage401ApplicationProblemPlusJSONResponse) VisitGetPoolUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.ProblemApplicationProblemPlusJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPoolUsage403ApplicationProblemPlusJSONResponse Problem
+
+func (response GetPoolUsage403ApplicationProblemPlusJSONResponse) VisitGetPoolUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPoolUsage404ApplicationProblemPlusJSONResponse Problem
+
+func (response GetPoolUsage404ApplicationProblemPlusJSONResponse) VisitGetPoolUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPoolUsagedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetPoolUsagedefaultApplicationProblemPlusJSONResponse) VisitGetPoolUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateSnapshotRequestObject struct {
+	EventId EventId `json:"eventId"`
+	Version int     `json:"version"`
+}
+
+type ActivateSnapshotResponseObject interface {
+	VisitActivateSnapshotResponse(w http.ResponseWriter) error
+}
+
+type ActivateSnapshot200JSONResponse Activation
+
+func (response ActivateSnapshot200JSONResponse) VisitActivateSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateSnapshot401ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response ActivateSnapshot401ApplicationProblemPlusJSONResponse) VisitActivateSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.ProblemApplicationProblemPlusJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateSnapshot403ApplicationProblemPlusJSONResponse Problem
+
+func (response ActivateSnapshot403ApplicationProblemPlusJSONResponse) VisitActivateSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateSnapshot404ApplicationProblemPlusJSONResponse Problem
+
+func (response ActivateSnapshot404ApplicationProblemPlusJSONResponse) VisitActivateSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ActivateSnapshotdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ActivateSnapshotdefaultApplicationProblemPlusJSONResponse) VisitActivateSnapshotResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAvailabilityRequestObject struct {
+	EventId EventId `json:"eventId"`
+}
+
+type GetAvailabilityResponseObject interface {
+	VisitGetAvailabilityResponse(w http.ResponseWriter) error
+}
+
+type GetAvailability200ResponseHeaders struct {
+	CacheControl *string
+}
+
+type GetAvailability200JSONResponse struct {
+	Body    Availability
+	Headers GetAvailability200ResponseHeaders
+}
+
+func (response GetAvailability200JSONResponse) VisitGetAvailabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if response.Headers.CacheControl != nil {
+		{
+			v, err := runtime.StyleParamWithOptions("simple", false, "Cache-Control", *response.Headers.CacheControl, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return fmt.Errorf("error styling response header Cache-Control: %w", err)
+			}
+			w.Header().Set("Cache-Control", v)
+		}
+	}
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAvailability404ApplicationProblemPlusJSONResponse struct {
+	ProblemApplicationProblemPlusJSONResponse
+}
+
+func (response GetAvailability404ApplicationProblemPlusJSONResponse) VisitGetAvailabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.ProblemApplicationProblemPlusJSONResponse); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetAvailabilitydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetAvailabilitydefaultApplicationProblemPlusJSONResponse) VisitGetAvailabilityResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -595,6 +1008,15 @@ type StrictServerInterface interface {
 	// GetReadyz Readiness
 	// (GET /readyz)
 	GetReadyz(ctx context.Context, request GetReadyzRequestObject) (GetReadyzResponseObject, error)
+	// GetPoolUsage Units sold or held per pool instance
+	// (GET /v1/organiser/events/{eventId}/pool-usage)
+	GetPoolUsage(ctx context.Context, request GetPoolUsageRequestObject) (GetPoolUsageResponseObject, error)
+	// ActivateSnapshot Make a published snapshot version the one the core serves
+	// (POST /v1/organiser/events/{eventId}/snapshots/{version}/activate)
+	ActivateSnapshot(ctx context.Context, request ActivateSnapshotRequestObject) (ActivateSnapshotResponseObject, error)
+	// GetAvailability Public availability of an event's products
+	// (GET /v1/public/events/{eventId}/availability)
+	GetAvailability(ctx context.Context, request GetAvailabilityRequestObject) (GetAvailabilityResponseObject, error)
 	// GetVersion Build and schema version of this service
 	// (GET /v1/version)
 	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
@@ -695,6 +1117,85 @@ func (sh *strictHandler) GetReadyz(w http.ResponseWriter, r *http.Request, param
 	}
 }
 
+// GetPoolUsage operation middleware
+func (sh *strictHandler) GetPoolUsage(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request GetPoolUsageRequestObject
+
+	request.EventId = eventId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetPoolUsage(ctx, request.(GetPoolUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPoolUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPoolUsageResponseObject); ok {
+		if err := validResponse.VisitGetPoolUsageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ActivateSnapshot operation middleware
+func (sh *strictHandler) ActivateSnapshot(w http.ResponseWriter, r *http.Request, eventId EventId, version int) {
+	var request ActivateSnapshotRequestObject
+
+	request.EventId = eventId
+	request.Version = version
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.ActivateSnapshot(ctx, request.(ActivateSnapshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ActivateSnapshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ActivateSnapshotResponseObject); ok {
+		if err := validResponse.VisitActivateSnapshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetAvailability operation middleware
+func (sh *strictHandler) GetAvailability(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request GetAvailabilityRequestObject
+
+	request.EventId = eventId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetAvailability(ctx, request.(GetAvailabilityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAvailability")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetAvailabilityResponseObject); ok {
+		if err := validResponse.VisitGetAvailabilityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetVersion operation middleware
 func (sh *strictHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	var request GetVersionRequestObject
@@ -748,35 +1249,52 @@ func (sh *strictHandler) GetWhoami(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"fBlsur+9/08AAAD//w==",
+	"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",
+	"Ru+GfDl6GULC3fu7/wQAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

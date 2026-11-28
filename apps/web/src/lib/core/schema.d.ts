@@ -81,6 +81,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/organiser/events/{eventId}/snapshots/{version}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a published snapshot version the one the core serves
+         * @description Called by the control plane right after a publish commits (design D3.1, D3.4). The core loads
+         *     the version through the published-only read, checks its hash, caches it and replies with the
+         *     hash. Organiser tokens only; an event of another organiser (or an unknown version) is 404.
+         */
+        post: operations["activateSnapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/events/{eventId}/pool-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Units sold or held per pool instance
+         * @description The publish gate (design D3.1): units sold plus held per pool instance, from the sales schema.
+         *     Until step 4 creates the sales tables, every instance is unused and the list is empty.
+         *     Only instances with usage are listed. Organiser tokens only; another organiser's event is 404.
+         */
+        get: operations["getPoolUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/public/events/{eventId}/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public availability of an event's products
+         * @description Per visible product of the live snapshot: its sale status, the current price step and its
+         *     all-in amount, and the remaining quantity only when at most 50 or 5% of capacity remain
+         *     (design D3.4). Cached 2 seconds; no token needed. 404 when the event has no live snapshot.
+         */
+        get: operations["getAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -135,6 +201,56 @@ export interface components {
             /** Format: int64 */
             exp: number;
         };
+        Activation: {
+            /** Format: uuid */
+            eventId: string;
+            version: number;
+            sha256: string;
+        };
+        PoolUsage: {
+            /** Format: uuid */
+            eventId: string;
+            instances: {
+                /** @description `<poolId>`, `<poolId>@<date>` or `<poolId>@<date>T<HH:MM>`. */
+                instanceId: string;
+                /**
+                 * Format: int64
+                 * @description Units sold plus held.
+                 */
+                used: number;
+            }[];
+        };
+        ProductAvailability: {
+            /** Format: uuid */
+            productId: string;
+            /** @enum {string} */
+            status: "on_sale" | "not_yet" | "ended" | "sold_out";
+            /**
+             * Format: date-time
+             * @description When sales open (status not_yet).
+             */
+            opensAt?: string;
+            priceStepIndex: number;
+            /**
+             * Format: int64
+             * @description What the fan pays for one unit now, in minor units.
+             */
+            allInMinor: number;
+            /**
+             * Format: int64
+             * @description Present only when few are left (at most 50, or at most 5% of capacity).
+             */
+            remaining?: number;
+        };
+        Availability: {
+            /** Format: uuid */
+            eventId: string;
+            /** @description The live snapshot version the answer comes from. */
+            version: number;
+            /** Format: date-time */
+            generatedAt: string;
+            products: components["schemas"]["ProductAvailability"][];
+        };
         Problem: {
             /** @description A URI reference identifying the problem type. */
             type: string;
@@ -158,7 +274,9 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        EventId: string;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -258,6 +376,84 @@ export interface operations {
                 };
             };
             401: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    activateSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The version is live in the core. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Activation"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getPoolUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Usage per pool instance. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PoolUsage"];
+                };
+            };
+            401: components["responses"]["Problem"];
+            403: components["responses"]["Problem"];
+            404: components["responses"]["Problem"];
+            default: components["responses"]["Problem"];
+        };
+    };
+    getAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability. */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Availability"];
+                };
+            };
+            404: components["responses"]["Problem"];
             default: components["responses"]["Problem"];
         };
     };

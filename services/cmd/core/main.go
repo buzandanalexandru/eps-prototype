@@ -14,6 +14,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 )
 
 func main() {
@@ -27,9 +28,18 @@ func main() {
 		log.Error("embedded migrations unreadable", "error", err.Error())
 		os.Exit(1)
 	}
+	var snaps *snapshot.Store
+	var avail *snapshot.AvailabilityService
+	if pool != nil {
+		snaps = snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{})
+		avail = &snapshot.AvailabilityService{Store: snaps, Usage: snapshot.NoUsage{}, Redis: rdb}
+	}
 	srv := &coreapi.Server{
-		Service: "core",
-		Pool:    pool,
+		Snapshots:    snaps,
+		Availability: avail,
+		Usage:        snapshot.NoUsage{},
+		Service:      "core",
+		Pool:         pool,
 		Checks: []health.Checker{
 			health.Postgres(pool),
 			health.Redis(rdb),
