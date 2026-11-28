@@ -4,7 +4,7 @@ Agreed in the planning session on 27 Nov 2026 (OpenSpec explore mode), from two 
 This is a planning record. The OpenSpec specs and changes will be written from it after the architecture decisions.
 
 ## Decisions so far
-1. **Demo structure:** three acts with the builder as the spine. Act 1: an organiser builds and publishes a branded shop. Act 2: a live on-sale with 100k simulated fans, bots and a failing payment provider. Act 3: squad buy and trip wallet. The last 30 seconds cover the architecture.
+1. **Demo structure:** three acts with the builder as the spine. Act 1: an organiser builds and publishes a branded shop. Act 2: a live on-sale rehearsal with capped simulated fans (at most 5,000 in production, 2,000 on previews), bots and a failing payment provider; 100k fans appear only as arithmetic from measured rates (owner decision, 28 Nov 2026). Act 3: squad buy and trip wallet. The last 30 seconds cover the architecture.
 2. **Timing:** the 48-hour clock has not started; planning happens before it.
 3. **Extras planned in:** AI copilot (H1), Kubernetes + Helm (I2), k6 load test (I3), face-value resale (F6).
 4. **Merges:** the prepaid wallet and cashless balance become one **EPS Wallet** (D12); influencer codes and referral links become one **Influencer & Promoter Hub** (C6).
@@ -88,7 +88,7 @@ Totals: **70 features: 46 Real, 23 Thin, 1 Vision.** No real payments: every pay
 | E4 | Admission rate dial | Real | Act 2 | The rate at which fans leave the queue for checkout can be changed live to match checkout capacity. |  |
 | E5 | Silent bot scoring | Real | Act 2 | Suspicious traffic is scored and quietly sent to the back after the shuffle, so bots can't learn and adapt. |  |
 | E6 | Caps per person | Real | Act 2 | Limits per account or verified identity across all sale moments. |  |
-| E7 | On-sale simulator | Real | Act 2 | A control panel that sends 100,000 simulated fans, a share of bots and a provider outage at the shop. |  |
+| E7 | On-sale simulator | Real | Act 2 | A control panel that sends a capped run of simulated fans (at most 5,000 in production, 2,000 on previews), a share of bots and a provider outage at a rehearsal copy of a sale; runs are refused while a real sale has fans waiting. The 100,000-fan figure is shown only as arithmetic from measured rates, with its assumptions. | Owner decision 28 Nov 2026 ("cap + honest maths"); step 12 measures the cluster with k6. |
 | E8 | Live on-sale dashboard | Real | Act 2 | Queue length, fans admitted per minute, tickets sold, payment failures and failovers, bots caught, stock left. |  |
 | E9 | Pre-registration and lottery sale | Thin | Act 2 | Fans register weeks before; tickets are allocated by draw instead of a race. | Thin means: A registration form and a draw button; winners get access codes. |
 | E10 | Waitlist that fills itself | Thin | Act 2 | Fans pre-authorise a card; returned or resold tickets go automatically to the next person on the list. | Thin means: Join the waitlist; a returned ticket goes to the first person. |

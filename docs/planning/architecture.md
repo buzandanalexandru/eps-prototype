@@ -219,11 +219,11 @@ Deploy, observe, test, simulate.
 
 ### R3 · Simulator sends real traffic
 
-**Decision:** The simulator runs as a Kubernetes job that drives virtual fans and bots through the real gateway and checkout over HTTP, with knobs for fan count, bot share and provider outage. It does not fake the counters.
+**Decision:** The simulator runs as a long-lived Deployment in each environment that drives simulated fans and bots through the real gateway and checkout over HTTP, against a rehearsal copy of a sale, with knobs for fan count, bot share and provider outage. It does not fake the counters. Runs are capped (at most 5,000 simulated fans in production, 2,000 on previews, 1,500 requests a second), one at a time on the whole cluster (a Kubernetes Lease), and refused while a real sale has fans waiting. A figure for 100,000 fans is shown only as arithmetic from the measured rates, with its assumptions; step 12 measures the cluster's throughput with k6. (Owner decision, 28 Nov 2026: "cap + honest maths".)
 
-**Alternatives considered:** Counters animated in the browser.
+**Alternatives considered:** Counters animated in the browser; a 100,000-fan run on the shared demo cluster.
 
-**Why:** The dashboard shows the real system under load, so the demo is honest.
+**Why:** The dashboard shows the real system under load, so the demo is honest, and a capped run cannot take down the cluster every environment shares.
 
 ### R4 · Tests
 
