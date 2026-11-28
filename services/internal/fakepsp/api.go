@@ -219,6 +219,12 @@ func (p *Provider) findByKey(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_request")
 		return
 	}
+	// The merchant's outage applies to lookups too (a provider that is down answers nothing).
+	if m := r.URL.Query().Get("merchant"); m != "" {
+		if _, ok := p.gate(w, r, m); !ok {
+			return
+		}
+	}
 	s, err := p.byKey(r.Context(), key)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "store")
@@ -226,9 +232,6 @@ func (p *Provider) findByKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if s == nil {
 		writeErr(w, http.StatusNotFound, "no_such_charge")
-		return
-	}
-	if _, ok := p.gate(w, r, s.Merchant); !ok {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, s.public())

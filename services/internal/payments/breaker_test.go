@@ -90,22 +90,57 @@ func TestBreakerRecovers(t *testing.T) {
 	if allowed != payments.Probes {
 		t.Fatalf("%d probes allowed, want %d", allowed, payments.Probes)
 	}
-	// One probe fails: open again, for 30 s.
+	// One failed probe is tolerated (4 of 5 may still succeed); a second reopens it for 30 s.
+	br.Record(ctx, org, "a", false)
+	if st := br.Read(ctx, org, "a"); st.State != payments.HalfOpen {
+		t.Fatalf("after one failed probe: %+v", st)
+	}
 	br.Record(ctx, org, "a", false)
 	if st := br.Read(ctx, org, "a"); st.State != payments.Open || st.OpenFor != 30 {
 		t.Fatalf("after a failed probe: %+v", st)
 	}
 	c.t = c.t.Add(31 * time.Second)
-	for i := 0; i < 4; i++ {
+	// Scenario: 4 of 5 probes succeed (one fails) and the breaker closes.
+	for i, ok := range []bool{true, false, true, true, true} {
 		if !br.Allow(ctx, org, "a") {
-			t.Fatal("probe refused")
+			t.Fatalf("probe %d refused", i+1)
 		}
-		br.Record(ctx, org, "a", true)
+		br.Record(ctx, org, "a", ok)
 	}
 	if st := br.Read(ctx, org, "a"); st.State != payments.Closed {
 		t.Fatalf("after 4 successful probes: %s", st.State)
 	}
 	if !br.Allow(ctx, org, "a") {
 		t.Fatal("A does not take attempts again")
+	}
+}
+
+// Review H2 (reported by the correctness review): probe slots handed out but never used (no call
+// followed) do not keep the breaker refusing for ever.
+func TestBreakerUnusedProbesAreGivenOutAgain(t *testing.T) {
+	env := salestest.Setup(t)
+	ctx := context.Background()
+	c := &clock{t: time.Now()}
+	b := &payments.Breaker{Redis: env.Redis, Now: c.now}
+	org := "44444444-4444-4444-8444-444444444444"
+	for i := 0; i < 5; i++ {
+		b.Record(ctx, org, "a", false)
+	}
+	c.t = c.t.Add(16 * time.Second)
+	for i := 0; i < 5; i++ {
+		_ = b.Allow(ctx, org, "a")
+	}
+	if b.Allow(ctx, org, "a") {
+		t.Fatal("a sixth probe at once")
+	}
+	c.t = c.t.Add(10 * time.Minute)
+	if !b.Allow(ctx, org, "a") {
+		t.Fatalf("10 minutes later the breaker is %s and still refuses every call", b.Read(ctx, org, "a").State)
+	}
+	// Read changes nothing.
+	before := b.Read(ctx, org, "a")
+	_ = b.Read(ctx, org, "a")
+	if after := b.Read(ctx, org, "a"); after.State != before.State {
+		t.Fatal("Read changed the state")
 	}
 }

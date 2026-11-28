@@ -112,10 +112,11 @@ type Plan struct {
 // only once the deposit succeeds and the plan is active).
 func CreatePlanTx(ctx context.Context, tx pgx.Tx, o *Order, offer *Offer) (string, error) {
 	var id string
-	if _, err := tx.Exec(ctx, `delete from sales.instalment_parts where plan_id in (select id from sales.instalment_plans where order_id = $1 and state = 'pending')`, o.ID); err != nil {
+	// A pending or cancelled plan of the order (never charged) makes way for the new one.
+	if _, err := tx.Exec(ctx, `delete from sales.instalment_parts where plan_id in (select id from sales.instalment_plans where order_id = $1 and state in ('pending', 'cancelled'))`, o.ID); err != nil {
 		return "", err
 	}
-	if _, err := tx.Exec(ctx, `delete from sales.instalment_plans where order_id = $1 and state = 'pending'`, o.ID); err != nil {
+	if _, err := tx.Exec(ctx, `delete from sales.instalment_plans where order_id = $1 and state in ('pending', 'cancelled')`, o.ID); err != nil {
 		return "", err
 	}
 	tz := offer.Timezone

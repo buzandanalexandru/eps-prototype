@@ -128,15 +128,25 @@ func (h *Webhooks) Apply(ctx context.Context, provider string, ev webhookBody) e
 	if a.Provider != provider || a.ProviderKey != ev.Charge.IdempotencyKey {
 		return errors.New("webhook for another provider or charge")
 	}
-	// The event id is recorded first, in a transaction that stays open while the webhook is
-	// applied (review H1): a duplicate delivered meanwhile waits on the unique key and then has no
-	// effect; a failure rolls the record back so the provider's retry is applied.
-	return db.WithTx(ctx, h.Svc.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+	// The event id is recorded first (review H1): a duplicate delivered meanwhile finds it and has
+	// no effect. If applying fails, the record is removed again, so the provider's retry (it got
+	// an error answer) is applied. Separate short transactions keep a burst of webhooks from
+	// holding two pool connections each.
+	var fresh bool
+	err = db.WithTx(ctx, h.Svc.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, "insert into sales.webhook_events (organiser_id, provider, event_id) values ($1, $2, $3) on conflict do nothing", org, provider, ev.ID)
-		if err != nil || tag.RowsAffected() == 0 {
-			return err
-		}
-		return h.Svc.Apply(ctx, org, attemptID, ev.Charge)
+		fresh = err == nil && tag.RowsAffected() == 1
+		return err
 	})
-}
+	if err != nil || !fresh {
+		return err
+	}
+	if err := h.Svc.Apply(ctx, org, attemptID, ev.Charge); err != nil {
+		_ = db.WithTx(context.WithoutCancel(ctx), h.Svc.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+			_, e := tx.Exec(ctx, "delete from sales.webhook_events where provider = $1 and event_id = $2", provider, ev.ID)
+			return e
+		})
+		return err
+	}
+	return nil
 }

@@ -6,8 +6,10 @@ import (
 	"testing"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/apperr"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/fakepsp"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/salestest"
 )
 
 // Scenario "Double click on Pay": the provider records one charge and both answers show the same attempt.
@@ -80,10 +82,10 @@ func TestReusedKeyDifferentAmount(t *testing.T) {
 	if _, err := r.press(t, b, o, payments.HostedCard, "press-reuse-1"); err != nil {
 		t.Fatal(err)
 	}
-	_, other := r.order(t)
-	if _, err := r.press(t, b, other, payments.HostedCard, "press-reuse-1"); err != nil {
-		// another order: another scope; fine either way, but it must not reuse the first charge
-		_ = err
+	// The same buyer's key on another order is a mismatch too (keys are per buyer).
+	other := r.sale.Details(t, r.env.NewSaleFor(t, r.sale.Org, r.sale.Brand, 100, 100).Hold(t, b, checkout.Item{ProductID: salestest.ProductGA, Qty: 1}))
+	if _, err := r.press(t, b, other, payments.HostedCard, "press-reuse-1"); code(err) != apperr.IdempotencyMismatch {
+		t.Fatalf("same key, another order: %v", err)
 	}
 	changed := *o
 	changed.TotalMinor = o.TotalMinor + 100
@@ -93,7 +95,7 @@ func TestReusedKeyDifferentAmount(t *testing.T) {
 	if _, err := r.svc.Pay(context.Background(), b, o, payments.PayRequest{Method: payments.ApplePay, ReturnURL: "https://shop.example.test/"}, "press-reuse-1"); code(err) != apperr.IdempotencyMismatch {
 		t.Fatalf("same key, another method: %v", err)
 	}
-	if n := r.psp["a"].Stats()["charges_created"]; n != 2 {
-		t.Fatalf("provider recorded %d charges, want 2 (one per order)", n)
+	if n := r.psp["a"].Stats()["charges_created"]; n != 1 {
+		t.Fatalf("provider recorded %d charges, want 1", n)
 	}
 }

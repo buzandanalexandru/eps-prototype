@@ -494,7 +494,7 @@ func (s *Service) submit(ctx context.Context, a *Attempt, r ChargeRequest) (*Att
 			return nil, err
 		}
 		// Did the provider charge? Ask by the attempt's key before trying anyone else.
-		found, ferr := pv.FindByKey(ctx, a.ProviderKey)
+		found, ferr := pv.FindByKey(ctx, a.OrganiserID, a.ProviderKey)
 		switch {
 		case ferr == nil:
 			if err := s.Apply(ctx, a.OrganiserID, a.ID, found); err != nil {

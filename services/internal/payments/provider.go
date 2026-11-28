@@ -79,7 +79,7 @@ type Provider interface {
 	Name() string
 	Create(ctx context.Context, r ChargeRequest) (Charge, error)
 	Get(ctx context.Context, chargeID string) (Charge, error)
-	FindByKey(ctx context.Context, key string) (Charge, error)
+	FindByKey(ctx context.Context, merchant, key string) (Charge, error)
 	Refund(ctx context.Context, chargeID, key string) (Charge, error)
 	Revoke(ctx context.Context, token string) error
 }
@@ -198,9 +198,9 @@ func (p *HTTPProvider) Get(ctx context.Context, id string) (Charge, error) {
 	return c, err
 }
 
-func (p *HTTPProvider) FindByKey(ctx context.Context, key string) (Charge, error) {
+func (p *HTTPProvider) FindByKey(ctx context.Context, merchant, key string) (Charge, error) {
 	var c Charge
-	err := p.call(ctx, http.MethodGet, "/v1/charges?idempotency_key="+url.QueryEscape(key), nil, &c)
+	err := p.call(ctx, http.MethodGet, "/v1/charges?idempotency_key="+url.QueryEscape(key)+"&merchant="+url.QueryEscape(merchant), nil, &c)
 	return c, err
 }
 

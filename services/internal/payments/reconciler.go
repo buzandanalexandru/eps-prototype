@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -23,6 +25,8 @@ type Reconciler struct {
 	Svc *Service
 	Log *slog.Logger
 	Age time.Duration
+	// Parallel bounds the provider calls in flight (default 8, review H3).
+	Parallel int
 }
 
 // RunOnce checks every due attempt once and returns how many changed.
@@ -51,17 +55,76 @@ func (r *Reconciler) RunOnce(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	changed := 0
-	for _, x := range list {
-		ok, err := r.one(ctx, x.org, x.id)
-		if err != nil && r.Log != nil {
-			r.Log.Warn("reconcile failed", "attempt", x.id, "error", err.Error())
+	// Attempts failed as provider_unavailable are asked about once more by key (review H3).
+	var recheck []ref
+	_ = db.WithTx(ctx, r.Svc.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, "select organiser_id::text, attempt_id::text from sales.recheck_attempts(200)")
+		if err != nil {
+			return err
 		}
-		if ok {
-			changed++
+		defer rows.Close()
+		for rows.Next() {
+			var x ref
+			if err := rows.Scan(&x.org, &x.id); err != nil {
+				return err
+			}
+			recheck = append(recheck, x)
 		}
+		return rows.Err()
+	})
+	par := r.Parallel
+	if par <= 0 {
+		par = 8
 	}
-	return changed, nil
+	sem := make(chan struct{}, par)
+	var wg sync.WaitGroup
+	var changed atomic.Int64
+	run := func(f func() (bool, error), id string) {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			ok, err := f()
+			if err != nil && r.Log != nil {
+				r.Log.Warn("reconcile failed", "attempt", id, "error", err.Error())
+			}
+			if ok {
+				changed.Add(1)
+			}
+		}()
+	}
+	for _, x := range list {
+		run(func() (bool, error) { return r.one(ctx, x.org, x.id) }, x.id)
+	}
+	for _, x := range recheck {
+		run(func() (bool, error) { return r.recheck(ctx, x.org, x.id) }, x.id)
+	}
+	wg.Wait()
+	return int(changed.Load()), nil
+}
+
+// recheck asks the provider once about an attempt that failed before acceptance: a charge found
+// after all is applied (it pays the order, or is refunded as a duplicate).
+func (r *Reconciler) recheck(ctx context.Context, org, id string) (bool, error) {
+	s := r.Svc
+	a, err := s.GetAttempt(ctx, org, id)
+	if err != nil {
+		return false, err
+	}
+	_ = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, "update sales.payment_attempts set rechecked = true where id = $1", id)
+		return err
+	})
+	pv, ok := s.Providers[a.Provider]
+	if !ok {
+		return false, nil
+	}
+	ch, err := pv.FindByKey(ctx, a.OrganiserID, a.ProviderKey)
+	if err != nil {
+		return false, nil // no such charge (as expected) or no answer
+	}
+	return true, s.Apply(ctx, org, id, ch)
 }
 
 func (r *Reconciler) one(ctx context.Context, org, id string) (bool, error) {
@@ -79,11 +142,20 @@ func (r *Reconciler) one(ctx context.Context, org, id string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
+	// Past its limit while the provider's breaker is open: no call, the attempt is failed (a
+	// late success still pays or is refunded).
+	if s.now().After(a.DeadlineAt) && s.Breaker.Read(ctx, org, a.Provider).State == Open {
+		err := s.expireAttempt(ctx, a, "timeout")
+		return err == nil, err
+	}
+	if s.Breaker.Read(ctx, org, a.Provider).State == Open {
+		return false, nil // asked again once the provider is back
+	}
 	var ch Charge
 	if a.ChargeID != nil {
 		ch, err = pv.Get(ctx, *a.ChargeID)
 	} else {
-		ch, err = pv.FindByKey(ctx, a.ProviderKey)
+		ch, err = pv.FindByKey(ctx, a.OrganiserID, a.ProviderKey)
 	}
 	switch {
 	case err == nil:
@@ -120,7 +192,7 @@ func (r *Reconciler) one(ctx context.Context, org, id string) (bool, error) {
 // expireAttempt fails an attempt that has no outcome (a late success still pays or is refunded).
 func (s *Service) expireAttempt(ctx context.Context, a *Attempt, reason string) error {
 	return db.WithTx(ctx, s.Pool, db.RoleCore, a.OrganiserID, func(tx pgx.Tx) error {
-		moved, err := moveAttempt(ctx, tx, a.ID, Failed, []string{Created, Submitted, ChallengeRequired, Unknown}, ", error_code = $4", apperr.PayTimeout)
+		moved, err := moveAttempt(ctx, tx, a.ID, Failed, []string{Created, Submitted, ChallengeRequired, Unknown}, ", error_code = $4, failure_reason = $5", apperr.PayTimeout, reason)
 		if err != nil || !moved {
 			return err
 		}
