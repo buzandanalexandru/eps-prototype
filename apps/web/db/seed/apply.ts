@@ -134,9 +134,12 @@ async function applyCatalogue(c: pg.ClientBase, o: SampleOrganiser, opts: { now:
   const existingBrands = await ids(c, "brands");
   for (const b of o.brands) {
     const bid = brandIds.get(b.key)!;
-    const { key: _key, storefront: _sf, ...input } = b; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const { key: _key, storefront: _sf, hostnames, ...input } = b; // eslint-disable-line @typescript-eslint/no-unused-vars
     if (existingBrands.has(bid) && (await getBrand(c, bid))) await updateBrand(c, id, bid, input);
     else await createBrand(c, id, input, bid, { sample: true });
+    for (const h of hostnames ?? []) {
+      await c.query(`insert into control.brand_hostnames (hostname, organiser_id, brand_id) values ($1, $2, $3) on conflict (hostname) do nothing`, [h, id, bid]);
+    }
   }
   const existingVenues = await ids(c, "venues");
   for (const v of o.venues) {

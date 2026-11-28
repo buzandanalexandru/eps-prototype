@@ -36,7 +36,8 @@ export type SampleOrganiser = {
   /** "demo-organiser": the shared demo organiser user (step 0) becomes owner. */
   owner: "demo-organiser" | null;
   feePolicy: FeePolicy;
-  brands: (BrandInput & { key: string; storefront?: SampleStorefront })[];
+  // hostnames: reserved .test names the shop answers on (local host-routing tests).
+  brands: (BrandInput & { key: string; storefront?: SampleStorefront; hostnames?: string[] })[];
   venues: (VenueInput & { key: string })[];
   events: SampleEvent[];
 };

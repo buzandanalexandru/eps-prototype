@@ -16,6 +16,7 @@ export const sunwave: SampleOrganiser = {
       languages: ["ro", "en"],
       currency: "EUR",
       template: "club",
+      hostnames: ["shop.sunwave.test"],
       storefront: { template: "club", logo: "sample:logo-sunwave", event: "beach-day-2027" },
     },
   ],

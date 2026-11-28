@@ -5,6 +5,7 @@ import { shopEventFromSnapshot } from "@/lib/storefront/shop-view";
 import { addOne, blockedReason, choiceSoldOut, normaliseSelection, canContinue, checkoutHref, instanceFor, missingRequirements, parseItems, removeOne, total, type Availability, type AvailabilityState, type Line, type PickerCtx } from "@/lib/storefront/picker";
 import type { SaleSnapshot } from "@/lib/snapshot/types";
 import { galaxiaSnapshot, GA, CAMPING } from "./snapshot-fixture";
+import { availabilityFor, readAnswer } from "@/lib/storefront/availability-answer";
 
 const NOW = new Date("2026-12-05T10:00:00Z");
 const onSale = (snap: SaleSnapshot): Record<string, Availability> =>
@@ -141,5 +142,23 @@ describe("ticket picker", () => {
       { productId: GA, instance: null, qty: 6 },
       { productId: CAMPING, instance: null, qty: 2 },
     ]);
+  });
+
+  it("an answer for another snapshot version is never mixed with the page's prices", () => {
+    const snap = galaxiaSnapshot();
+    const ev = shopEventFromSnapshot(snap, null, NOW);
+    // The core already serves version 2, where GA costs more: the page (version 1) keeps its own.
+    const v2 = { version: 2, products: [{ productId: GA, status: "on_sale", allInMinor: 99999, priceStepIndex: 1 }], instances: [] };
+    const load = readAnswer(v2, 1);
+    expect(load).toEqual({ state: "stale" });
+    const ctx: PickerCtx = { event: ev, availability: availabilityFor(load, ev, NOW), now: NOW };
+    const ga = ev.products.find((p) => p.id === GA)!;
+    expect(total(addOne([], ga, null, ctx), ctx)).toBe(55248);
+    // The same version: the core's step and price apply.
+    const same = readAnswer({ ...v2, version: 1 }, 1);
+    expect(same.state).toBe("ok");
+    const ctx2: PickerCtx = { event: ev, availability: availabilityFor(same, ev, NOW), now: NOW };
+    expect(total(addOne([], ga, null, ctx2), ctx2)).toBe(61398); // step 1 of the snapshot, not the answer's number
+    expect(readAnswer(null, 1)).toEqual({ state: "failed" });
   });
 });
