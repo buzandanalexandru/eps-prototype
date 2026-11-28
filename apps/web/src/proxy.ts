@@ -23,7 +23,7 @@ export function proxy(req: NextRequest) {
   const host = classifyHost(req.headers.get("host"), process.env.EPS_PLATFORM_HOSTS);
   // On a brand host every page is a page of its shop (Studio and sign-in stay on platform hosts).
   const rewritten = host.kind === "brand" ? hostRewrite(req.nextUrl.pathname, host.host) : null;
-  let pathname = rewritten ?? req.nextUrl.pathname;
+  const pathname = rewritten ?? req.nextUrl.pathname;
   if (host.kind === "platform") {
     if (pathname.startsWith(`/s/${HOST_MARKER}`) || pathname.startsWith(`/s/${encodeURIComponent(HOST_MARKER)}`)) {
       return NextResponse.rewrite(new URL(NOT_FOUND, req.url), { headers: baseHeaders(false) });
