@@ -35,7 +35,8 @@ export function shopContentSecurityPolicy(opts: { vercelPreview?: boolean; dev?:
     `img-src 'self' data: blob:${opts.vercelPreview ? " https://vercel.live https://vercel.com" : ""}`,
     `font-src 'self'${opts.vercelPreview ? " https://vercel.live https://assets.vercel.com" : ""}`,
     `connect-src 'self'${opts.vercelPreview ? " https://vercel.live wss://ws-us3.pusher.com" : ""}${opts.dev ? " ws:" : ""}`,
-    `frame-src 'none'${v}`,
+    // 'none' must stand alone in a directive; the Vercel preview toolbar needs its frame.
+    `frame-src ${opts.vercelPreview ? v.trim() : "'none'"}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

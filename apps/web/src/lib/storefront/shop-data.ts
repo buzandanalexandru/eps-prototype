@@ -7,7 +7,12 @@ import { withTx } from "../db/tx";
 import { loadPublishedShop } from "./published";
 import { shopLoader, type CacheFn } from "./shop-cache";
 
-const nextCache: CacheFn = (key, tags, fn, seconds) => unstable_cache(fn, key, { tags, revalidate: seconds ?? false })();
+// Vercel's data cache outlives a deployment and is shared by every preview: the key names this
+// deployment, so a shop never shows data another deployment (another branch's database, an older
+// schema) cached under the same address.
+const DEPLOYMENT = process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || "local";
+
+const nextCache: CacheFn = (key, tags, fn, seconds) => unstable_cache(fn, [DEPLOYMENT, ...key], { tags, revalidate: seconds ?? false })();
 
 export const getPublishedShop = shopLoader(nextCache, (k) => withTx(getAppPool(), {}, (c) => loadPublishedShop(c, k)));
 

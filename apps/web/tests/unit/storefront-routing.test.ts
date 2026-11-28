@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
+import { shopContentSecurityPolicy } from "@/lib/security-headers";
 import { hostRewrite, keyFromParam, pickShopLocale, shopBase, shopLocaleOfPath } from "@/lib/storefront/routing";
 import { loadPublishedShop } from "@/lib/storefront/published";
 import { publishDraft } from "@/lib/storefront/domain";
@@ -51,6 +52,11 @@ describe("shop routing", () => {
     expect(csp).toContain("connect-src 'self'");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(shop.headers.get("x-middleware-request-x-nonce")).toBeNull();
+    // 'none' always stands alone (a preview adds the Vercel toolbar's frame instead).
+    for (const preview of [false, true]) {
+      const frameSrc = shopContentSecurityPolicy({ vercelPreview: preview }).split("; ").find((d) => d.startsWith("frame-src"))!;
+      expect(frameSrc.includes("'none'") ? frameSrc === "frame-src 'none'" : true, frameSrc).toBe(true);
+    }
   });
 
   it("/s/<brand> redirects to the visitor's language, and / on a brand host likewise", () => {
