@@ -73,12 +73,18 @@ func (h *HTTP) join(w http.ResponseWriter, r *http.Request) {
 	if c.Kind == auth.KindGuest {
 		kind = "guest"
 	}
+	// A simulator token (step 6) is only good on its own rehearsal (the engine checks), so its
+	// synthetic address only ever counts against that rehearsal's per-sale limits.
+	ip, sim := c.ClientIP, ""
+	if c.Sim {
+		sim = c.Rehearsal
+	}
 	ua := r.Header.Get("X-EPS-Client-UA")
 	if len(ua) > 400 {
 		ua = ua[:400]
 	}
 	st, err := h.Engine.Join(r.Context(), r.PathValue("saleId"), JoinInput{Sub: c.Subject, Kind: kind, Session: r.Header.Get("X-EPS-Session"),
-		Pow: body.Pow, Print: body.Print, UA: ua, IP: c.ClientIP, Tab: r.Header.Get("X-EPS-Tab")})
+		Pow: body.Pow, Print: body.Print, UA: ua, IP: ip, Tab: r.Header.Get("X-EPS-Tab"), SimRehearsal: sim})
 	if err != nil {
 		h.fail(w, r, err)
 		return

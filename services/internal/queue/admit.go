@@ -112,7 +112,8 @@ func (e *Engine) Admit(ctx context.Context, sale *sales.Sale) (TickResult, error
 	}
 	st := sale.Settings
 	paused, bot := "0", "0"
-	if st.Paused {
+	// Degraded mode (step 6, D-9) admits no one, like a pause: every place keeps its position.
+	if st.Paused || sale.Degraded {
 		paused = "1"
 	}
 	if st.BotDefence {
@@ -356,6 +357,10 @@ type Counts struct {
 	Admitted int64  `json:"admitted"`
 	Active   int64  `json:"active"`
 	Seed     string `json:"seed,omitempty"`
+	// Flagged counts places whose bot score crossed the suspect threshold, PassesRejected the
+	// checkout calls refused for their pass (step 6).
+	Flagged        int64 `json:"flagged"`
+	PassesRejected int64 `json:"passesRejected"`
 }
 
 // CountsOf reads a sale's queue figures.
@@ -365,7 +370,7 @@ func CountsOf(ctx context.Context, rdb *redis.Client, org, event, saleID string,
 		return Counts{}, err
 	}
 	pipe := rdb.Pipeline()
-	st := pipe.HMGet(ctx, k.State(), "state", "admc", "seed")
+	st := pipe.HMGet(ctx, k.State(), "state", "admc", "seed", "sus", "prj")
 	pre := pipe.ZCard(ctx, k.Pre())
 	line := pipe.ZCard(ctx, k.Line())
 	slow := pipe.ZCard(ctx, k.Slow())
@@ -381,7 +386,10 @@ func CountsOf(ctx context.Context, rdb *redis.Client, org, event, saleID string,
 		return fmt.Sprint(x)
 	}
 	admc, _ := strconv.ParseInt(str(v[1]), 10, 64)
-	return Counts{State: str(v[0]), Prequeue: pre.Val(), Line: line.Val(), Slow: slow.Val(), Admitted: admc, Active: act.Val(), Seed: str(v[2])}, nil
+	sus, _ := strconv.ParseInt(str(v[3]), 10, 64)
+	prj, _ := strconv.ParseInt(str(v[4]), 10, 64)
+	return Counts{State: str(v[0]), Prequeue: pre.Val(), Line: line.Val(), Slow: slow.Val(), Admitted: admc, Active: act.Val(), Seed: str(v[2]),
+		Flagged: sus, PassesRejected: prj}, nil
 }
 
 // Admitter runs the draw and the admission ticks of every sale with a waiting room, each sale under

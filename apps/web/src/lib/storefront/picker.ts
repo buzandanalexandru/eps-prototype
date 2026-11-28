@@ -18,6 +18,8 @@ export type AvailabilityState = {
   products: Record<string, Availability>;
   /** Pool instances that are sold out or have few left (others have room). */
   instances: Record<string, InstanceAvailability>;
+  /** Step 6: the organiser switched the sale to degraded mode (the busy message, no buying). */
+  degraded?: boolean;
 };
 
 export type PickerCtx = { event: ShopEvent; availability: AvailabilityState | null; now: Date };

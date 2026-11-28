@@ -13,7 +13,8 @@ import { getSessionCookie } from "better-auth/cookies";
 import { classifyHost } from "@/lib/host";
 import { signInRedirect } from "@/lib/auth/guard";
 import { LOCALE_COOKIE, resolveLocale } from "@/i18n/locale";
-import { contentSecurityPolicy, isFrameRoute, isShopRoute, needsCsp, shopContentSecurityPolicy } from "@/lib/security-headers";
+import { contentSecurityPolicy, isFrameRoute, isShopRoute, needsCsp, shopContentSecurityPolicy, studioConnectOrigins } from "@/lib/security-headers";
+import { gatewayBaseUrl } from "@/lib/core/url";
 import { HOST_MARKER, hostRewrite, shopLocaleOfPath } from "@/lib/storefront/routing";
 
 const NOT_FOUND = "/_eps/not-found"; // matches no route: the platform 404
@@ -64,7 +65,7 @@ export function proxy(req: NextRequest) {
     csp = shopContentSecurityPolicy(env);
   } else if (needsCsp(pathname)) {
     const nonce = btoa(crypto.randomUUID());
-    csp = contentSecurityPolicy(nonce, { frame, ...env });
+    csp = contentSecurityPolicy(nonce, { frame, ...env, connect: studioConnectOrigins(pathname, gatewayBaseUrl()) });
     // Next.js reads the nonce from the request's policy and puts it on its own scripts.
     headers.set("x-nonce", nonce);
     headers.set("content-security-policy", csp);

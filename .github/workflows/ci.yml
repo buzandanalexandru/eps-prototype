@@ -66,7 +66,8 @@ jobs:
           go-version-file: services/go.mod
           cache-dependency-path: services/go.sum
       - run: go vet ./...
-      - run: go test -count=1 ./...
+      # Step 6: the simulator package runs real rehearsals of 150 to 200 simulated fans (minutes).
+      - run: go test -count=1 -timeout 20m ./...
       - name: Image holds only the binary and CA certificates
         run: EPS_IMAGE_TEST=1 go test -count=1 -run TestImageHoldsOnlyBinaryAndCACerts ./cmd/core/
 
@@ -99,7 +100,7 @@ jobs:
             helm template eps-ci deploy/helm/eps -f deploy/helm/eps/$values \
               --set global.env=ci --set global.baseDomain=203.0.113.10.sslip.io --set global.image.tag=${{ github.sha }} > /dev/null
           done
-          helm template eps-ci deploy/helm/eps --set simulator.enabled=true | grep -q "name: eps-ci-simulator-r1"
+          helm template eps-ci deploy/helm/eps | grep -q "name: eps-ci-simulator$"
       - name: Chart rules (no wildcard CORS, gateway without Postgres, pass keys, HPA owns replicas, probe timeouts)
         run: |
           out=$(helm template eps-ci deploy/helm/eps -f deploy/helm/eps/values-production.yaml --set core.autoscaling.enabled=true)
@@ -115,6 +116,27 @@ jobs:
           grep -q 'key: QUEUE_PASS_PUBLIC_KEY' <<<"$core"
           ! grep -q 'key: QUEUE_PASS_PRIVATE_KEY' <<<"$core"
           [[ $(grep -c 'timeoutSeconds: 3' <<<"$core") -ge 3 ]]
+          # Step 6: only the simulator holds the simulator's signing key, and it has no database or
+          # Redis; the core and gateway verify with the public key; Prometheus reads pods only.
+          sim=$(helm template eps-ci deploy/helm/eps --show-only charts/simulator/templates/simulator.yaml)
+          grep -q 'key: SIM_TOKEN_PRIVATE_KEY' <<<"$sim"
+          ! grep -q 'DATABASE_URL\|REDIS_URL\|REDIS_PASSWORD\|SNAPSHOT_CACHE_KEY\|PSP_ADMIN_TOKEN' <<<"$sim"
+          ! grep -q 'kind: Ingress' <<<"$sim"
+          grep -q 'key: SIM_TOKEN_PUBLIC_KEY' <<<"$core" && ! grep -q 'key: SIM_TOKEN_PRIVATE_KEY' <<<"$core"
+          grep -q 'key: SIM_TOKEN_PUBLIC_KEY' <<<"$gw" && ! grep -q 'key: SIM_TOKEN_PRIVATE_KEY' <<<"$gw"
+          prom=$(helm template eps-ci deploy/helm/eps --show-only templates/prometheus.yaml)
+          ! grep -q 'kind: ClusterRole' <<<"$prom"
+          grep -q 'verbs: \["get", "list", "watch"\]' <<<"$prom"
+          # The core's internal port is on its Service but never on an ingress.
+          ! awk '/kind: Ingress/{i=1} i' <<<"$core" | grep -q 'internal'
+          grep -q 'name: internal' <<<"$core"
+          # Review D-h: the internal port admits only the simulator; Redis never the simulator.
+          np=$(helm template eps-ci deploy/helm/eps --show-only templates/networkpolicies.yaml)
+          grep -A3 'port: 8089' <<<"$np" | grep -q 'name: simulator' || awk '/name: simulator/{s=1} s && /8089/{f=1} END{exit !f}' <<<"$np"
+          rnp=$(helm template eps-ci deploy/helm/eps --show-only charts/redis/templates/redis.yaml)
+          ! grep -A30 'kind: NetworkPolicy' <<<"$rnp" | grep -q 'name: simulator'
+          lease=$(helm template eps-ci deploy/helm/eps --show-only charts/simulator/templates/lease.yaml)
+          grep -q 'resources: \["leases"\]' <<<"$lease" && ! grep -q 'kind: ClusterRole' <<<"$lease"
           grep -q 'redis:8\.[0-9]*\.[0-9]*' <<<"$out"
 
   migrations:
@@ -151,10 +173,14 @@ jobs:
           [[ "$(psql "$url" -tAc "select rolbypassrls from pg_roles where rolname = current_user")" == f ]]
 
   slug:
-    name: preview slug vectors (CI script)
+    name: preview slug vectors and Vercel ignore rule (CI scripts)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Vercel's ignored build step skips only commits the web app does not use
+        run: |
+          node --test deploy/scripts/web-paths.test.cjs .github/scripts/vercel-deployment.test.cjs
+          deploy/scripts/vercel-ignore.test.sh
       - run: |
           jq -c '.vectors[]' deploy/preview-slug-vectors.json | while read -r v; do
             branch=$(jq -r .branch <<<"$v"); want=$(jq -r .slug <<<"$v")

@@ -1,0 +1,47 @@
+{{- if and .Values.enabled .Values.serviceAccount }}
+{{- $ctx := dict "name" "simulator" "ctx" . }}
+{{- $name := include "eps.fullname" $ctx }}
+{{- $ns := .Values.clusterLease.namespace }}
+# One rehearsal at a time on the whole cluster (step 6, review D-b): every environment's simulator
+# may read and update one Lease in {{ $ns }}, nothing else. Named per release namespace, so two
+# environments' releases never own the same object; helm uninstall removes them.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eps.labels" $ctx | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ printf "eps-sim-lease-%s" .Release.Namespace | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "eps.labels" $ctx | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["eps-simulator"]
+    verbs: ["get", "update"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ printf "eps-sim-lease-%s" .Release.Namespace | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "eps.labels" $ctx | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ printf "eps-sim-lease-%s" .Release.Namespace | trunc 63 | trimSuffix "-" }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

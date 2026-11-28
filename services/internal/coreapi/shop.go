@@ -52,6 +52,10 @@ func clientKey(ctx context.Context) string {
 		return ""
 	}
 	if c.ClientIP != "" && len(c.ClientIP) <= 64 && !strings.ContainsAny(c.ClientIP, " {}") {
+		if c.Sim {
+			// A simulator's synthetic address never shares a real client's limits (step 6).
+			return "sim-" + strings.ReplaceAll(c.ClientIP, ":", "_")
+		}
 		return "ip-" + strings.ReplaceAll(c.ClientIP, ":", "_")
 	}
 	return "sub-" + strings.ReplaceAll(c.Subject, ":", "_")
@@ -103,6 +107,8 @@ type raw struct {
 	status  int
 	body    any
 	problem bool
+	// retryAfter sets Retry-After (seconds) on a problem (EPS-BUSY: step 6).
+	retryAfter int
 }
 
 func (r raw) write(w http.ResponseWriter) error {
@@ -116,6 +122,9 @@ func (r raw) write(w http.ResponseWriter) error {
 	}
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Cache-Control", "no-store")
+	if r.retryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(r.retryAfter))
+	}
 	w.WriteHeader(r.status)
 	return json.NewEncoder(w).Encode(r.body)
 }
@@ -170,7 +179,11 @@ func problemRaw(ctx context.Context, p *apperr.Problem) raw {
 		d := map[string]any(p.Data)
 		doc.Data = &d
 	}
-	return raw{status: p.Status, body: doc, problem: true}
+	out := raw{status: p.Status, body: doc, problem: true}
+	if n, ok := p.Data["retryAfter"].(int); ok && n > 0 {
+		out.retryAfter = n
+	}
+	return out
 }
 
 func unavailable(ctx context.Context) raw {
@@ -185,7 +198,11 @@ func buyerOf(ctx context.Context) (checkout.Buyer, bool) {
 		return checkout.Buyer{}, false
 	}
 	if c.Kind == auth.KindGuest {
-		return checkout.Buyer{ID: c.Subject, Kind: "guest"}, true
+		b := checkout.Buyer{ID: c.Subject, Kind: "guest"}
+		if c.Sim {
+			b.Sim = &checkout.SimBuyer{Rehearsal: c.Rehearsal, Run: c.Run}
+		}
+		return b, true
 	}
 	return checkout.Buyer{ID: c.Subject, Kind: "account", Email: c.Email}, true
 }
@@ -289,7 +306,7 @@ func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) O
 			if qs, err := checkout.QuestionsTx(ctx, tx, snap); err == nil {
 				v.Questions = qs
 			}
-			if v.CanPay {
+			if v.CanPay && !o.Rehearsal {
 				v.InstalmentOffer = checkout.OfferFor(snap, o, time.Now())
 			}
 		}
@@ -303,7 +320,7 @@ func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) O
 		if a, err := payments.LatestAttemptTx(ctx, tx, o.ID); err == nil && a != nil {
 			v.Payment = a
 		}
-		if account {
+		if account && !o.Rehearsal { // a rehearsal offers no wallet or saved card (review D-a)
 			if w, err := wallet.WalletTx(ctx, tx, o.OrganiserID, b.ID, o.Currency); err == nil {
 				v.Wallet = &walletOption{BalanceMinor: w.BalanceMinor, CreditMinor: w.CreditMinor}
 			}
@@ -487,6 +504,12 @@ func (s *Server) PayOrder(ctx context.Context, req api.PayOrderRequestObject) (a
 		return problemRaw(ctx, apperr.New(http.StatusBadRequest, "invalid_request", "A body is required.", false)), nil
 	}
 	body := req.Body
+	// Step 6 (review D-a): a rehearsal never touches real money or a person's saved cards.
+	if o.Rehearsal {
+		if p := payments.RehearsalMethod(string(body.Method), body.SaveCard != nil && *body.SaveCard, body.Plan != nil && string(*body.Plan) == "instalments"); p != nil {
+			return problemRaw(ctx, p), nil
+		}
+	}
 	// Step 5 (D-11): the order's pass from the same session, then the one-time code if it needs one.
 	if s.OnSale != nil && s.OnSale.Gate != nil {
 		if err := s.OnSale.Gate.BeforePay(ctx, o, withPass(b, req.Params.XEPSPass, req.Params.XEPSSession), access == accessLink); err != nil {

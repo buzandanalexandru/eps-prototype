@@ -149,6 +149,22 @@ type Sale struct {
 	Settings    Settings  `json:"settings"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 	UpdatedBy   string    `json:"updatedBy"`
+	// Degraded mode (step 6, E11): new holds refused, admissions held, the shop's busy message.
+	Degraded   bool       `json:"degraded"`
+	DegradedAt *time.Time `json:"degradedAt,omitempty"`
+	// The last ended degraded window (review D-d: passes that ran out inside it get its length).
+	DegradedFrom *time.Time `json:"degradedFrom,omitempty"`
+	DegradedTo   *time.Time `json:"degradedTo,omitempty"`
+	// Rehearsal is set on a rehearsal (step 6, design D-1): a copy of a sale moment under an event
+	// id of its own.
+	Rehearsal *RehearsalOf `json:"rehearsal,omitempty"`
+}
+
+// RehearsalOf names what a rehearsal copies.
+type RehearsalOf struct {
+	SourceEventID   string `json:"sourceEventId"`
+	SourceSaleID    string `json:"sourceSaleId"`
+	SnapshotVersion int    `json:"snapshotVersion"`
 }
 
 // Version is one saved version of a sale's settings.
@@ -192,15 +208,26 @@ func notFound() *apperr.Problem {
 }
 
 const cols = `s.id::text, s.organiser_id::text, s.event_id::text, s.name, v.version, v.opens_at, v.prequeue_minutes, v.queue_on, v.rate_per_minute,
-	v.active_limit, v.paused, v.hold_minutes, v.cap_per_order, v.cap_per_person, v.bot_defence, v.otp_on, v.otp_threshold, v.accounts_only, v.created_at, v.created_by`
+	v.active_limit, v.paused, v.hold_minutes, v.cap_per_order, v.cap_per_person, v.bot_defence, v.otp_on, v.otp_threshold, v.accounts_only, v.created_at, v.created_by,
+	s.degraded, s.degraded_at, s.rehearsal_of_event::text, s.rehearsal_of_sale::text, s.rehearsal_version, s.degraded_window_start, s.degraded_window_end`
 
 func scanSale(row pgx.Row) (Sale, error) {
 	var x Sale
 	st := &x.Settings
+	var rhEvent, rhSale *string
+	var rhVersion *int
 	err := row.Scan(&x.ID, &x.OrganiserID, &x.EventID, &x.Name, &x.Version, &st.OpensAt, &st.PrequeueMinutes, &st.QueueOn, &st.RatePerMinute,
-		&st.ActiveLimit, &st.Paused, &st.HoldMinutes, &st.CapPerOrder, &st.CapPerPerson, &st.BotDefence, &st.OTPOn, &st.OTPThreshold, &st.AccountsOnly, &x.UpdatedAt, &x.UpdatedBy)
+		&st.ActiveLimit, &st.Paused, &st.HoldMinutes, &st.CapPerOrder, &st.CapPerPerson, &st.BotDefence, &st.OTPOn, &st.OTPThreshold, &st.AccountsOnly, &x.UpdatedAt, &x.UpdatedBy,
+		&x.Degraded, &x.DegradedAt, &rhEvent, &rhSale, &rhVersion, &x.DegradedFrom, &x.DegradedTo)
 	st.OpensAt = st.OpensAt.UTC()
 	x.UpdatedAt = x.UpdatedAt.UTC()
+	if x.DegradedAt != nil {
+		t := x.DegradedAt.UTC()
+		x.DegradedAt = &t
+	}
+	if rhEvent != nil && rhSale != nil && rhVersion != nil {
+		x.Rehearsal = &RehearsalOf{SourceEventID: *rhEvent, SourceSaleID: *rhSale, SnapshotVersion: *rhVersion}
+	}
 	return x, err
 }
 
@@ -486,16 +513,21 @@ func (s *Service) Refresh(ctx context.Context, org, event string) {
 // listGen reads the event's sales and their generation (the newest version or deletion, in µs)
 // in one transaction, so a copy can be ordered against another core's.
 func (s *Service) listGen(ctx context.Context, org, event string) ([]Sale, int64, error) {
+	// The generation is read before the list (review D-d): a change in between makes the list newer
+	// than its generation, never older, so a copy can never carry a newer generation than its data.
 	var gen int64
+	err := db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `select coalesce((extract(epoch from greatest(max(v.created_at), max(s.deleted_at), max(s.degraded_at))) * 1000000)::bigint, 0)
+			from sales.sales s left join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id where s.event_id = $1`, event).Scan(&gen)
+	})
+	if err != nil {
+		return nil, 0, err
+	}
 	list, err := s.List(ctx, org, event)
 	if err != nil {
 		return nil, 0, err
 	}
-	err = db.WithTx(ctx, s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `select coalesce((extract(epoch from greatest(max(v.created_at), max(s.deleted_at))) * 1000000)::bigint, 0)
-			from sales.sales s left join sales.sale_settings v on v.organiser_id = s.organiser_id and v.sale_id = s.id where s.event_id = $1`, event).Scan(&gen)
-	})
-	return list, gen, err
+	return list, gen, nil
 }
 
 func genKey(org, event string) string {

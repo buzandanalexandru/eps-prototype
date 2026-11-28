@@ -30,6 +30,8 @@ const answer = z.object({
     .array(z.object({ instanceId: z.string().regex(/^[0-9a-f-]{36}(@\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?)?$/), status: z.enum(["on_sale", "sold_out"]), remaining: z.int().min(0), allHeld: z.boolean().optional() }))
     .max(20_000)
     .default([]),
+  // Step 6: a current sale is in degraded mode (the page shows the busy message).
+  degraded: z.boolean().optional(),
 });
 
 /** 503: cached 5 s at the edge so a failing core is not hammered; 400 and 404: never cached publicly. */

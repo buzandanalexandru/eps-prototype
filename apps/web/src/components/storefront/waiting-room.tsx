@@ -171,7 +171,18 @@ export function WaitingRoom({ labels, locale, base }: Props) {
       )}
       {st && (
         <div className="space-y-4" aria-live="polite">
-          {st.paused && (st.state === "waiting" || st.state === "shuffling") && (
+          {st.rehearsal && (
+            <div role="note" className={`${box} space-y-1 border-dashed`} data-testid="queue-rehearsal">
+              <p className="font-semibold">{labels.rehearsalBanner}</p>
+              <p className="text-sm">{labels.rehearsalLead}</p>
+            </div>
+          )}
+          {st.degraded && (st.state === "waiting" || st.state === "shuffling" || st.state === "prequeue") && (
+            <p role="status" className={`${box} font-semibold`} data-testid="queue-busy">
+              {labels.queueBusy}
+            </p>
+          )}
+          {st.paused && !st.degraded && (st.state === "waiting" || st.state === "shuffling") && (
             <p role="status" className={`${box} font-semibold`} data-testid="queue-paused">
               {labels.queuePaused}
             </p>

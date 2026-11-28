@@ -5,6 +5,10 @@ global:
 core:
   replicas: 2
   database: { enabled: true, maxConns: 8 }
+  extraEnv:
+    INTERNAL_PORT: "8089"
+    # The largest simulator run in production until step 12 measures the cluster (review D-b).
+    SIM_MAX_FANS: "5000"
 gateway:
   replicas: 2
 redis:

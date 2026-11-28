@@ -18,8 +18,12 @@ func TestWriteDeadlineSparesEventStreams(t *testing.T) {
 	srv := httptest.NewServer(WithWriteDeadline(50*time.Millisecond, IsEventStream)(slow))
 	defer srv.Close()
 
-	get := func(accept string) (string, error) {
-		req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	get := func(accept string, path ...string) (string, error) {
+		u := srv.URL + "/v1/live/x"
+		if len(path) > 0 {
+			u = srv.URL + path[0]
+		}
+		req, _ := http.NewRequest(http.MethodGet, u, nil)
 		if accept != "" {
 			req.Header.Set("Accept", accept)
 		}
@@ -36,5 +40,10 @@ func TestWriteDeadlineSparesEventStreams(t *testing.T) {
 	}
 	if body, err := get("text/event-stream"); err != nil || body != "late" {
 		t.Fatalf("event stream cut: %q, %v", body, err)
+	}
+	// Step 6 (review D-g): only the live stream's routes are exempt; asking for a stream anywhere
+	// else keeps the deadline.
+	if body, err := get("text/event-stream", "/v1/shop/orders"); err == nil && body == "late" {
+		t.Fatal("a non-stream route escaped its write deadline")
 	}
 }

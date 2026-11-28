@@ -19,6 +19,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/metrics"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/payments"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/simulation"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wire"
 )
@@ -41,17 +42,23 @@ func main() {
 	var shop *coreapi.Shop
 	var hooks *payments.Webhooks
 	var onSale *coreapi.OnSale
+	var sim *simulation.Service
 	if pool != nil {
 		// Copies in Redis are signed with SNAPSHOT_CACHE_KEY (a secret CI generates per environment).
-		snaps = snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
+		// Rehearsal events (step 6) are served from their source event's pinned version.
+		snaps = snapshot.NewStore(snapshot.RehearsalSource{Inner: snapshot.DBSource{Pool: pool}, Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
 		if rdb != nil {
 			shop, hooks = wire.Shop(pool, rdb, snaps, log)
 			usage = checkout.Usage{Svc: shop.Checkout, HeldBy: inventory.HeldOf(shop.Checkout.Inv)}
 			onSale = wire.OnSale(pool, rdb, snaps, shop.Checkout, log)
+			sim = wire.Simulation(pool, rdb, snaps, onSale.Sales, shop.Knobs, log)
 		}
 		avail = &snapshot.AvailabilityService{Store: snaps, Usage: usage, Redis: rdb}
 		if u, ok := usage.(checkout.Usage); ok {
 			avail.Held = u
+		}
+		if onSale != nil {
+			avail.Degraded = wire.DegradedOf(onSale.Sales)
 		}
 	}
 	srv := &coreapi.Server{
@@ -60,6 +67,7 @@ func main() {
 		Usage:        usage,
 		Shop:         shop,
 		OnSale:       onSale,
+		Sim:          sim,
 		Service:      "core",
 		Pool:         pool,
 		Checks: []health.Checker{
@@ -75,10 +83,18 @@ func main() {
 	}
 	issuers := auth.IssuersFromEnv(os.Getenv)
 	verifier := auth.NewVerifier(keys, issuers...)
+	// The simulator's rehearsal-only issuer (step 6): required outside EPS_ENV=dev.
+	simIss, err := auth.SimIssuerFromEnv(os.Getenv)
+	if err != nil {
+		log.Error("simulator token key", "error", err.Error())
+		os.Exit(1)
+	}
+	verifier.Sim = simIss
 	verifier.Start(ctx)
 	if pool != nil && rdb != nil {
-		// The gateway verifies core tokens with the keys the core publishes to Redis (step 5).
-		go auth.RunPublisher(ctx, keys, rdb, []byte(os.Getenv("SNAPSHOT_CACHE_KEY")), time.Minute)
+		// The gateway verifies core tokens with the keys the core publishes to Redis (step 5); every
+		// 10 s (step 6), so a fresh environment's first key reaches the dashboard's direct stream soon.
+		go auth.RunPublisher(ctx, keys, rdb, []byte(os.Getenv("SNAPSHOT_CACHE_KEY")), 10*time.Second)
 	}
 	metrics.NewGauge("eps_auth_key_loads", func() float64 { return float64(verifier.Loads()) })
 	log.Info("token issuers", "issuers", issuers)
@@ -96,6 +112,10 @@ func main() {
 	if err != nil {
 		log.Error("contract unreadable", "error", err.Error())
 		os.Exit(1)
+	}
+	if sim != nil {
+		go wire.SweepRuns(ctx, sim)
+		wire.ServeInternal(log, sim)
 	}
 	service.Serve(log, h)
 }

@@ -13,8 +13,11 @@ export default defineConfig({
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: { baseURL, trace: "retain-on-failure" },
   projects: [
-    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
-    { name: "phone", use: { ...devices["Pixel 7"] } },
+    // The rehearsal runs first, alone: a run is refused while a real sale here has fans in its
+    // waiting room (step 6 review D-b), and the other tests leave real sales with fans waiting.
+    { name: "rehearsal", testMatch: /simulator-run\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
+    { name: "desktop", testIgnore: /simulator-run\.spec\.ts/, dependencies: ["rehearsal"], use: { ...devices["Desktop Chrome"] } },
+    { name: "phone", testIgnore: /simulator-run\.spec\.ts/, dependencies: ["rehearsal"], use: { ...devices["Pixel 7"] } },
   ],
   webServer: local
     ? {

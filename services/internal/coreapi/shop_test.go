@@ -45,7 +45,9 @@ func as(sub, kind, ip string) context.Context {
 func body(t *testing.T, resp any) (int, map[string]any) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	type visitor interface{ VisitGetOrderResponse(http.ResponseWriter) error }
+	type visitor interface {
+		VisitGetOrderResponse(http.ResponseWriter) error
+	}
 	if v, ok := resp.(visitor); ok {
 		_ = v.VisitGetOrderResponse(rec)
 	}

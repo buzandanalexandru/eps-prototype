@@ -19,7 +19,7 @@ func TestBreakerOpensUnderFailure(t *testing.T) {
 	ctx := context.Background()
 	c := &clock{t: time.Now()}
 	var changes []string
-	core1 := &payments.Breaker{Redis: env.Redis, Now: c.now, OnChange: func(_ context.Context, _, p, from, to string) { changes = append(changes, from+">"+to) }}
+	core1 := &payments.Breaker{Redis: env.Redis, Now: c.now, OnChange: func(_ context.Context, _, _, p, from, to string) { changes = append(changes, from+">"+to) }}
 	core2 := &payments.Breaker{Redis: env.Redis, Now: c.now} // another core instance
 	org := "11111111-1111-4111-8111-111111111111"
 	// Interleaved so no 5 failures come in a row: the share rule decides.

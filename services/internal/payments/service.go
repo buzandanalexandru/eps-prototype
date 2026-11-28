@@ -69,7 +69,39 @@ type Attempt struct {
 	Offer           *checkout.Offer `json:"-"`
 	DeadlineAt      time.Time       `json:"deadlineAt"`
 	CreatedAt       time.Time       `json:"createdAt"`
+	// MerchantEvent is the rehearsal event of a rehearsal order's attempt (step 6): it pays under
+	// that rehearsal's merchant account and breaker.
+	MerchantEvent *string `json:"-"`
 }
+
+var (
+	attemptsMu sync.Mutex
+	attemptsBy = map[string]*metrics.Counter{}
+)
+
+// countAttempt counts a resolved attempt by provider, method and result (step 6, D-5).
+func countAttempt(a *Attempt, result string) {
+	k := a.Provider + "/" + a.Method + "/" + result
+	attemptsMu.Lock()
+	c, ok := attemptsBy[k]
+	if !ok {
+		c = metrics.NewCounter("eps_payment_attempts_total", "Payment attempts by provider, method and result.", "provider", a.Provider, "method", a.Method, "result", result)
+		attemptsBy[k] = c
+	}
+	attemptsMu.Unlock()
+	c.Inc()
+}
+
+// Scope is the attempt's breaker scope (Scope of its organiser and rehearsal event).
+func (a *Attempt) Scope() string {
+	if a.MerchantEvent != nil {
+		return Scope(a.OrganiserID, *a.MerchantEvent)
+	}
+	return a.OrganiserID
+}
+
+// Merchant is the account the attempt pays under at its provider.
+func (a *Attempt) Merchant() string { return MerchantOf(a.Scope()) }
 
 // TopupSink credits a wallet when a top-up's charge succeeds (the wallet's ledger).
 type TopupSink interface {
@@ -141,13 +173,13 @@ func (s *Service) preferred() string {
 }
 
 const attemptCols = `id::text, organiser_id::text, purpose, order_id::text, wallet_account_id::text, instalment_part, buyer_id, provider, provider_key, method,
-	saved_method_id::text, save_card, amount_minor, currency, state, charge_id, action_url, error_code, failover_of::text, deadline_at, created_at, plan, offer`
+	saved_method_id::text, save_card, amount_minor, currency, state, charge_id, action_url, error_code, failover_of::text, deadline_at, created_at, plan, offer, merchant_event::text`
 
 func scanAttempt(row pgx.Row) (*Attempt, error) {
 	var a Attempt
 	var offer []byte
 	err := row.Scan(&a.ID, &a.OrganiserID, &a.Purpose, &a.OrderID, &a.WalletAccountID, &a.Part, &a.BuyerID, &a.Provider, &a.ProviderKey, &a.Method,
-		&a.SavedMethodID, &a.SaveCard, &a.AmountMinor, &a.Currency, &a.State, &a.ChargeID, &a.ActionURL, &a.ErrorCode, &a.FailoverOf, &a.DeadlineAt, &a.CreatedAt, &a.Plan, &offer)
+		&a.SavedMethodID, &a.SaveCard, &a.AmountMinor, &a.Currency, &a.State, &a.ChargeID, &a.ActionURL, &a.ErrorCode, &a.FailoverOf, &a.DeadlineAt, &a.CreatedAt, &a.Plan, &offer, &a.MerchantEvent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoSuchCharge
 	}
@@ -196,10 +228,10 @@ func insertAttempt(ctx context.Context, tx pgx.Tx, a *Attempt, offer []byte) err
 		a.Plan = "full"
 	}
 	_, err := tx.Exec(ctx, `insert into sales.payment_attempts (id, organiser_id, purpose, order_id, wallet_account_id, instalment_part, buyer_id, provider, provider_key,
-		method, saved_method_id, save_card, amount_minor, currency, state, failover_of, deadline_at, created_at, plan, offer)
-		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'created', $15, $16, $17, $18, $19)`,
+		method, saved_method_id, save_card, amount_minor, currency, state, failover_of, deadline_at, created_at, plan, offer, merchant_event)
+		values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'created', $15, $16, $17, $18, $19, $20)`,
 		a.ID, a.OrganiserID, a.Purpose, a.OrderID, a.WalletAccountID, a.Part, a.BuyerID, a.Provider, a.ProviderKey, a.Method, a.SavedMethodID, a.SaveCard,
-		a.AmountMinor, a.Currency, a.FailoverOf, a.DeadlineAt, a.CreatedAt, a.Plan, offer)
+		a.AmountMinor, a.Currency, a.FailoverOf, a.DeadlineAt, a.CreatedAt, a.Plan, offer, a.MerchantEvent)
 	return err
 }
 
@@ -220,10 +252,11 @@ func emitPayment(ctx context.Context, tx pgx.Tx, org, eventID, typ string, paylo
 }
 
 // ProviderStateEvent records a breaker change (payment.provider_state).
-func (s *Service) ProviderStateEvent(ctx context.Context, org, provider, from, to string) {
-	s.log().Info("payment provider breaker changed", "organiser", org, "provider", provider, "from", from, "to", to)
+func (s *Service) ProviderStateEvent(ctx context.Context, org, event, provider, from, to string) {
+	s.log().Info("payment provider breaker changed", "organiser", org, "rehearsalEvent", event, "provider", provider, "from", from, "to", to)
 	_ = db.WithTx(context.WithoutCancel(ctx), s.Pool, db.RoleCore, org, func(tx pgx.Tx) error {
-		return emitPayment(ctx, tx, org, "", "payment.provider_state", map[string]any{"provider": provider, "from": from, "to": to})
+		// A rehearsal's breaker names its event, so nothing reads it as the organiser's own.
+		return emitPayment(ctx, tx, org, event, "payment.provider_state", map[string]any{"provider": provider, "from": from, "to": to, "rehearsal": event != ""})
 	})
 }
 
@@ -306,7 +339,23 @@ func (s *Service) result(a *Attempt) *PayResult {
 	return r
 }
 
+// RehearsalMethod refuses what a rehearsal order may not use (step 6, review D-a): the wallet, saved
+// cards, saving a card and instalments, so a rehearsal never posts to a ledger or charges a real
+// person's card. Nil when the method is allowed.
+func RehearsalMethod(method string, saveCard, instalments bool) *apperr.Problem {
+	switch {
+	case method != HostedCard && method != ApplePay && method != GooglePay, saveCard, instalments:
+		return apperr.New(http.StatusUnprocessableEntity, apperr.PayMethod, "A rehearsal pays by card, Apple Pay or Google Pay only, in one payment (simulated).", false).With("rehearsal", true)
+	}
+	return nil
+}
+
 func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, req PayRequest) (*PayResult, error) {
+	if o.Rehearsal {
+		if p := RehearsalMethod(req.Method, req.SaveCard, req.Plan == "instalments"); p != nil {
+			return nil, p
+		}
+	}
 	switch req.Method {
 	case HostedCard, ApplePay, GooglePay, SavedCard:
 	default:
@@ -359,10 +408,18 @@ func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, 
 	if provider != "" {
 		providers = []string{provider} // a saved card lives at one provider
 	}
+	// A rehearsal order pays under the rehearsal's own merchant and breaker (step 6).
+	var merchantEvent *string
+	scope := o.OrganiserID
+	if o.Rehearsal {
+		ev := o.EventID
+		merchantEvent = &ev
+		scope = Scope(o.OrganiserID, ev)
+	}
 	// Nothing is sent and the order is not touched when every breaker is open.
 	anyOpen := false
 	for _, pv := range providers {
-		if _, ok := s.Providers[pv]; ok && s.Breaker.Read(ctx, o.OrganiserID, pv).State != Open {
+		if _, ok := s.Providers[pv]; ok && s.Breaker.Read(ctx, scope, pv).State != Open {
 			anyOpen = true
 		}
 	}
@@ -402,7 +459,7 @@ func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, 
 		}
 		a := &Attempt{ID: uuid.NewString(), OrganiserID: o.OrganiserID, Purpose: "order", OrderID: &o.ID, BuyerID: b.ID, Provider: pv, Method: req.Method,
 			SavedMethodID: savedID, SaveCard: saveCard, AmountMinor: amount, Currency: o.Currency, FailoverOf: prev, Plan: plan,
-			DeadlineAt: s.now().Add(checkout.AttemptLimit), CreatedAt: s.now()}
+			DeadlineAt: s.now().Add(checkout.AttemptLimit), CreatedAt: s.now(), MerchantEvent: merchantEvent}
 		a.ProviderKey = a.ID
 		var deadline time.Time
 		err := db.WithTx(ctx, s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
@@ -441,7 +498,7 @@ func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, 
 			s.log().Info("payment failover", "organiser", o.OrganiserID, "order", o.ID, "from", s.other(pv), "to", pv)
 		}
 		done, err := s.submit(ctx, a, ChargeRequest{AmountMinor: amount, Currency: o.Currency, Method: req.Method, Token: token, CustomerRef: b.ID,
-			SaveCard: saveCard, ReturnURL: req.ReturnURL, Merchant: o.OrganiserID, Locale: o.Locale,
+			SaveCard: saveCard, ReturnURL: req.ReturnURL, Merchant: MerchantOf(scope), Locale: o.Locale,
 			Metadata: map[string]string{"organiser_id": o.OrganiserID, "attempt_id": a.ID, "order_id": o.ID, "purpose": "order", "merchant_name": req.MerchantName, "order_ref": o.ID[:8]}})
 		if err == nil {
 			return s.result(done), nil
@@ -472,7 +529,7 @@ func (s *Service) submit(ctx context.Context, a *Attempt, r ChargeRequest) (*Att
 		r.WebhookURL = s.WebhookURL(a.Provider)
 	}
 	// The breaker decides right before the call it guards (review H2).
-	if !s.Breaker.Allow(ctx, a.OrganiserID, a.Provider) {
+	if !s.Breaker.Allow(ctx, a.Scope(), a.Provider) {
 		if err := s.failAttempt(ctx, a, "breaker_open", false); err != nil {
 			return nil, err
 		}
@@ -481,19 +538,19 @@ func (s *Service) submit(ctx context.Context, a *Attempt, r ChargeRequest) (*Att
 	ch, err := pv.Create(ctx, r)
 	switch {
 	case err == nil:
-		s.Breaker.Record(ctx, a.OrganiserID, a.Provider, true)
+		s.Breaker.Record(ctx, a.Scope(), a.Provider, true)
 		if err := s.Apply(ctx, a.OrganiserID, a.ID, ch); err != nil {
 			return nil, err
 		}
 		return s.GetAttempt(ctx, a.OrganiserID, a.ID)
 	case errors.Is(err, ErrUnavailable):
-		s.Breaker.Record(ctx, a.OrganiserID, a.Provider, false)
+		s.Breaker.Record(ctx, a.Scope(), a.Provider, false)
 		if err := s.failAttempt(ctx, a, "provider_unavailable", false); err != nil {
 			return nil, err
 		}
 		return nil, errFailover
 	case errors.Is(err, ErrTimeout):
-		s.Breaker.Record(ctx, a.OrganiserID, a.Provider, false)
+		s.Breaker.Record(ctx, a.Scope(), a.Provider, false)
 		if err := db.WithTx(ctx, s.Pool, db.RoleCore, a.OrganiserID, func(tx pgx.Tx) error {
 			_, err := moveAttempt(ctx, tx, a.ID, Unknown, []string{Created}, "")
 			return err
@@ -501,7 +558,7 @@ func (s *Service) submit(ctx context.Context, a *Attempt, r ChargeRequest) (*Att
 			return nil, err
 		}
 		// Did the provider charge? Ask by the attempt's key before trying anyone else.
-		found, ferr := pv.FindByKey(ctx, a.OrganiserID, a.ProviderKey)
+		found, ferr := pv.FindByKey(ctx, a.Merchant(), a.ProviderKey)
 		switch {
 		case ferr == nil:
 			if err := s.Apply(ctx, a.OrganiserID, a.ID, found); err != nil {
@@ -532,8 +589,12 @@ func (s *Service) submit(ctx context.Context, a *Attempt, r ChargeRequest) (*Att
 func (s *Service) failAttempt(ctx context.Context, a *Attempt, reason string, final bool) error {
 	return db.WithTx(ctx, s.Pool, db.RoleCore, a.OrganiserID, func(tx pgx.Tx) error {
 		code := apperr.PayProvidersBusy
-		if _, err := moveAttempt(ctx, tx, a.ID, Failed, []string{Created, Unknown}, ", error_code = $4, failure_reason = $5", code, reason); err != nil {
+		moved, err := moveAttempt(ctx, tx, a.ID, Failed, []string{Created, Unknown}, ", error_code = $4, failure_reason = $5", code, reason)
+		if err != nil {
 			return err
+		}
+		if moved {
+			countAttempt(a, Failed)
 		}
 		if final && a.OrderID != nil && a.Purpose == "order" {
 			return s.Checkout.FailPayingTx(ctx, tx, *a.OrderID, code)
@@ -611,6 +672,7 @@ func (s *Service) markSucceededTx(ctx context.Context, tx pgx.Tx, a *Attempt, ch
 		return moved, err
 	}
 	successes.Inc()
+	countAttempt(a, Succeeded)
 	if ch.Saved != nil && ch.Saved.Token != "" && a.SaveCard {
 		id, err := saveMethodTx(ctx, tx, a, ch)
 		if err != nil {
@@ -752,6 +814,7 @@ func (s *Service) declined(ctx context.Context, a *Attempt, ch Charge) error {
 		if err != nil || !moved {
 			return err
 		}
+		countAttempt(a, Declined)
 		if err := emitPayment(ctx, tx, a.OrganiserID, "", "payment.declined", map[string]any{"attemptId": a.ID, "orderId": a.OrderID, "code": code, "purpose": a.Purpose}); err != nil {
 			return err
 		}

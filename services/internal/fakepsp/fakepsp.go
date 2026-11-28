@@ -168,6 +168,20 @@ func countCharge(provider, outcome string) {
 	c.Inc()
 }
 
+var knobChanges = map[string]*metrics.Counter{}
+
+// countKnobChange counts a knobs write (an outage switched on or off, a failure rate set).
+func countKnobChange(provider string) {
+	chargesMu.Lock()
+	c, ok := knobChanges[provider]
+	if !ok {
+		c = metrics.NewCounter("fakepsp_knob_changes_total", "Knob settings written, by provider.", "provider", provider)
+		knobChanges[provider] = c
+	}
+	chargesMu.Unlock()
+	c.Inc()
+}
+
 func (p *Provider) now() time.Time {
 	if p.Now != nil {
 		return p.Now()
@@ -289,6 +303,7 @@ func (p *Provider) SetKnobs(ctx context.Context, merchant string, k Knobs) error
 	p.mu.Lock()
 	delete(p.knobs, merchant)
 	p.mu.Unlock()
+	countKnobChange(p.ID)
 	return nil
 }
 

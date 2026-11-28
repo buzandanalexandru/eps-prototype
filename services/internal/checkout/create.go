@@ -64,6 +64,11 @@ func HoldMinutes(r snapshot.Rules) int {
 
 var instancePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(T([01]\d|2[0-3]):[0-5]\d)?$`)
 
+// SimRefused answers a simulated fan outside its rehearsal (403; its address is not trusted).
+func SimRefused() *apperr.Problem {
+	return apperr.New(http.StatusForbidden, apperr.SimRefused, "Simulated fans may only act on their own rehearsal.", false)
+}
+
 func invalid(detail string) *apperr.Problem {
 	return apperr.New(http.StatusUnprocessableEntity, apperr.HoldInvalid, detail, false)
 }
@@ -235,6 +240,10 @@ func (s *Service) liveOrderOf(ctx context.Context, org, eventID, buyer string) (
 
 func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *snapshot.Snapshot) (*Order, bool, error) {
 	org := live.OrganiserID
+	// A simulated fan buys only on the rehearsal its token names (step 6, design D-3).
+	if b.Sim != nil && (!live.Rehearsal || req.EventID != b.Sim.Rehearsal) {
+		return nil, false, SimRefused()
+	}
 	if id, err := s.liveOrderOf(ctx, org, req.EventID, b.ID); err != nil {
 		return nil, false, err
 	} else if id != "" {
@@ -404,7 +413,11 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 	}
 	o := &Order{ID: id, OrganiserID: org, EventID: req.EventID, SnapshotVersion: req.Version, BuyerKind: b.Kind, BuyerID: b.ID, Locale: locale, Currency: live.Currency,
 		State: Held, TotalMinor: total, FaceMinor: face, FanFeeMinor: fanFee, OrganiserNetMinor: net, Draws: draws, HoldExpiresAt: deadline, HoldRef: id, PayPlan: "full",
-		Answers: map[string]any{}, CreatedAt: now, Lines: lines}
+		Answers: map[string]any{}, CreatedAt: now, Lines: lines, Rehearsal: live.Rehearsal}
+	if b.Sim != nil {
+		run := b.Sim.Run
+		o.SimRunID = &run
+	}
 	if gate != nil {
 		if gate.SaleID != "" {
 			o.SaleID = &gate.SaleID
@@ -427,10 +440,10 @@ func (s *Service) create(ctx context.Context, b Buyer, req CreateRequest, live *
 		dj, _ := json.Marshal(draws)
 		if _, err := tx.Exec(ctx, `insert into sales.orders (id, organiser_id, event_id, snapshot_version, buyer_kind, buyer_id, buyer_email, locale, currency, state,
 			total_minor, face_minor, fan_fee_minor, organiser_net_minor, draws, hold_expires_at, hold_base_expires_at, hold_ref, created_at,
-			sale_id, pass_qid, cap_identity, cap_per_person, cap_tickets, otp_required)
-			values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, 'held', $10, $11, $12, $13, $14, $15, $15, $1::text, $16, $17, $18, $19, $20, $21, $22)`,
+			sale_id, pass_qid, cap_identity, cap_per_person, cap_tickets, otp_required, rehearsal, sim_run_id)
+			values ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, 'held', $10, $11, $12, $13, $14, $15, $15, $1::text, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
 			id, org, req.EventID, req.Version, b.Kind, b.ID, o.BuyerEmail, locale, live.Currency, total, face, fanFee, net, dj, deadline, now,
-			o.SaleID, o.PassQID, o.CapIdentity, o.CapPerPerson, o.CapTickets, o.OTPRequired); err != nil {
+			o.SaleID, o.PassQID, o.CapIdentity, o.CapPerPerson, o.CapTickets, o.OTPRequired, o.Rehearsal, o.SimRunID); err != nil {
 			return err
 		}
 		for _, l := range lines {

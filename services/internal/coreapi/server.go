@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/getkin/kin-openapi/routers"
@@ -14,10 +15,12 @@ import (
 	middleware "github.com/oapi-codegen/nethttp-middleware"
 
 	"github.com/buzandanalexandru/eps-prototype/services/internal/api"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/apperr"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/auth"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/simulation"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/snapshot"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/version"
 )
@@ -35,6 +38,8 @@ type Server struct {
 	Shop *Shop
 	// Sale settings and the checkout gate (step 5): nil in contract tests without a database.
 	OnSale *OnSale
+	// Rehearsals and simulation runs (step 6): nil without a database.
+	Sim *simulation.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -174,7 +179,58 @@ func NewHandler(s *Server, o Options) (http.Handler, error) {
 		httpx.WithAccessLog(o.Log, s.Service),
 		o.CORS.Middleware,
 		auth.Middleware(o.Verifier, o.Log),
+		simGuard,
 		validator,
 	)
 	return h, nil
+}
+
+// simOps are the only operations a simulator token may call (step 6, design D-3): a simulated fan's
+// own checkout. Anything else is refused before the contract, so its rehearsal-only token can never
+// read a wallet, a saved card or an organiser screen.
+var simOps = []struct{ method, prefix, suffix string }{
+	{http.MethodPost, "/v1/shop/orders", ""},
+	{http.MethodGet, "/v1/shop/orders/", ""},
+	{http.MethodPut, "/v1/shop/orders/", "/details"},
+	{http.MethodPost, "/v1/shop/orders/", "/payments"},
+	{http.MethodPost, "/v1/shop/orders/", "/cancel"},
+	{http.MethodPost, "/v1/shop/orders/", "/otp"},
+	{http.MethodPost, "/v1/shop/orders/", "/otp/verify"},
+	{http.MethodGet, "/v1/whoami", ""},
+}
+
+func simAllowed(r *http.Request) bool {
+	p := r.URL.Path
+	for _, op := range simOps {
+		if r.Method != op.method {
+			continue
+		}
+		switch {
+		case op.suffix == "" && op.prefix == "/v1/shop/orders/":
+			rest := strings.TrimPrefix(p, op.prefix)
+			if rest != p && rest != "" && !strings.Contains(rest, "/") {
+				return true
+			}
+		case op.suffix == "":
+			if p == op.prefix {
+				return true
+			}
+		default:
+			rest := strings.TrimPrefix(p, op.prefix)
+			if rest != p && strings.HasSuffix(rest, op.suffix) && !strings.Contains(strings.TrimSuffix(rest, op.suffix), "/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func simGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c, ok := auth.FromContext(r.Context()); ok && c.Sim && !simAllowed(r) {
+			httpx.WriteProblem(w, r, http.StatusForbidden, apperr.SimRefused, "Simulated fans may only use their own rehearsal's checkout.")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

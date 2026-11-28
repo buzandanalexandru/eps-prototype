@@ -131,21 +131,23 @@ type Fee struct {
 
 // Snapshot is a sale snapshot document (schemaVersion 1).
 type Snapshot struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	SnapshotID    string    `json:"snapshotId"`
-	OrganiserID   string    `json:"organiserId"`
-	BrandID       string    `json:"brandId"`
-	EventID       string    `json:"eventId"`
-	Version       int       `json:"version"`
-	PublishedAt   string    `json:"publishedAt"`
-	Currency      string    `json:"currency"`
-	Timezone      string    `json:"timezone"`
-	IsSample      bool      `json:"isSample"`
-	Fee           Fee       `json:"fee"`
-	Event         Event     `json:"event"`
-	Rules         Rules     `json:"rules"`
-	Pools         []Pool    `json:"pools"`
-	Products      []Product `json:"products"`
+	SchemaVersion int    `json:"schemaVersion"`
+	SnapshotID    string `json:"snapshotId"`
+	OrganiserID   string `json:"organiserId"`
+	BrandID       string `json:"brandId"`
+	EventID       string `json:"eventId"`
+	Version       int    `json:"version"`
+	// Rehearsal is set only on the core's copy for a rehearsal event (step 6, RehearsalSource).
+	Rehearsal   bool      `json:"rehearsal,omitempty"`
+	PublishedAt string    `json:"publishedAt"`
+	Currency    string    `json:"currency"`
+	Timezone    string    `json:"timezone"`
+	IsSample    bool      `json:"isSample"`
+	Fee         Fee       `json:"fee"`
+	Event       Event     `json:"event"`
+	Rules       Rules     `json:"rules"`
+	Pools       []Pool    `json:"pools"`
+	Products    []Product `json:"products"`
 }
 
 // Parse decodes a snapshot document and checks the invariants the core relies on: the schema

@@ -5,6 +5,7 @@ package health
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -139,6 +140,18 @@ func Handlers(mux *http.ServeMux, checks []Checker) {
 		status := http.StatusOK
 		if !ok {
 			status = http.StatusServiceUnavailable
+			// The failing dependencies and their errors, with the request id (step 6, observability).
+			var failing []string
+			for _, c := range res.Checks {
+				if !c.Ok {
+					msg := c.Name
+					if c.Detail != nil {
+						msg += ": " + *c.Detail
+					}
+					failing = append(failing, msg)
+				}
+			}
+			slog.Default().Warn("not ready", "failing", failing, "requestId", httpx.RequestID(r.Context()))
 		}
 		httpx.WriteJSON(w, status, res)
 	})

@@ -1,0 +1,40 @@
+{{- if .Values.networkPolicies.enabled }}
+{{- $r := .Release.Name }}
+# Step 6 (review D-h): who may reach what inside the namespace. Ingress rules only; the nodes'
+# own traffic (probes, port-forward) is allowed by the cluster's network plugin.
+# The core: its API from anywhere (the ingress, the worker), its metrics from Prometheus, and its
+# internal simulator port only from this release's simulator.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $r }}-core
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: core, app.kubernetes.io/instance: {{ $r }} }
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 8080, protocol: TCP }]
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: prometheus, app.kubernetes.io/instance: {{ $r }} }
+      ports: [{ port: 9090, protocol: TCP }]
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: simulator, app.kubernetes.io/instance: {{ $r }} }
+      ports: [{ port: 8089, protocol: TCP }]
+---
+# Prometheus: only the worker's aggregator asks it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $r }}-prometheus
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: prometheus, app.kubernetes.io/instance: {{ $r }} }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: { app.kubernetes.io/name: worker, app.kubernetes.io/instance: {{ $r }} }
+      ports: [{ port: 9090, protocol: TCP }]
+{{- end }}

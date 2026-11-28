@@ -48,18 +48,26 @@ func (d DBSource) Fetch(ctx context.Context, eventID string, version int) (Store
 		return Stored{}, errors.New("snapshot: no database")
 	}
 	var out Stored
+	err := db.WithTx(ctx, d.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
+		var err error
+		out, err = fetchTx(ctx, tx, eventID, version)
+		return err
+	})
+	return out, err
+}
+
+// fetchTx reads one published version (0: the live one) inside a transaction.
+func fetchTx(ctx context.Context, tx pgx.Tx, eventID string, version int) (Stored, error) {
+	var out Stored
 	var v *int
 	if version > 0 {
 		v = &version
 	}
-	err := db.WithTx(ctx, d.Pool, db.RoleCore, "", func(tx pgx.Tx) error {
-		var doc string
-		err := tx.QueryRow(ctx,
-			"select organiser_id::text, version, document_text, sha256 from control.live_snapshot($1::uuid, $2::int)",
-			eventID, v).Scan(&out.OrganiserID, &out.Version, &doc, &out.SHA256)
-		out.Doc = []byte(doc)
-		return err
-	})
+	var doc string
+	err := tx.QueryRow(ctx,
+		"select organiser_id::text, version, document_text, sha256 from control.live_snapshot($1::uuid, $2::int)",
+		eventID, v).Scan(&out.OrganiserID, &out.Version, &doc, &out.SHA256)
+	out.Doc = []byte(doc)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Stored{}, ErrNotFound
 	}

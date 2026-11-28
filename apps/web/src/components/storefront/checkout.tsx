@@ -277,6 +277,11 @@ function Lines({ order, labels, locale }: { order: OrderView; labels: ShopLabels
   const cur = order.currency as Currency;
   return (
     <div className={box}>
+      {order.rehearsal && (
+        <p role="note" className="mb-2 rounded border border-dashed p-2 text-sm font-semibold" data-testid="order-rehearsal">
+          {labels.rehearsalBanner}
+        </p>
+      )}
       <p className="font-semibold" data-testid="order-event">
         {tx(order.eventName, locale)}
       </p>

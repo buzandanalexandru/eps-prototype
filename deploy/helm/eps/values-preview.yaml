@@ -3,7 +3,10 @@
 # (global.corsAllowedOrigins) through a values file.
 core:
   replicas: 1
-  database: { enabled: true, maxConns: 3 }
+  # A rehearsal run (step 6) with provider A down starved 3 connections over Neon's latency: pays,
+  # details and webhooks waited out their 15 s deadline and Studio's reads timed out. One replica
+  # with 8, as each production replica has; a preview's compute allows far more connections.
+  database: { enabled: true, maxConns: 8 }
   # The deployed e2e suite holds from one runner address: previews allow far more per client.
   holdLimits: { perMinute: 2000, live: 1000 }
 gateway:
@@ -14,3 +17,8 @@ gateway:
 worker:
   replicas: 1
   database: { enabled: true, maxConns: 2 }
+# Step 6: a smaller Prometheus per pull request.
+prometheus:
+  resources:
+    requests: { cpu: 20m, memory: 96Mi }
+    limits: { cpu: 250m, memory: 256Mi }

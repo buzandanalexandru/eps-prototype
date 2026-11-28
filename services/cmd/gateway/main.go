@@ -18,6 +18,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/botdefence"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/live"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/queue"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/service"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/wire"
@@ -40,13 +41,25 @@ func main() {
 	if rdb != nil {
 		mac := []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))
 		verifier := auth.NewVerifier(auth.RedisKeySource{Redis: rdb, MACKey: mac}, auth.IssuersFromEnv(os.Getenv)...)
+		// The simulator's rehearsal-only issuer (step 6): required outside EPS_ENV=dev.
+		simIss, err := auth.SimIssuerFromEnv(os.Getenv)
+		if err != nil {
+			log.Error("simulator token key", "error", err.Error())
+			os.Exit(1)
+		}
+		verifier.Sim = simIss
 		verifier.Start(ctx)
 		perMin, _ := strconv.Atoi(os.Getenv("QUEUE_JOINS_PER_MINUTE"))
 		guests, _ := strconv.Atoi(os.Getenv("QUEUE_NEW_GUESTS_PER_MINUTE"))
 		engine := &queue.Engine{Redis: rdb, Sales: wire.SalesService(nil, rdb, nil), Signer: queue.NewSigner(priv), Scorer: &botdefence.Scorer{Redis: rdb}, JoinsPerMinute: perMin, NewGuestsPerMinute: guests, Secret: wire.IdentitySecret()}
 		go (&queue.Admitter{Engine: engine, Log: log}).Run(ctx)
 		h := &queue.HTTP{Engine: engine, Verifier: verifier, Log: log}
-		extra = h.Routes
+		// Step 6: the live dashboard's server-sent events, straight to the organiser's browser.
+		hub := &live.Hub{Redis: rdb, Sales: engine.Sales, Verifier: verifier, Log: log}
+		extra = func(mux *http.ServeMux) {
+			h.Routes(mux)
+			hub.Routes(mux)
+		}
 		log.Info("waiting rooms on", "admitter", queue.Tick.String())
 	}
 	service.Serve(log, service.SimpleHandler("gateway", log, checks, cors, extra))

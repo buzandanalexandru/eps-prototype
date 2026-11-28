@@ -45,7 +45,7 @@ export function shopContentSecurityPolicy(opts: { vercelPreview?: boolean; dev?:
 }
 
 /** The policy for a page. `vercelPreview` allows the Vercel preview toolbar; `dev` allows eval (dev server). */
-export function contentSecurityPolicy(nonce: string, opts: { frame: boolean; vercelPreview?: boolean; dev?: boolean }): string {
+export function contentSecurityPolicy(nonce: string, opts: { frame: boolean; vercelPreview?: boolean; dev?: boolean; connect?: string[] }): string {
   const v = opts.vercelPreview ? " https://vercel.live" : "";
   return [
     "default-src 'self'",
@@ -53,11 +53,25 @@ export function contentSecurityPolicy(nonce: string, opts: { frame: boolean; ver
     `style-src 'self' 'unsafe-inline'${v}`,
     `img-src 'self' data: blob:${opts.vercelPreview ? " https://vercel.live https://vercel.com" : ""}`,
     `font-src 'self'${opts.vercelPreview ? " https://vercel.live https://assets.vercel.com" : ""}`,
-    `connect-src 'self'${opts.vercelPreview ? " https://vercel.live wss://ws-us3.pusher.com" : ""}${opts.dev ? " ws:" : ""}`,
+    `connect-src 'self'${(opts.connect ?? []).map((o) => ` ${o}`).join("")}${opts.vercelPreview ? " https://vercel.live wss://ws-us3.pusher.com" : ""}${opts.dev ? " ws:" : ""}`,
     `frame-src 'self'${v}`,
     `frame-ancestors ${opts.frame ? "'self'" : "'none'"}`,
     "base-uri 'self'",
     "form-action 'self'",
     "object-src 'none'",
   ].join("; ");
+}
+
+/**
+ * The exact origins a Studio page may connect to besides its own: the live dashboard (step 6) opens
+ * the environment's gateway directly. Only a bare http(s) origin is accepted.
+ */
+export function studioConnectOrigins(pathname: string, gateway: string | null): string[] {
+  if (!gateway || !/^\/studio\/sales\/[0-9a-f-]{36}\/live$/.test(pathname)) return [];
+  try {
+    const u = new URL(gateway);
+    return (u.protocol === "https:" || u.protocol === "http:") && !u.username && !u.password ? [u.origin] : [];
+  } catch {
+    return [];
+  }
 }

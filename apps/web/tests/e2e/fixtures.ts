@@ -95,4 +95,4 @@ export async function onboard(page: Page, opts: { org?: string; brand?: string; 
   return { orgSlug, brandSlug, brandUrl: new URL(page.url()).pathname };
 }
 
-export const desktopOnly = (projectName: string) => projectName !== "desktop";
+export const desktopOnly = (projectName: string) => projectName !== "desktop" && projectName !== "rehearsal";

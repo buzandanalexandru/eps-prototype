@@ -38,6 +38,15 @@ core:
   passKeys: [QUEUE_PASS_PUBLIC_KEY]
   # New holds per client per minute and live holds per client (review D-h); 0 turns a limit off.
   holdLimits: { perMinute: 10, live: 10 }
+  # Step 6: the simulator's public key (rehearsal tokens) and the internal API's token; the
+  # internal port serves the simulator only (the Service exposes it, no ingress routes to it).
+  simKeys: [SIM_TOKEN_PUBLIC_KEY, SIM_CONTROL_TOKEN]
+  internalPort: 8089
+  scrapeInterval: 2s
+  extraEnv:
+    INTERNAL_PORT: "8089"
+    # The largest run in this environment (design D-2); previews 2,000, production 10,000.
+    SIM_MAX_FANS: "2000"
   autoscaling: { enabled: false, minReplicas: 2, maxReplicas: 10, targetCPU: 70 }
   pdb: { enabled: true }
   database: { enabled: true, maxConns: 5 }
@@ -60,6 +69,9 @@ gateway:
   database: { enabled: false }
   # Step 5: the gateway signs waiting-room passes (and verifies its own queue tokens).
   passKeys: [QUEUE_PASS_PRIVATE_KEY, QUEUE_PASS_PUBLIC_KEY]
+  # Step 6: verifies simulated fans' tokens (rehearsals only).
+  simKeys: [SIM_TOKEN_PUBLIC_KEY]
+  scrapeInterval: 2s
   # Waiting-room joins per client address per minute (design D-5); a /24 gets 20 times this.
   queueJoinsPerMinute: 10
   # New guest places per address per minute (guest identities are free to make: review D-f).
@@ -81,6 +93,10 @@ worker:
   paymentSecrets: [ORDER_LINK_KEY, PSP_API_KEY]
   pdb: { enabled: true }
   database: { enabled: true, maxConns: 3 }
+  scrapeInterval: 2s
+  extraEnv:
+    # Step 6: the aggregator's system strip (gateway requests/s, core p95, pods).
+    PROMETHEUS_URL: "http://{{ .Release.Name }}-prometheus:9090"
   resources:
     requests: { cpu: 50m, memory: 48Mi }
     limits: { cpu: 500m, memory: 128Mi }
@@ -113,14 +129,45 @@ payIngress:
   enabled: true
   host: pay
 
-# A Kubernetes Job; off until a rehearsal is started (step 6). Its name carries the release
-# revision, so an upgrade creates a new Job instead of patching an immutable one.
+# The simulator (step 6, design D-2): one replica that asks the core's internal port for a run every
+# 2 s and drives it over HTTP. No database and no Redis (noRedis), its own CPU and memory limits,
+# at most 200 requests in flight.
 simulator:
-  enabled: false
-  database: { enabled: true, maxConns: 2 }
+  enabled: true
+  replicas: 1
+  database: { enabled: false }
+  noRedis: true
+  pdb: { enabled: false }
+  simKeys: [SIM_TOKEN_PRIVATE_KEY, SIM_CONTROL_TOKEN]
+  # One run at a time on the whole cluster: a Lease in this namespace (CI creates it).
+  serviceAccount: true
+  clusterLease: { namespace: eps-sim }
+  extraEnv:
+    SIM_CLUSTER_LEASE_NAMESPACE: eps-sim
+    SIM_LEASE_HOLDER: "{{ .Release.Namespace }}"
+    # All simulated clients together (review D-b).
+    SIM_MAX_RPS: "1500"
+    GATEWAY_URL: "http://{{ .Release.Name }}-gateway"
+    CORE_URL: "http://{{ .Release.Name }}-core"
+    CORE_SIM_URL: "http://{{ .Release.Name }}-core:8089"
+    PSP_A_URL: "http://{{ .Release.Name }}-psp-a"
+    PSP_B_URL: "http://{{ .Release.Name }}-psp-b"
+    # A return address on the web app's first exact origin (the core allows only those).
+    SIM_RETURN_URL: "{{ first (splitList \",\" .Values.global.corsAllowedOrigins) }}/sim-return"
+    SIM_MAX_INFLIGHT: "200"
   resources:
     requests: { cpu: 100m, memory: 64Mi }
     limits: { cpu: "1", memory: 256Mi }
+
+# The environment's Prometheus server (step 6, design D-5): scrapes the pods of its own namespace
+# (2 s for gateway, core and worker, 15 s for the others), keeps 6 hours.
+prometheus:
+  enabled: true
+  image: prom/prometheus:v3.5.0
+  retention: 6h
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 384Mi }
 
 redis:
   enabled: true
@@ -133,3 +180,8 @@ redis:
     limits: { cpu: 500m, memory: 256Mi }
   # A block-storage volume for the append-only file (production; previews keep an emptyDir).
   persistence: { enabled: false, storageClass: do-block-storage, size: 5Gi }
+
+# Step 6 (review D-h): the core's internal port only from the simulator, Prometheus only from the
+# worker (Redis's own policy, in its chart, admits core, gateway, worker and the providers only).
+networkPolicies:
+  enabled: true

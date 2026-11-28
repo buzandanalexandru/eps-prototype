@@ -62,6 +62,8 @@ export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
   const sum = total(lines, ctx);
   const missing = missingRequirements(lines, event);
   const paused = !ctx.availability;
+  // Degraded mode (step 6): the page stays static with its prices; buying waits, honestly.
+  const busy = ctx.availability?.degraded === true;
 
   const instanceOf = (p: ShopProduct) => {
     const c = choice[p.id];
@@ -70,6 +72,12 @@ export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
 
   return (
     <div className="space-y-4" data-testid="shop-tickets" data-availability={load.state}>
+      {busy && (
+        <div role="status" className={`${card} space-y-1 p-3`} data-testid="shop-busy">
+          <p className="font-semibold">{labels.busyTitle}</p>
+          <p className="text-sm">{labels.busyLead}</p>
+        </div>
+      )}
       {load.state === "failed" && (
         <p role="status" className={`${card} p-3 text-sm font-semibold`} data-testid="availability-failed">
           {labels.unavailable}
@@ -214,7 +222,7 @@ export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
           ))}
           {load.state === "loading" && <p className="text-xs text-[var(--eps-muted)]">{labels.checking}</p>}
         </div>
-        {canContinue(lines, ctx) ? (
+        {!busy && canContinue(lines, ctx) ? (
           <a href={checkoutHref(base, event, lines)} className={`${btn} bg-[var(--eps-primary)] text-[var(--eps-on-primary)]`} data-testid="continue">
             {labels.continue}
           </a>

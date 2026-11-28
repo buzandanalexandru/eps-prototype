@@ -5,6 +5,8 @@ package auth
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,6 +41,73 @@ type Claims struct {
 	// ClientIP is the address of the browser the web app minted the token for (step 4 review:
 	// hold creation is rate limited per client).
 	ClientIP string `json:"cip,omitempty"`
+	// Rehearsal and Run are set by the simulator's own issuer only (step 6, design D-3): the
+	// rehearsal event the token may act on and the run it belongs to.
+	Rehearsal string `json:"rh,omitempty"`
+	Run       string `json:"run,omitempty"`
+	// Sim is true when the token came from the simulator's issuer (never from the JSON).
+	Sim bool `json:"-"`
+}
+
+// SimIssuer is the simulator's rehearsal-only issuer: its tokens are guests on one rehearsal event,
+// accepted only where the caller checks Claims.Rehearsal (the gateway's join, the core's checkout).
+type SimIssuer struct {
+	Issuer string
+	Key    ed25519.PublicKey
+}
+
+// SimIssuerForEnv is the simulator's issuer in environment env: "urn:eps:sim:<slug>".
+func SimIssuerForEnv(env string) string {
+	if env == "" {
+		env = "dev"
+	}
+	return "urn:eps:sim:" + env
+}
+
+// devSimSeed is the simulator's key in EPS_ENV=dev only (local runs and tests).
+var devSimSeed = sha256.Sum256([]byte("eps dev simulator token key (EPS_ENV=dev only)"))
+
+// SimKeysFromEnv reads the simulator's Ed25519 pair: SIM_TOKEN_PRIVATE_KEY (hex seed; the simulator)
+// and SIM_TOKEN_PUBLIC_KEY (hex; the core and the gateway). Outside EPS_ENV=dev a missing key is an
+// error (fail closed); in dev a fixed development pair is used.
+func SimKeysFromEnv(getenv func(string) string, needPrivate bool) (ed25519.PrivateKey, ed25519.PublicKey, error) {
+	var priv ed25519.PrivateKey
+	if s := strings.TrimSpace(getenv("SIM_TOKEN_PRIVATE_KEY")); s != "" {
+		b, err := hex.DecodeString(s)
+		if err != nil || len(b) != ed25519.SeedSize {
+			return nil, nil, errors.New("auth: SIM_TOKEN_PRIVATE_KEY must be 32 bytes of hex")
+		}
+		priv = ed25519.NewKeyFromSeed(b)
+	}
+	var pub ed25519.PublicKey
+	if s := strings.TrimSpace(getenv("SIM_TOKEN_PUBLIC_KEY")); s != "" {
+		b, err := hex.DecodeString(s)
+		if err != nil || len(b) != ed25519.PublicKeySize {
+			return nil, nil, errors.New("auth: SIM_TOKEN_PUBLIC_KEY must be 32 bytes of hex")
+		}
+		pub = b
+	}
+	if priv != nil && pub == nil {
+		pub = priv.Public().(ed25519.PublicKey)
+	}
+	if (needPrivate && priv == nil) || pub == nil {
+		if getenv("EPS_ENV") != "dev" {
+			return nil, nil, errors.New("auth: the simulator token keys are required outside EPS_ENV=dev")
+		}
+		priv = ed25519.NewKeyFromSeed(devSimSeed[:])
+		pub = priv.Public().(ed25519.PublicKey)
+	}
+	return priv, pub, nil
+}
+
+// SimIssuerFromEnv is the verifiers' simulator issuer for EPS_ENV (an error outside dev without
+// SIM_TOKEN_PUBLIC_KEY).
+func SimIssuerFromEnv(getenv func(string) string) (*SimIssuer, error) {
+	_, pub, err := SimKeysFromEnv(getenv, false)
+	if err != nil {
+		return nil, err
+	}
+	return &SimIssuer{Issuer: SimIssuerForEnv(getenv("EPS_ENV")), Key: pub}, nil
 }
 
 // ErrInvalidToken is returned for every rejected token; the reason is only in the wrapped error,
@@ -69,8 +138,10 @@ const maxKidLen = 64
 // held across the database call. A failed load never locks verification out: the first load is
 // retried on the next request after FailedLoadBackoff.
 type Verifier struct {
-	Source            KeySource
-	Issuers           map[string]bool // allowed iss values; empty refuses every token
+	Source  KeySource
+	Issuers map[string]bool // allowed iss values; empty refuses every token
+	// Sim, when set, also accepts the simulator's rehearsal-only tokens (step 6).
+	Sim               *SimIssuer
 	Now               func() time.Time
 	Leeway            time.Duration
 	RefreshEvery      time.Duration
@@ -217,6 +288,9 @@ func (v *Verifier) Verify(ctx context.Context, token string) (*Claims, error) {
 		jwt.WithTimeFunc(v.Now),
 	)
 	_, err := parser.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
+		if v.Sim != nil && claims.Issuer == v.Sim.Issuer {
+			return v.Sim.Key, nil
+		}
 		kid, _ := t.Header["kid"].(string)
 		if kid == "" {
 			return nil, errors.New("missing key id")
@@ -226,8 +300,16 @@ func (v *Verifier) Verify(ctx context.Context, token string) (*Claims, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
-	if !v.Issuers[claims.Issuer] {
+	claims.Sim = false
+	if v.Sim != nil && claims.Issuer == v.Sim.Issuer {
+		if err := checkSim(claims); err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+		}
+		claims.Sim = true
+	} else if !v.Issuers[claims.Issuer] {
 		return nil, fmt.Errorf("%w: issuer not allowed in this environment", ErrInvalidToken)
+	} else if claims.Rehearsal != "" || claims.Run != "" {
+		return nil, fmt.Errorf("%w: rehearsal claims from another issuer", ErrInvalidToken)
 	}
 	if err := checkKind(claims); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
@@ -236,6 +318,35 @@ func (v *Verifier) Verify(ctx context.Context, token string) (*Claims, error) {
 		return nil, fmt.Errorf("%w: lifetime longer than 5 minutes", ErrInvalidToken)
 	}
 	return claims, nil
+}
+
+// checkSim: a simulator token is a guest "guest:sim-..." naming one rehearsal event and its run.
+func checkSim(c *Claims) error {
+	if c.Kind != KindGuest || !strings.HasPrefix(c.Subject, "guest:sim-") {
+		return errors.New("simulator token that is not a simulated guest")
+	}
+	if !uuidLike(c.Rehearsal) || !uuidLike(c.Run) {
+		return errors.New("simulator token without its rehearsal and run")
+	}
+	return nil
+}
+
+func uuidLike(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if r != '-' {
+				return false
+			}
+		case (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f'):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func checkKind(c *Claims) error {

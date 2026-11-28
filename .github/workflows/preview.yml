@@ -145,16 +145,19 @@ jobs:
     outputs:
       url: ${{ steps.bind.outputs.url || steps.vercel.outputs.url }}
       origins: ${{ steps.bind.outputs.origins || steps.vercel.outputs.url }}
+      # The web commit the preview serves: this one, or an earlier one when Vercel skipped a build
+      # that changed nothing the web app uses (.github/scripts/vercel-deployment.cjs).
+      commit: ${{ steps.vercel.outputs.commit }}
       db_bound: ${{ steps.bind.outputs.url && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Wait for the Vercel preview of this commit
+      - name: Wait for the Vercel preview of this commit (or the branch's latest when the build was skipped)
         id: vercel
         uses: actions/github-script@v7
         with:
           script: |
             const wait = require("./.github/scripts/vercel-deployment.cjs");
-            await wait({ github, context, core }, { sha: process.env.SHA, production: false });
+            await wait({ github, context, core }, { sha: process.env.SHA, production: false, branch: process.env.BRANCH });
       - uses: actions/setup-go@v5
         with:
           go-version-file: services/go.mod
@@ -261,6 +264,8 @@ jobs:
           kubectl -n "$NS" create secret generic eps-db --from-literal=DATABASE_URL="$url" \
             --dry-run=client -o yaml | kubectl apply -f - > /dev/null
           deploy/scripts/runtime-secret.sh "$NS"
+          # Step 6: the namespace of the cluster's one rehearsal Lease (shared by every environment).
+          kubectl create namespace eps-sim --dry-run=client -o yaml | kubectl apply -f - > /dev/null
       - name: helm upgrade --install (atomic)
         env:
           WEB_ORIGINS: ${{ needs.web.outputs.origins }}
@@ -318,7 +323,7 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: ${{ needs.web.outputs.url }}
           CORE_URL: ${{ needs.deploy-core.outputs.core_url }}
-          EXPECT_WEB_COMMIT: ${{ env.SHA }}
+          EXPECT_WEB_COMMIT: ${{ needs.web.outputs.commit || env.SHA }}
           EXPECT_CORE_COMMIT: ${{ env.SHA }}
         run: npx playwright test
       - uses: actions/upload-artifact@v4

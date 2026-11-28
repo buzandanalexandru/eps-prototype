@@ -23,6 +23,8 @@ tags:
   - name: sales
   - name: queue
     description: Served by the gateway (x-eps-service gateway), not the core.
+  - name: simulations
+    description: Rehearsals and simulator runs (step 6).
 paths:
   /healthz:
     get:
@@ -846,8 +848,195 @@ paths:
                 $ref: "#/components/schemas/QueueStatus"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/organiser/sales/{saleId}/degrade:
+    patch:
+      operationId: setSaleDegraded
+      summary: Turn degraded mode on or off (owner or admin)
+      description: |
+        Degraded mode (step 6, E11): new holds are refused with EPS-BUSY (503, Retry-After 30), the
+        waiting room admits no one while keeping every place, held orders can still pay, and the
+        shop's availability answer says degraded so event pages show the busy message. Takes
+        effect within 10 seconds each way.
+      tags: [sales]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [degraded]
+              properties:
+                degraded:
+                  type: boolean
+      responses:
+        "200":
+          description: The sale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/sales/{saleId}/rehearsals:
+    get:
+      operationId: listRehearsals
+      summary: The live rehearsals of a sale moment, with the simulator's limits
+      tags: [simulations]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      responses:
+        "200":
+          description: The rehearsals.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RehearsalList"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createRehearsal
+      summary: Copy a sale moment into a rehearsal with its own event id and stock (owner or admin)
+      tags: [simulations]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      responses:
+        "201":
+          description: The rehearsal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/sales/{saleId}/rehearsal/reset:
+    post:
+      operationId: resetRehearsal
+      summary: Replace a rehearsal with a fresh one (full stock, empty queue); refused during a run
+      tags: [simulations]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      responses:
+        "201":
+          description: The fresh rehearsal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaleView"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/sales/{saleId}/simulations:
+    get:
+      operationId: listSimulations
+      summary: The latest runs on a rehearsal
+      tags: [simulations]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      responses:
+        "200":
+          description: The runs, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SimulationRun"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: startSimulation
+      summary: Start a simulator run on a rehearsal (owner or admin)
+      description: |
+        Refused for a sale that is not a rehearsal, with knobs out of range (EPS-SIM-INVALID naming
+        the field), and while a run is active for the organiser or the sale (EPS-SIM-ACTIVE naming
+        it) or anywhere in the environment (EPS-SIM-BUSY). A rehearsal that already had a run is
+        replaced by a fresh one first, so every run starts with full stock and an empty queue.
+      tags: [simulations]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulationKnobs"
+      responses:
+        "201":
+          description: The run (pending).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationRun"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/simulations/{runId}:
+    get:
+      operationId: getSimulation
+      summary: One run with its latest report and, once ended, its summary
+      tags: [simulations]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationRun"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/simulations/{runId}/stop:
+    post:
+      operationId: stopSimulation
+      summary: Stop a run (its traffic ends within 15 seconds)
+      tags: [simulations]
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationRun"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/live/{saleId}:
+    get:
+      operationId: liveStream
+      x-eps-service: gateway
+      summary: The live on-sale frames of a sale as server-sent events (gateway; the sale's organiser only)
+      description: |
+        Opened by the dashboard straight from the browser with an organiser core token in the
+        Authorization header (fetch, not EventSource). Sends `retry: 2000`, an `event: history`
+        with up to 900 compact points, the latest frame, then one `event: frame` per second with
+        `id` = its timestamp, and a comment every 15 seconds.
+      tags: [queue]
+      parameters:
+        - $ref: "#/components/parameters/SaleId"
+      responses:
+        "200":
+          description: The stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   parameters:
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     SaleId:
       name: saleId
       in: path
@@ -1073,6 +1262,151 @@ components:
             $ref: "#/components/schemas/SaleVersion"
         queue:
           $ref: "#/components/schemas/QueueCounts"
+        degraded:
+          type: boolean
+        degradedAt:
+          type: string
+          format: date-time
+        rehearsal:
+          $ref: "#/components/schemas/RehearsalOf"
+    RehearsalOf:
+      type: object
+      description: "Set on a rehearsal (step 6): the sale moment and the snapshot version it copies."
+      required: [sourceEventId, sourceSaleId, snapshotVersion]
+      properties:
+        sourceEventId:
+          type: string
+          format: uuid
+        sourceSaleId:
+          type: string
+          format: uuid
+        snapshotVersion:
+          type: integer
+    RehearsalList:
+      type: object
+      required: [rehearsals, limits]
+      properties:
+        rehearsals:
+          type: array
+          items:
+            $ref: "#/components/schemas/SaleView"
+        limits:
+          $ref: "#/components/schemas/SimulationLimits"
+    SimulationLimits:
+      type: object
+      required: [maxFans, maxDurationSeconds]
+      properties:
+        maxFans:
+          type: integer
+        maxDurationSeconds:
+          type: integer
+    SimulationKnobs:
+      type: object
+      properties:
+        fans:
+          type: integer
+          minimum: 10
+          maximum: 200000
+        botShare:
+          type: number
+          minimum: 0
+          maximum: 0.5
+        prequeueShare:
+          type: number
+          minimum: 0
+          maximum: 1
+        arrival:
+          type: string
+          enum: [spike, flat]
+        opensInSeconds:
+          type: integer
+          minimum: 30
+          maximum: 600
+        qtyMix:
+          type: object
+          additionalProperties:
+            type: number
+        paymentMix:
+          type: object
+          additionalProperties:
+            type: number
+        abandonRate:
+          type: number
+          minimum: 0
+          maximum: 0.5
+        declineRate:
+          type: number
+          minimum: 0
+          maximum: 0.5
+        pollSeconds:
+          type: integer
+          minimum: 5
+          maximum: 30
+        providerA:
+          type: object
+          properties:
+            mode:
+              type: string
+              enum: [none, outage, failure_rate]
+            atSeconds:
+              type: integer
+              minimum: 0
+              maximum: 600
+            forSeconds:
+              type: integer
+              minimum: 10
+              maximum: 600
+            failureRate:
+              type: number
+              minimum: 0
+              maximum: 1
+        durationSeconds:
+          type: integer
+          minimum: 60
+          maximum: 600
+    SimulationRun:
+      type: object
+      required: [id, saleId, eventId, state, knobs, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        saleId:
+          type: string
+          format: uuid
+        eventId:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [pending, starting, running, finishing, done, failed, stopped]
+        knobs:
+          $ref: "#/components/schemas/SimulationKnobs"
+        createdAt:
+          type: string
+          format: date-time
+        opensAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        stopRequested:
+          type: boolean
+        outageOnAt:
+          type: string
+          format: date-time
+        outageOffAt:
+          type: string
+          format: date-time
+        report:
+          type: object
+          description: The simulator's latest ground truth (counts and latencies only).
+        summary:
+          type: object
+          description: The run's summary once it ended.
+        error:
+          type: string
     SaleList:
       type: object
       required: [sales]
@@ -1123,6 +1457,12 @@ components:
           type: integer
         paused:
           type: boolean
+        degraded:
+          type: boolean
+          description: The organiser switched the sale to degraded mode (no admissions; places kept).
+        rehearsal:
+          type: boolean
+          description: The sale is a rehearsal with simulated fans (step 6).
         pass:
           type: string
           description: The signed pass (once admitted), sent as X-EPS-Pass on checkout calls.
@@ -1289,6 +1629,9 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProductAvailability"
+        degraded:
+          type: boolean
+          description: A current sale of the event is in degraded mode (the shop shows the busy message).
         instances:
           type: array
           description: |
@@ -1791,6 +2134,9 @@ components:
       type: object
       required: [id, organiserId, eventId, snapshotVersion, state, currency, totalMinor, lines, holdExpiresAt, serverTime, history, questions, canPay, access, savedCards, buyerKind, payPlan, detailsGiven, answers]
       properties:
+        rehearsal:
+          type: boolean
+          description: A rehearsal order (step 6, simulated fans; kept out of reports).
         id:
           type: string
           format: uuid

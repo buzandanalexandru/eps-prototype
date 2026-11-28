@@ -1,0 +1,160 @@
+{{- define "eps.promLabels" -}}
+app.kubernetes.io/name: prometheus
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/part-of: eps
+eps.dev/env: {{ .Values.global.env | quote }}
+{{- end }}
+{{- define "eps.promConfig" -}}
+global:
+  scrape_interval: 15s
+  scrape_timeout: 2s
+scrape_configs:
+  {{- range $job := list (dict "name" "onsale" "interval" "2s") (dict "name" "others" "interval" "15s") }}
+  - job_name: {{ $job.name }}
+    scrape_interval: {{ $job.interval }}
+    scrape_timeout: {{ ternary "1500ms" "5s" (eq $job.name "onsale") }}
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [{{ $.Release.Namespace | quote }}]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        regex: "true"
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_annotation_eps_dev_scrape_interval]
+        regex: {{ ternary "2s" "(|15s)" (eq $job.name "onsale") | quote }}
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        regex: (.+);(.+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        target_label: app
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+  {{- end }}
+{{- end }}
+{{- if .Values.prometheus.enabled }}
+{{- $name := printf "%s-prometheus" .Release.Name }}
+# The environment's metrics collector (step 6, design D-5): reads the pods of this namespace only
+# (a Role, not a ClusterRole), scrapes the annotated pods every 2 s (gateway, core, worker) or
+# 15 s (the others), keeps 6 hours. Not behind any ingress.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eps.promLabels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eps.promLabels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eps.promLabels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eps.promLabels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    {{- include "eps.promConfig" . | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eps.promLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        {{- include "eps.promLabels" . | nindent 8 }}
+      annotations:
+        eps.dev/config: {{ include "eps.promConfig" . | sha256sum | trunc 12 | quote }}
+    spec:
+      serviceAccountName: {{ $name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: prometheus
+          image: {{ .Values.prometheus.image }}
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time={{ .Values.prometheus.retention }}
+            - --web.listen-address=:9090
+          ports:
+            - name: web
+              containerPort: 9090
+          readinessProbe:
+            httpGet: { path: /-/ready, port: web }
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet: { path: /-/healthy, port: web }
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            {{- toYaml .Values.prometheus.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: config, mountPath: /etc/prometheus }
+            - { name: data, mountPath: /prometheus }
+      volumes:
+        - name: config
+          configMap: { name: {{ $name }} }
+        - name: data
+          emptyDir: { sizeLimit: 2Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "eps.promLabels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  ports:
+    - name: web
+      port: 9090
+      targetPort: web
+{{- end }}
