@@ -19,7 +19,9 @@ import {
   restoreVersion,
   revokeAllPreviewLinks,
   revokePreviewLink,
+  shopContext,
 } from "@/lib/storefront/domain";
+import { studioSnapshotPublish } from "@/lib/snapshot/studio";
 import { storeMapTiles } from "@/lib/storefront/map-store";
 import { deleteAsset, listAssets } from "@/lib/storefront/assets";
 import type { PublishProblem } from "@/lib/storefront/publish-checks";
@@ -55,6 +57,12 @@ async function run<T>(fn: (s: Awaited<ReturnType<typeof requireActive>>) => Prom
   }
 }
 
+/** The brand's shop addresses, for revalidating its cached pages after a publish. */
+async function shopAddress(c: Parameters<typeof listVersions>[0], brandId: string) {
+  const ctx = await shopContext(c, brandId);
+  return { brandId, slug: ctx.brand.slug, hostnames: ctx.hostnames };
+}
+
 async function history(c: Parameters<typeof listVersions>[0], id: string): Promise<{ versions: VersionView[]; live: number | null }> {
   const sf = await getStorefront(c, id);
   if (!sf) throw new DomainError("not_found");
@@ -74,13 +82,17 @@ export async function publishAction(storefrontId: string, revision: number) {
   const rev = parse(z.int().min(1), revision);
   if (rev === undefined) return bad;
   return run(async (s) => {
+    // Step 3: the same transaction compiles the sale snapshots of the events the shop sells.
+    const snap = await studioSnapshotPublish(s.user.id);
     const r = await studioTx(s, async (c) => {
-      const v = await publishDraft(c, { storefrontId: id, revision: rev, userId: s.user.id });
-      return { number: v.number, created: v.created, document: (await getStorefront(c, id))!.document, ...(await history(c, id)) };
+      const v = await publishDraft(c, { storefrontId: id, revision: rev, userId: s.user.id }, [snap.hook]);
+      const sf = (await getStorefront(c, id))!;
+      return { number: v.number, created: v.created, document: sf.document, shop: await shopAddress(c, sf.brand_id), ...(await history(c, id)) };
     });
     await storeMapTiles(s, r.document);
-    const { document: _d, ...rest } = r; // eslint-disable-line @typescript-eslint/no-unused-vars
-    return rest;
+    const after = await snap.after(r.shop);
+    const { document: _d, shop: _s, ...rest } = r; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return { ...rest, snapshots: after.snapshots };
   });
 }
 
@@ -91,13 +103,18 @@ export async function restoreAction(storefrontId: string, number: number, revisi
   if (n === undefined) return bad;
   const rev = parse(z.int().min(1), revision);
   if (rev === undefined) return bad;
-  return run((s) =>
-    studioTx(s, async (c) => {
-      const v = await restoreVersion(c, { storefrontId: id, number: n, revision: rev, userId: s.user.id });
+  return run(async (s) => {
+    // A restore compiles from the current catalogue: the old look, never old prices (D3.1).
+    const snap = await studioSnapshotPublish(s.user.id);
+    const r = await studioTx(s, async (c) => {
+      const v = await restoreVersion(c, { storefrontId: id, number: n, revision: rev, userId: s.user.id }, [snap.hook]);
       const sf = (await getStorefront(c, id))!;
-      return { number: v.number, revision: sf.draft_revision, document: sf.document as StorefrontDocument, ...(await history(c, id)) };
-    }),
-  );
+      return { number: v.number, revision: sf.draft_revision, document: sf.document as StorefrontDocument, shop: await shopAddress(c, sf.brand_id), ...(await history(c, id)) };
+    });
+    const after = await snap.after(r.shop);
+    const { shop: _s, ...rest } = r; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return { ...rest, snapshots: after.snapshots };
+  });
 }
 
 export async function historyAction(storefrontId: string) {

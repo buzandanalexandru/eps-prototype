@@ -4,6 +4,9 @@
 // scoped to that organiser. Owner-only rules live in the domain functions (D1.6).
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
+import { slugTag } from "@/lib/storefront/shop-cache";
+import { revalidateShop } from "@/lib/storefront/shop-data";
 import { getAppPool } from "@/lib/db/pool";
 import { withTx } from "@/lib/db/tx";
 import { DomainError } from "@/lib/errors";
@@ -22,6 +25,7 @@ import {
   setEventFeePolicy,
   setFeePolicy,
   updateBrand,
+  getBrand,
 } from "@/lib/organisers/domain";
 import {
   addLineupSlot,
@@ -174,7 +178,10 @@ function brandFields(fd: FormData) {
 export async function saveBrandAction(brandId: string | null, prev: FormState, fd: FormData): Promise<FormState> {
   return act(async (s, c) => {
     if (brandId) {
-      await updateBrand(c, s.active.id, brandId, brandFields(fd));
+      const before = await getBrand(c, brandId);
+      const b = await updateBrand(c, s.active.id, brandId, brandFields(fd));
+      // A changed address must stop serving the cached shop at the old one (after commit).
+      if (before && before.slug !== b.slug) after(() => revalidateShop([slugTag(before.slug), slugTag(b.slug)]));
       return;
     }
     const b = await createBrand(c, s.active.id, brandFields(fd));
