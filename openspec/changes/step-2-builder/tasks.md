@@ -43,6 +43,7 @@
 - [x] 7.3 Open the PR to `main`; verify CI is green and the preview is deployed and seeded
 - [ ] 7.4 Run the three adversarial reviewers in parallel (correctness; security and data, including injection through documents and postMessage; spec and scale), fix every confirmed finding or record its rejection, re-run affected tests; verify no open confirmed finding
 - [x] 7.5 Run Playwright against the deployed preview URL (builder, live preview, publish, preview link, rollback; desktop and phone, RO and EN, no console errors, no horizontal scroll); verify all pass
+  - Re-run after the review fixes on 8ec651a (preview run 27, deployed URL): 44 passed, 14 skipped, 0 failed. Desktop ran all six builder tests (first visit, template change keeping colours, fonts, radius and logo, logo upload and contrast fix, reorder/keyboard/hide, two-tab conflict, live title within 1 s, preview language following the field, publish v1 → v2 → restore v3 with the warning, preview link signed out with banner, no buying, own-origin images, privacy line, DENY framing, revoke → 404). Phone ran only the builder test that creates no data (390 px frame, no horizontal scroll, stacked ticket grid, Romanian prices and labels, click-to-select, locked checkout); the five data-creating builder tests are desktop-only, as in step 1. RO is checked in the frame and in unit render tests; Studio screens in RO/EN are covered by sample-data.spec.
 - [ ] 7.6 Squash-merge when green; verify the production deploy and the Playwright smoke test pass
 
 ## Workflow follow-up
