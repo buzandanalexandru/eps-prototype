@@ -486,6 +486,14 @@ func (s *session) journey(ctx context.Context) {
 		return
 	}
 	t.set(s.c, "joining")
+	// Counted as sent once it makes its first request (review D-f).
+	t.add(func(x *Truth) {
+		if s.c.bot != "" {
+			x.BotsSent++
+		} else {
+			x.FansSent++
+		}
+	})
 	offer := s.r.pickOffer(s.rng)
 	if s.c.bot == BotSkipper {
 		s.skip(ctx, offer)

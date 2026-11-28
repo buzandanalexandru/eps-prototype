@@ -190,12 +190,11 @@ func (e *Engine) Drive(ctx context.Context, a *Assignment) {
 	for _, c := range clients {
 		r.t.set(c, "arriving")
 	}
-	r.t.truth.FansSent, r.t.truth.BotsSent = 0, 0
 	for _, c := range clients {
 		if c.bot != "" {
-			r.t.truth.BotsSent++
+			r.t.truth.BotsPlanned++
 		} else {
-			r.t.truth.FansSent++
+			r.t.truth.FansPlanned++
 		}
 	}
 	runCtx, stopAll := context.WithCancel(ctx)
@@ -285,7 +284,7 @@ func (e *Engine) report(ctx context.Context, r *runner, phase string) (Reply, bo
 		rep.BotPlaces = append([]string(nil), r.t.botPlaces...)
 	}
 	r.t.mu.Unlock()
-	rep.Requests, rep.RPS = r.call.st.snapshot(now)
+	rep.Requests, rep.RPS, rep.PeakRPS = r.call.st.snapshot(now)
 	c := &caller{http: e.client(), slots: make(chan struct{}, 1), st: &stats{}}
 	rctx := ctx
 	if phase == "done" {

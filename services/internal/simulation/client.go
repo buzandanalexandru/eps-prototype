@@ -48,16 +48,21 @@ type Endpoints struct {
 
 // stats keeps the counts and latencies of each step (a bounded sample for the percentiles).
 type stats struct {
-	mu    sync.Mutex
-	steps map[string]*stepStat
-	start time.Time
-	total int
+	mu     sync.Mutex
+	steps  map[string]*stepStat
+	start  time.Time
+	total  int
+	second int64 // the current second (Unix) and its count, for the peak
+	inSec  int
+	peak   int
 }
 
+// stepStat keeps a uniform sample of the whole run's latencies (reservoir sampling), so the p95 is
+// over the run, not only its last requests (review D-f).
 type stepStat struct {
 	count, errors int
 	sample        []float64
-	next          int
+	rnd           uint64
 }
 
 const sampleSize = 2000
@@ -99,11 +104,18 @@ func (s *stats) observe(step string, d time.Duration, failed bool) {
 	}
 	st, ok := s.steps[step]
 	if !ok {
-		st = &stepStat{}
+		st = &stepStat{rnd: uint64(time.Now().UnixNano()) | 1}
 		s.steps[step] = st
 	}
 	st.count++
 	s.total++
+	if sec := time.Now().Unix(); sec != s.second {
+		s.second, s.inSec = sec, 0
+	}
+	s.inSec++
+	if s.inSec > s.peak {
+		s.peak = s.inSec
+	}
 	if failed {
 		st.errors++
 	}
@@ -111,8 +123,13 @@ func (s *stats) observe(step string, d time.Duration, failed bool) {
 	if len(st.sample) < sampleSize {
 		st.sample = append(st.sample, ms)
 	} else {
-		st.sample[st.next] = ms
-		st.next = (st.next + 1) % sampleSize
+		// xorshift: a cheap uniform index in [0, count)
+		st.rnd ^= st.rnd << 13
+		st.rnd ^= st.rnd >> 7
+		st.rnd ^= st.rnd << 17
+		if j := int(st.rnd % uint64(st.count)); j < sampleSize {
+			st.sample[j] = ms
+		}
 	}
 }
 
@@ -124,7 +141,7 @@ func pct(sorted []float64, p float64) float64 {
 	return sorted[i]
 }
 
-func (s *stats) snapshot(now time.Time) (map[string]StepStats, float64) {
+func (s *stats) snapshot(now time.Time) (map[string]StepStats, float64, float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := map[string]StepStats{}
@@ -137,7 +154,7 @@ func (s *stats) snapshot(now time.Time) (map[string]StepStats, float64) {
 	if el := now.Sub(s.start).Seconds(); el > 1 {
 		rps = round1(float64(s.total) / el)
 	}
-	return out, rps
+	return out, rps, float64(s.peak)
 }
 
 func round1(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }

@@ -73,6 +73,11 @@ func TestFanJourney(t *testing.T) {
 	if sum.PaymentSuccessRate != 1 {
 		t.Fatalf("payment success rate %v", sum.PaymentSuccessRate)
 	}
+	// Review D-f: planned and arrived are both counted; the peak second is at least the average;
+	// 2,000 places with 200 fans do not sell out, so there is no sell-out time.
+	if sum.Truth.FansPlanned != 200 || sum.PeakRPS < sum.RPS || sum.SellOutSeconds != nil {
+		t.Fatalf("summary: planned %d peak %v rps %v sell-out %v", sum.Truth.FansPlanned, sum.PeakRPS, sum.RPS, sum.SellOutSeconds)
+	}
 	if sum.Facts.PaidOrders != paid || sum.Facts.TicketsSold != sum.Truth.FanTickets || sum.Truth.FansSent != 200 || sum.RPS <= 0 {
 		t.Fatalf("summary: facts %+v truth %+v rps %v", sum.Facts, sum.Truth, sum.RPS)
 	}
@@ -86,5 +91,34 @@ func TestFanJourney(t *testing.T) {
 	}
 	if !closed.Settings.Paused || closed.Settings.OpensAt.Before(time.Now().Add(24*time.Hour)) {
 		t.Fatalf("rehearsal still open after its run: %+v", closed.Settings)
+	}
+}
+
+// Scenario "Outage on schedule" (with fans): while A is down for the rehearsal, new payments
+// complete at B; the summary counts them, and a sale that sold its whole capacity has a sell-out
+// time taken from its last paid order.
+func TestOutageRunPaysAtB(t *testing.T) {
+	s := simtest.Start(t)
+	ev, real := s.RealSale(t, 20, 10)
+	ctx := context.Background()
+	rh, _ := s.Sim.CreateRehearsal(ctx, ev.Org, real.ID, "test")
+	r, sum := runToEnd(t, s, ev.Org, rh.ID, simulation.Knobs{Fans: 80, BotShare: f(0), OpensInSeconds: 30, PollSeconds: 5, DurationSeconds: 60,
+		DeclineRate: f(0), ProviderA: &simulation.ProviderPlan{Mode: "outage", AtSeconds: 0, ForSeconds: 600}})
+	paid := count(t, s, `select count(*) from sales.orders where event_id = $1 and state in ('paid', 'issued')`, r.EventID)
+	if paid == 0 {
+		t.Fatal("no fan paid during the outage")
+	}
+	atB := count(t, s, `select count(*) from sales.payment_attempts a join sales.orders o on o.id = a.order_id
+		where o.event_id = $1 and a.provider = 'b' and a.state = 'succeeded'`, r.EventID)
+	atA := count(t, s, `select count(*) from sales.payment_attempts a join sales.orders o on o.id = a.order_id
+		where o.event_id = $1 and a.provider = 'a' and a.state = 'succeeded'`, r.EventID)
+	if atA != 0 || atB != paid || sum.Facts.PaidAtBDuringOutage != paid {
+		t.Fatalf("paid %d: at A %d, at B %d, summary %d", paid, atA, atB, sum.Facts.PaidAtBDuringOutage)
+	}
+	// 30 places: sold out exactly when every place was paid for.
+	sold := count(t, s, `select coalesce(sum(d.value::bigint), 0) from sales.orders o, jsonb_each_text(o.draws) d
+		where o.event_id = $1 and o.state in ('paid', 'issued')`, r.EventID)
+	if (sold == 30) != (sum.SellOutSeconds != nil) {
+		t.Fatalf("sold %d of 30, sell-out %v", sold, sum.SellOutSeconds)
 	}
 }

@@ -49,8 +49,9 @@ type Report struct {
 	Fans     map[string]int       `json:"fans"`  // by state
 	Bots     map[string]int       `json:"bots"`  // by state
 	Truth    Truth                `json:"truth"`
-	Requests map[string]StepStats `json:"requests"` // by step
-	RPS      float64              `json:"rps"`
+	Requests map[string]StepStats `json:"requests"` // by step (p95 over the run, sampled)
+	RPS      float64              `json:"rps"`      // average over the run
+	PeakRPS  float64              `json:"peakRps"`  // the busiest second
 	// BotPlaces are the queue places of the bots (sent only in the final report): the core counts
 	// which of them the system flagged for the summary, after the run.
 	BotPlaces []string `json:"botPlaces,omitempty"`
@@ -59,6 +60,9 @@ type Report struct {
 
 // Truth is the simulator's ground truth.
 type Truth struct {
+	// Planned at the start; Sent once a client made its first request (review D-f).
+	FansPlanned    int    `json:"fansPlanned"`
+	BotsPlanned    int    `json:"botsPlanned"`
 	FansSent       int    `json:"fansSent"`
 	BotsSent       int    `json:"botsSent"`
 	FansAdmitted   int    `json:"fansAdmitted"`
@@ -445,6 +449,8 @@ type Facts struct {
 	// OrdersPaying are orders that pressed Pay at least once; OrdersPaid of them succeeded.
 	OrdersPaying int `json:"ordersPaying"`
 	OrdersPaid   int `json:"ordersPaid"`
+	// PaidAtBDuringOutage: payments that succeeded at B while A was down (the failover's effect).
+	PaidAtBDuringOutage int `json:"paidAtBDuringOutage"`
 }
 
 // FactsOf reads a rehearsal's orders and attempts (organiser scope).
@@ -478,11 +484,12 @@ type Summary struct {
 	PlacesFlagged      int64                `json:"placesFlagged"`
 	Requests           map[string]StepStats `json:"requests"`
 	RPS                float64              `json:"rps"`
+	PeakRPS            float64              `json:"peakRps"`
 	Seconds            float64              `json:"seconds"`
 }
 
 func (s *Service) summarise(ctx context.Context, tx pgx.Tx, r *Run, rep Report) Summary {
-	out := Summary{Truth: rep.Truth, Requests: rep.Requests, RPS: rep.RPS}
+	out := Summary{Truth: rep.Truth, Requests: rep.Requests, RPS: rep.RPS, PeakRPS: rep.PeakRPS}
 	if f, err := FactsOf(ctx, tx, r.EventID); err == nil {
 		out.Facts = f
 		// Per order (a fan whose payment failed over to B and succeeded paid): paid of those that
@@ -491,10 +498,20 @@ func (s *Service) summarise(ctx context.Context, tx pgx.Tx, r *Run, rep Report) 
 			out.PaymentSuccessRate = float64(f.OrdersPaid) / float64(f.OrdersPaying)
 		}
 	}
+	if r.OutageOnAt != nil {
+		end := s.now()
+		if r.OutageOffAt != nil {
+			end = *r.OutageOffAt
+		}
+		_ = tx.QueryRow(ctx, `select count(*) from sales.payment_attempts a join sales.orders o on o.organiser_id = a.organiser_id and o.id = a.order_id
+			where o.event_id = $1 and a.provider = 'b' and a.state = 'succeeded' and a.created_at between $2 and $3`, r.EventID, *r.OutageOnAt, end).Scan(&out.Facts.PaidAtBDuringOutage)
+	}
 	if r.OpensAt != nil {
 		out.Seconds = s.now().Sub(*r.OpensAt).Seconds()
-		if t, err := time.Parse(time.RFC3339Nano, rep.Truth.SoldOutAt); err == nil && t.After(*r.OpensAt) {
-			v := t.Sub(*r.OpensAt).Seconds()
+		// Sold out by the system's own record (review D-f): every pool instance's paid units reached
+		// its capacity; the time is the last paid order's.
+		if at := s.soldOutAt(ctx, tx, r.EventID); at != nil && at.After(*r.OpensAt) {
+			v := at.Sub(*r.OpensAt).Seconds()
 			out.SellOutSeconds = &v
 		}
 	}
@@ -508,6 +525,41 @@ func (s *Service) summarise(ctx context.Context, tx pgx.Tx, r *Run, rep Report) 
 		}
 	}
 	return out
+}
+
+// soldOutAt is when the rehearsal sold its whole capacity (nil when it did not).
+func (s *Service) soldOutAt(ctx context.Context, tx pgx.Tx, event string) *time.Time {
+	if s.Snaps == nil {
+		return nil
+	}
+	snap, err := s.Snaps.Load(ctx, event)
+	if err != nil {
+		return nil
+	}
+	sold := map[string]int64{}
+	rows, err := tx.Query(ctx, `select d.key, sum(d.value::bigint) from sales.orders o, jsonb_each_text(o.draws) d
+		where o.event_id = $1 and o.state in ('paid', 'issued') group by d.key`, event)
+	if err != nil {
+		return nil
+	}
+	for rows.Next() {
+		var k string
+		var n int64
+		if rows.Scan(&k, &n) == nil {
+			sold[k] = n
+		}
+	}
+	rows.Close()
+	for _, p := range snap.Pools {
+		for _, in := range p.Instances {
+			if sold[in.InstanceID] < in.Capacity {
+				return nil
+			}
+		}
+	}
+	var at *time.Time
+	_ = tx.QueryRow(ctx, `select max(paid_at) from sales.orders where event_id = $1 and state in ('paid', 'issued')`, event).Scan(&at)
+	return at
 }
 
 // flaggedAmong counts the bots' places the system scored as suspects (after the run only).
