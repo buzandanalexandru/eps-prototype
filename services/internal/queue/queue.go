@@ -380,6 +380,14 @@ func (e *Engine) scoreJoin(ctx context.Context, k Keys, saleID, qid, sid string,
 			}
 			if sn != nil && sn.Val() > 50 {
 				add(botdefence.ManyPerSubnet)
+				// The earlier places from that /24 are scored too.
+				if sn.Val() == 51 {
+					for _, other := range e.Redis.SMembers(ctx, k.k("q-sn", botdefence.Subnet(in.IP))).Val() {
+						if other != qid {
+							_, _ = e.Scorer.Add(ctx, k.Bot(other), botdefence.ManyPerSubnet)
+						}
+					}
+				}
 			}
 		}
 	}

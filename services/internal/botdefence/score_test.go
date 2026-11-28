@@ -69,8 +69,8 @@ func TestOrdinaryFan(t *testing.T) {
 func TestHeadlessAndHostingRanges(t *testing.T) {
 	for ua, want := range map[string]bool{
 		"Mozilla/5.0 (X11; Linux x86_64) HeadlessChrome/120.0": true,
-		"python-requests/2.31":                                  true,
-		"":                                                      true,
+		"python-requests/2.31":                                 true,
+		"":                                                     true,
 		"Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Safari/604.1": false,
 	} {
 		if botdefence.IsHeadless(ua) != want {
