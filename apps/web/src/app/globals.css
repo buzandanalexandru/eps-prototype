@@ -128,3 +128,34 @@
     @apply font-sans;
   }
 }
+/* Storefronts (design D2.3): the active palette comes from the brand's two palettes, chosen by the
+   mode on the shop root. Values are only ever the validated tokens set as variables on that root. */
+.eps-shop {
+  --eps-primary: var(--eps-l-primary);
+  --eps-on-primary: var(--eps-l-on-primary);
+  --eps-surface: var(--eps-l-surface);
+  --eps-on-surface: var(--eps-l-on-surface);
+  --eps-accent: var(--eps-l-accent);
+  --eps-muted: var(--eps-l-muted);
+  color-scheme: light;
+}
+.eps-shop[data-eps-mode="dark"] {
+  --eps-primary: var(--eps-d-primary);
+  --eps-on-primary: var(--eps-d-on-primary);
+  --eps-surface: var(--eps-d-surface);
+  --eps-on-surface: var(--eps-d-on-surface);
+  --eps-accent: var(--eps-d-accent);
+  --eps-muted: var(--eps-d-muted);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  .eps-shop[data-eps-mode="auto"] {
+    --eps-primary: var(--eps-d-primary);
+    --eps-on-primary: var(--eps-d-on-primary);
+    --eps-surface: var(--eps-d-surface);
+    --eps-on-surface: var(--eps-d-on-surface);
+    --eps-accent: var(--eps-d-accent);
+    --eps-muted: var(--eps-d-muted);
+    color-scheme: dark;
+  }
+}
