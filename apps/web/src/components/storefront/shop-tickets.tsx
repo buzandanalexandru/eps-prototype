@@ -18,14 +18,14 @@ import {
   removeOne,
   statusOf,
   total,
-  type AvailabilityState,
   type Line,
   type PickerCtx,
 } from "@/lib/storefront/picker";
-import { fromPriceAt, instalmentsAt, priceAt, statusByTime } from "@/lib/storefront/sale-view";
+import { availabilityFor } from "@/lib/storefront/availability-answer";
+import { fromPriceAt, instalmentsAt, priceAt } from "@/lib/storefront/sale-view";
 import type { Locale } from "@/lib/storefront/schema";
 import { AllInPrice, Money, PriceNotes, money, shopDate } from "./all-in-price";
-import { useAvailability, useNow, type Load } from "./availability";
+import { useAvailability, useNow } from "./availability";
 
 type Props = { event: ShopEvent; labels: ShopLabels; locale: Locale; base: string; showPerks: boolean };
 
@@ -36,21 +36,11 @@ const select = "min-h-11 rounded-[var(--eps-radius)] border border-[color-mix(in
 
 const tx = (v: { ro: string; en: string }, l: Locale) => (v[l] || v[l === "ro" ? "en" : "ro"] || "").trim();
 
-/** The availability the picker uses: the core's answer, the page's own facts when the core answered for another version, or none. */
-function stateOf(load: Load, ev: ShopEvent, now: Date): AvailabilityState | null {
-  if (load.state === "ok") return load.data;
-  if (load.state !== "stale") return null;
-  return {
-    products: Object.fromEntries(ev.products.map((p) => [p.id, { status: statusByTime(p.sale, now), allInMinor: priceAt(p, now).allInMinor, priceStepIndex: priceAt(p, now).stepIndex }])),
-    instances: {},
-  };
-}
-
 /** The event's "from" price, worked out in the browser (it depends on the time and on availability). */
 export function FromPrice({ event, labels, locale }: { event: ShopEvent; labels: ShopLabels; locale: Locale }) {
   const now = useNow(event.sale?.renderedAt ?? event.startsAt);
   const load = useAvailability(event.id, event.sale?.version ?? 0);
-  const from = fromPriceAt(event, now, stateOf(load, event, now)?.products);
+  const from = fromPriceAt(event, now, availabilityFor(load, event, now)?.products);
   if (!from) return null;
   return (
     <span data-testid="from-price">
@@ -67,7 +57,7 @@ export function ShopTickets({ event, labels, locale, base, showPerks }: Props) {
   const [lines, setLines] = useState<Line[]>([]);
   const [choice, setChoice] = useState<Record<string, { day: string; time: string }>>({});
   const [limitHit, setLimitHit] = useState<string | null>(null);
-  const ctx: PickerCtx = useMemo(() => ({ event, availability: stateOf(load, event, now), now }), [event, load, now]);
+  const ctx: PickerCtx = useMemo(() => ({ event, availability: availabilityFor(load, event, now), now }), [event, load, now]);
   const sum = total(lines, ctx);
   const missing = missingRequirements(lines, event);
   const paused = !ctx.availability;

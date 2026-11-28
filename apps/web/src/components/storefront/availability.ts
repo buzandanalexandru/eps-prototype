@@ -5,25 +5,13 @@
 // page's own facts are used and the core is asked again soon. Failures back off with jitter, from
 // 10 seconds to a minute, so a crowd does not retry in step.
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import type { AvailabilityState } from "@/lib/storefront/picker";
-import type { Availability, InstanceAvailability } from "@/lib/storefront/sale-view";
+import { readAnswer, type Answer, type Load } from "@/lib/storefront/availability-answer";
 
-export type Load =
-  | { state: "loading" }
-  | { state: "ok"; data: AvailabilityState }
-  /** The core answered for another snapshot version: the page's own prices and statuses apply. */
-  | { state: "stale" }
-  | { state: "failed" };
+export type { Load };
 
 type Entry = { load: Load; listeners: Set<() => void>; timer?: ReturnType<typeof setTimeout>; failures: number; running: boolean };
 const entries = new Map<string, Entry>();
 const LOADING: Load = { state: "loading" };
-
-type Body = {
-  version?: number;
-  products?: (Availability & { productId: string })[];
-  instances?: InstanceAvailability[];
-};
 
 function jitter(ms: number) {
   return Math.round(ms * (0.75 + Math.random() * 0.5));
@@ -43,19 +31,7 @@ async function poll(eventId: string, version: number, e: Entry) {
   let next: Load = { state: "failed" };
   try {
     const res = await fetch(`/api/public/events/${eventId}/availability`, { headers: { accept: "application/json" } });
-    if (res.ok) {
-      const body = (await res.json()) as Body;
-      if (body.version !== version) next = { state: "stale" };
-      else if (Array.isArray(body.products)) {
-        next = {
-          state: "ok",
-          data: {
-            products: Object.fromEntries(body.products.map((p) => [p.productId, p])),
-            instances: Object.fromEntries((body.instances ?? []).map((i) => [i.instanceId, i])),
-          },
-        };
-      }
-    }
+    if (res.ok) next = readAnswer((await res.json()) as Answer, version);
   } catch {
     // network failure: buying stays paused, the page keeps its prices
   }
