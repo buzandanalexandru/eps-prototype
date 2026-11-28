@@ -73,7 +73,7 @@ export function proxy(req: NextRequest) {
   const res = rewritten ? NextResponse.rewrite(new URL(`${rewritten}${search}`, req.url), { request: { headers } }) : NextResponse.next({ request: { headers } });
   for (const [k, v] of Object.entries(baseHeaders(frame))) res.headers.set(k, v);
   if (csp) res.headers.set("Content-Security-Policy", csp);
-  if (pathname.startsWith("/p/")) {
+  if (pathname.startsWith("/p/") || pathname.startsWith("/t/")) {
     res.headers.set("Cache-Control", "private, no-store");
     res.headers.set("X-Robots-Tag", "noindex, nofollow");
     res.headers.set("Referrer-Policy", "no-referrer");

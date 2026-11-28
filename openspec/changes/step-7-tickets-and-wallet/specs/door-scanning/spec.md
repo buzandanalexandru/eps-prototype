@@ -10,7 +10,7 @@ Lets an organiser's door staff scan rotating ticket codes on a phone at the gate
 The door page SHALL be usable only by the owner, admins and box office staff of the event's organiser. Preparing a device MUST download, while online, the public ticket keys, the event's sync package (revocations, entries, holder names) and the server time.
 
 #### Scenario: Box office prepares a device
-- **WHEN** a box office member of the organiser opens the door page for their event and presses Prepare this device
+- **WHEN** a box office member (or the owner or an admin) of the organiser opens the door page for their event and presses Prepare this device
 - **THEN** the device stores the keys, the sync package and the clock offset, and shows Ready to scan
 Test: apps/web/tests/e2e/door-scanning.spec.ts
 
@@ -102,7 +102,7 @@ The door device SHALL measure the offset between its clock and the server's at e
 Test: apps/web/tests/unit/door-verify.test.ts
 
 ### Requirement: Clear scan feedback in the staff's language
-Each scan SHALL give a full-screen green or red result with a short reason in Romanian or English, a sound and a vibration where the device supports it, and return to scanning within two seconds.
+Each scan SHALL give a full-screen green or red result with a short reason in Romanian or English, a sound and a vibration where the device supports it, and return to scanning within two seconds. Codes are read with the camera where the browser can read QR codes (BarcodeDetector), from an image, or typed in.
 
 #### Scenario: Rejected scan in Romanian
 - **WHEN** a device set to Romanian rejects a screenshot

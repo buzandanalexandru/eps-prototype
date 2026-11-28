@@ -555,6 +555,51 @@
                 }
               }
             ]
+          },
+          "personaliseBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "checkinBy": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lateCheckin": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "faceMinor",
+                  "allInMinor",
+                  "fanFeeMinor",
+                  "organiserNetMinor"
+                ],
+                "properties": {
+                  "faceMinor": {
+                    "$ref": "#/$defs/minor"
+                  },
+                  "allInMinor": {
+                    "$ref": "#/$defs/minor"
+                  },
+                  "fanFeeMinor": {
+                    "$ref": "#/$defs/minor"
+                  },
+                  "organiserNetMinor": {
+                    "type": "integer"
+                  }
+                }
+              }
+            ]
           }
         }
       }

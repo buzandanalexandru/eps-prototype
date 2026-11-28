@@ -59,6 +59,19 @@ type Product struct {
 	Requires    []string        `json:"requires"`
 	PriceSteps  []PriceStep     `json:"priceSteps"`
 	Instalments *Instalments    `json:"instalments"`
+	// Step 7 (optional; absent in snapshots published before it): the personalisation and online
+	// check-in deadlines and the late check-in fee with its all-in amounts.
+	PersonaliseBy *string  `json:"personaliseBy,omitempty"`
+	CheckinBy     *string  `json:"checkinBy,omitempty"`
+	LateCheckin   *LateFee `json:"lateCheckin,omitempty"`
+}
+
+// LateFee is a product's late check-in fee, priced like a price step.
+type LateFee struct {
+	FaceMinor         int64 `json:"faceMinor"`
+	AllInMinor        int64 `json:"allInMinor"`
+	FanFeeMinor       int64 `json:"fanFeeMinor"`
+	OrganiserNetMinor int64 `json:"organiserNetMinor"`
 }
 
 // PoolInstance is one capacity counter (event, day or slot).

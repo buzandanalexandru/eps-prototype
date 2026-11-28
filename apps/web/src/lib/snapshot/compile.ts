@@ -53,6 +53,10 @@ function poolInstances(g: EventGraph, pool: EventGraph["pools"][number]): Snapsh
   return out;
 }
 
+function lateFee(b: { faceMinor: number; allInMinor: number; fanFeeMinor: number; organiserNetMinor: number }) {
+  return { faceMinor: b.faceMinor, allInMinor: b.allInMinor, fanFeeMinor: b.fanFeeMinor, organiserNetMinor: b.organiserNetMinor };
+}
+
 function requiresOf(g: EventGraph, p: EventGraph["products"][number]): string[] {
   if (p.type !== "add_on") return [];
   const req = (p.config as { requires?: unknown }).requires;
@@ -100,6 +104,9 @@ export function compileTerms(g: EventGraph, x: CompileExtras): SaleTerms {
             organiserNetMinor: b.organiserNetMinor,
           };
         }),
+        personaliseBy: p.named ? iso(p.personalise_deadline) : null,
+        checkinBy: iso(p.checkin_deadline),
+        lateCheckin: p.checkin_deadline && p.late_checkin_fee_minor ? lateFee(feeBreakdown(p.late_checkin_fee_minor, policy, g.fee)) : null,
         instalments: plan
           ? {
               depositMinor: plan.deposit_minor,

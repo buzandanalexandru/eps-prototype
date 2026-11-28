@@ -5,6 +5,7 @@ import { lt } from "@/lib/studio/text";
 
 export async function EventNav({ g, current }: { g: EventGraph; current: "details" | "products" | "pools" | "sales" }) {
   const t = await getTranslations("events");
+  const td = await getTranslations("door");
   const locale = await getLocale();
   const base = `/studio/events/${g.event.id}`;
   const tabs = [
@@ -30,6 +31,11 @@ export async function EventNav({ g, current }: { g: EventGraph; current: "detail
             {label}
           </Link>
         ))}
+        {g.event.status === "published" && (
+          <Link href={`/door/${g.event.id}`} className="-mb-px border-b-2 border-transparent pb-1" data-testid="event-door-link">
+            {td("openDoor")}
+          </Link>
+        )}
       </nav>
     </div>
   );

@@ -25,6 +25,10 @@ tags:
     description: Served by the gateway (x-eps-service gateway), not the core.
   - name: simulations
     description: Rehearsals and simulator runs (step 6).
+  - name: tickets
+    description: Tickets, rotating codes, the trip wallet and the fan's data (step 7).
+  - name: door
+    description: Door devices, the door feed and scans (step 7).
 paths:
   /healthz:
     get:
@@ -1028,8 +1032,329 @@ paths:
                 type: string
         default:
           $ref: "#/components/responses/Problem"
+  /v1/ticket-keys:
+    get:
+      operationId: getTicketKeys
+      summary: The public keys that verify ticket codes
+      description: |
+        Every key id with its Ed25519 public key (raw 32 bytes, base64url) and validity (step 7, design
+        D3). An old key stays listed until every event signed with it has ended. No private material.
+        Door devices cache this set and verify codes offline; `serverTime` lets them correct their clock.
+      tags: [tickets]
+      security: []
+      responses:
+        "200":
+          description: The key set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketKeys"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/me/trip:
+    get:
+      operationId: getMyTrip
+      summary: The caller's trip wallet across organisers
+      description: Every ticket the caller holds now and the paid orders still being issued, grouped by event, ordered by event start.
+      tags: [tickets]
+      responses:
+        "200":
+          description: The trip.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Trip"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/me/tickets/{ticketId}:
+    get:
+      operationId: getMyTicket
+      summary: One ticket the caller holds, with its event
+      description: Not found for anyone but the holder; the holder before the last reissue gets 410 EPS-TICKET-MOVED.
+      tags: [tickets]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: The ticket in its event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripEvent"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/me/tickets/{ticketId}/codes:
+    get:
+      operationId: getMyTicketCodes
+      summary: Signed entry codes for the current window and the next 39 (10 minutes)
+      description: |
+        Only to the ticket's current holder, for its current generation (design D4). A suspended,
+        cancelled or unnamed (named product) ticket gets 409 with its code; anyone else 404.
+      tags: [tickets]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: The code buffer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketCodes"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/me/tickets/{ticketId}/name:
+    put:
+      operationId: nameMyTicket
+      summary: Name a ticket before its personalisation deadline
+      tags: [tickets]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketNameRequest"
+      responses:
+        "200":
+          description: The ticket in its event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripEvent"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/me/tickets/{ticketId}/check-in:
+    post:
+      operationId: checkInMyTicket
+      summary: Check a ticket in online (free until the deadline, then the late fee from the EPS Wallet)
+      tags: [tickets]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckInRequest"
+      responses:
+        "200":
+          description: The ticket in its event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripEvent"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/me/tickets/{ticketId}/pick-day:
+    post:
+      operationId: pickMyTicketDay
+      summary: Pick the day of a flexible day ticket (a reissue; final)
+      tags: [tickets]
+      parameters:
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PickDayRequest"
+      responses:
+        "200":
+          description: The ticket in its event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripEvent"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/me/erase:
+    post:
+      operationId: eraseMyData
+      summary: Delete the caller's personal sales data (GDPR)
+      description: |
+        Across organisers: orders and payments lose the person's id, name, email and answers (amounts
+        and states stay, anonymised, as the law requires), held tickets are cancelled, wallets and
+        saved cards lose their owner, waiting-room audit rows are deleted. Refused while an order is
+        in progress. Accounts only.
+      tags: [tickets]
+      responses:
+        "200":
+          description: What was erased (counts).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Erased"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/ticket-links/{linkToken}:
+    get:
+      operationId: getTicketLink
+      summary: A guest order's tickets through its signed link
+      description: The link is order-scoped and signed; a changed or expired link is 404 EPS-LINK-NOT-VALID, a claimed order 410.
+      tags: [tickets]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/LinkToken"
+      responses:
+        "200":
+          description: The order's tickets in their event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripEvent"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/ticket-links/{linkToken}/tickets/{ticketId}/codes:
+    get:
+      operationId: getTicketLinkCodes
+      summary: Codes of a ticket through its order's signed link
+      tags: [tickets]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/LinkToken"
+        - $ref: "#/components/parameters/TicketId"
+      responses:
+        "200":
+          description: The code buffer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketCodes"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/ticket-links/{linkToken}/tickets/{ticketId}/name:
+    put:
+      operationId: nameTicketLink
+      summary: Name a ticket through its order's signed link
+      tags: [tickets]
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/LinkToken"
+        - $ref: "#/components/parameters/TicketId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketNameRequest"
+      responses:
+        "200":
+          description: The ticket in its event.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripEvent"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/events/{eventId}/door/devices:
+    post:
+      operationId: registerDoorDevice
+      summary: Register a door device for an event at a gate
+      description: Owner, admin or box office of the event's organiser; anyone else 404.
+      tags: [door]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoorDeviceRequest"
+      responses:
+        "201":
+          description: The device.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoorDevice"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/events/{eventId}/door-sync:
+    get:
+      operationId: doorSync
+      summary: The event's door feed since a cursor, or a manifest page while preparing
+      description: |
+        Revocations, suspensions and their lifting, entries by other devices, conflicts and manifest
+        changes in sequence order after `since` (at most 1,000; `more` when there are others), with the
+        server time. With `manifest=true`: a page of 2,000 tickets after `after` and the cursor to sync
+        from. Owner, admin or box office of the event's organiser; anyone else 404.
+      tags: [door]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: manifest
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 36
+        - name: device
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 36
+      responses:
+        "200":
+          description: The sync package.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoorSync"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/organiser/events/{eventId}/door/scans:
+    post:
+      operationId: uploadDoorScans
+      summary: Upload a device's scans (idempotent by scan id; first entry by device time wins)
+      tags: [door]
+      parameters:
+        - $ref: "#/components/parameters/EventId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoorScansRequest"
+      responses:
+        "200":
+          description: The decision on each scan.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DoorScansResult"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   parameters:
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    LinkToken:
+      name: linkToken
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 20
+        maxLength: 400
+        pattern: "^[A-Za-z0-9_.-]+$"
     RunId:
       name: runId
       in: path
@@ -1141,6 +1466,390 @@ components:
           schema:
             $ref: "#/components/schemas/Problem"
   schemas:
+    TicketKeys:
+      type: object
+      required: [keys, serverTime]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        windowSeconds:
+          type: integer
+        keys:
+          type: array
+          items:
+            type: object
+            required: [keyId, publicKey, validFrom, validTo]
+            properties:
+              keyId:
+                type: integer
+                minimum: 1
+                maximum: 255
+              publicKey:
+                type: string
+              validFrom:
+                type: string
+                format: date-time
+              validTo:
+                type: [string, "null"]
+                format: date-time
+    TicketItem:
+      type: object
+      required: [id, organiserId, eventId, orderId, productId, generation, state, holderKind, productType, productName, needsName, named, nameLocked, snapshotVersion, lineNo, unitNo, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organiserId:
+          type: string
+        eventId:
+          type: string
+        orderId:
+          type: string
+        lineNo:
+          type: integer
+        unitNo:
+          type: integer
+        productId:
+          type: string
+        instance:
+          type: string
+        snapshotVersion:
+          type: integer
+        generation:
+          type: integer
+        holderKind:
+          type: string
+        state:
+          type: string
+          enum: [valid, suspended, cancelled]
+        cancelReason:
+          type: string
+        holderName:
+          type: string
+        pickedDay:
+          type: string
+        checkedInAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        productType:
+          type: string
+        productName:
+          $ref: "#/components/schemas/L10n"
+        zone:
+          type: [string, "null"]
+        startsAt:
+          type: string
+          format: date-time
+        day:
+          type: string
+        needsName:
+          type: boolean
+        named:
+          type: boolean
+        nameLocked:
+          type: boolean
+        personaliseBy:
+          type: string
+          format: date-time
+        checkinBy:
+          type: string
+          format: date-time
+        lateCheckinFeeMinor:
+          type: integer
+          format: int64
+        pickDays:
+          type: array
+          items:
+            type: string
+        overdue:
+          type: object
+          required: [amountMinor]
+          properties:
+            amountMinor:
+              type: integer
+              format: int64
+            graceUntil:
+              type: string
+    TripEvent:
+      type: object
+      required: [eventId, organiserId, brandId, name, startsAt, endsAt, timezone, currency, isSample, items, pending]
+      properties:
+        eventId:
+          type: string
+        organiserId:
+          type: string
+        brandId:
+          type: string
+        name:
+          $ref: "#/components/schemas/L10n"
+        startsAt:
+          type: string
+        endsAt:
+          type: string
+        timezone:
+          type: string
+        venue:
+          type: object
+          additionalProperties: true
+        currency:
+          type: string
+        isSample:
+          type: boolean
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketItem"
+        pending:
+          type: array
+          items:
+            type: object
+            required: [orderId, lines]
+            properties:
+              orderId:
+                type: string
+              lines:
+                type: array
+                items:
+                  type: object
+                  required: [productId, productName, qty]
+                  properties:
+                    productId:
+                      type: string
+                    productName:
+                      $ref: "#/components/schemas/L10n"
+                    qty:
+                      type: integer
+    Trip:
+      type: object
+      required: [serverTime, events]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/TripEvent"
+    TicketCodes:
+      type: object
+      required: [serverTime, ticketId, generation, windowSeconds, codes]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        ticketId:
+          type: string
+        generation:
+          type: integer
+        windowSeconds:
+          type: integer
+        codes:
+          type: array
+          maxItems: 40
+          items:
+            type: object
+            required: [window, validAt, expiresAt, code]
+            properties:
+              window:
+                type: integer
+                format: int64
+              validAt:
+                type: string
+                format: date-time
+              expiresAt:
+                type: string
+                format: date-time
+              code:
+                type: string
+    TicketNameRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CheckInRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        payLate:
+          type: boolean
+          description: Pay the late check-in fee from the EPS Wallet when the deadline has passed.
+    PickDayRequest:
+      type: object
+      required: [day]
+      additionalProperties: false
+      properties:
+        day:
+          type: string
+          format: date
+    Erased:
+      type: object
+      required: [organisers, orders, tickets, wallets, savedCards, queueEntries]
+      properties:
+        organisers:
+          type: integer
+        orders:
+          type: integer
+        tickets:
+          type: integer
+        wallets:
+          type: integer
+        savedCards:
+          type: integer
+        queueEntries:
+          type: integer
+    DoorDeviceRequest:
+      type: object
+      required: [gate]
+      additionalProperties: false
+      properties:
+        gate:
+          type: string
+          minLength: 1
+          maxLength: 60
+    DoorDevice:
+      type: object
+      required: [deviceId, eventId, gate]
+      properties:
+        deviceId:
+          type: string
+        eventId:
+          type: string
+        gate:
+          type: string
+    DoorSync:
+      type: object
+      required: [serverTime, eventId, cursor, more, feed]
+      properties:
+        serverTime:
+          type: string
+          format: date-time
+        eventId:
+          type: string
+        cursor:
+          type: integer
+          format: int64
+        more:
+          type: boolean
+        feed:
+          type: array
+          items:
+            type: object
+            required: [seq, kind, ticketId, data, at]
+            properties:
+              seq:
+                type: integer
+                format: int64
+              kind:
+                type: string
+                enum: [revoked, suspended, lifted, entry, conflict, manifest]
+              ticketId:
+                type: string
+              generation:
+                type: integer
+              data:
+                type: object
+                additionalProperties: true
+              at:
+                type: string
+                format: date-time
+        manifest:
+          type: array
+          items:
+            type: object
+            required: [t, p, g, s]
+            properties:
+              t:
+                type: string
+              p:
+                type: string
+              g:
+                type: integer
+              s:
+                type: string
+              n:
+                type: string
+              d:
+                type: string
+              ea:
+                type: string
+                format: date-time
+              eg:
+                type: string
+        manifestNext:
+          type: string
+        products:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/L10n"
+        event:
+          type: object
+          required: [name, startsAt, endsAt, timezone]
+          properties:
+            name:
+              $ref: "#/components/schemas/L10n"
+            startsAt:
+              type: string
+            endsAt:
+              type: string
+            timezone:
+              type: string
+    DoorScansRequest:
+      type: object
+      required: [deviceId, scans]
+      additionalProperties: false
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        scans:
+          type: array
+          maxItems: 200
+          items:
+            type: object
+            required: [id, ticketId, generation, scannedAt]
+            additionalProperties: false
+            properties:
+              id:
+                type: string
+                format: uuid
+              ticketId:
+                type: string
+                format: uuid
+              generation:
+                type: integer
+                minimum: 1
+                maximum: 65535
+              scannedAt:
+                type: string
+                format: date-time
+    DoorScansResult:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            type: object
+            required: [id, result]
+            properties:
+              id:
+                type: string
+              result:
+                type: string
+                enum: [admitted, conflict, unknown]
+              firstAt:
+                type: string
+                format: date-time
+              firstGate:
+                type: string
     SaleSettings:
       type: object
       required: [opensAt, prequeueMinutes, queueOn, ratePerMinute, activeLimit, paused, holdMinutes, capPerOrder, capPerPerson, botDefence, otpOn, otpThreshold]
@@ -2242,6 +2951,9 @@ components:
         resumeToken:
           type: string
           description: The signed resume link token, until the hold deadline (live orders only).
+        ticketsToken:
+          type: string
+          description: A guest's signed tickets link (step 7), once the order is issued; opens /t/<token>.
         viewToken:
           type: string
           description: A guest's order-link token (30 days).

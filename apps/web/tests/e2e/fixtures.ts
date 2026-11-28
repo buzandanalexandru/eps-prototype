@@ -10,6 +10,12 @@ export function expectNotFoundResponse(page: Page) {
   expectErrorResponse(page, 404);
 }
 
+const offline = new WeakSet<Page>();
+/** For a test that takes the browser offline: its failed requests are expected (step 7). */
+export function expectOfflineErrors(page: Page) {
+  offline.add(page);
+}
+
 /** Fails the test on any console error or uncaught page error. */
 export const test = base.extend<{ page: Page }>({
   page: async ({ page }, provide) => {
@@ -18,6 +24,7 @@ export const test = base.extend<{ page: Page }>({
       if (m.type() !== "error") return;
       const status = /status of (\d{3})/.exec(m.text());
       if (status && expectedStatus.get(page)?.has(Number(status[1]))) return;
+      if (offline.has(page) && /net::ERR_INTERNET_DISCONNECTED/.test(m.text())) return;
       errors.push(m.text());
     });
     page.on("pageerror", (e) => errors.push(e.message));

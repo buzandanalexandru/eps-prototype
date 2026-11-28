@@ -7,11 +7,12 @@
 # QUEUE_PASS_PRIVATE_KEY (the 32-byte seed, hex; the gateway only) and QUEUE_PASS_PUBLIC_KEY (hex;
 # the core); step 6 adds SIM_CONTROL_TOKEN (the core's internal simulator API) and the simulator's
 # Ed25519 pair: SIM_TOKEN_PRIVATE_KEY (the simulator only) and SIM_TOKEN_PUBLIC_KEY (core and
-# gateway). Random, never printed, and an existing key is never changed, so running pods and
+# gateway); step 7 adds TICKET_SIGNING_KEY (the Ed25519 seed that signs rotating ticket codes, 32
+# random bytes in hex; the core only, which publishes the public key). Random, never printed, and an existing key is never changed, so running pods and
 # Redis keep agreeing. Usage: runtime-secret.sh <namespace>
 set -euo pipefail
 ns="${1:?namespace}"
-keys=(REDIS_PASSWORD SNAPSHOT_CACHE_KEY ORDER_LINK_KEY PSP_API_KEY PSP_ADMIN_TOKEN PSP_WEBHOOK_SECRET_A PSP_WEBHOOK_SECRET_B SIM_CONTROL_TOKEN)
+keys=(REDIS_PASSWORD SNAPSHOT_CACHE_KEY ORDER_LINK_KEY PSP_API_KEY PSP_ADMIN_TOKEN PSP_WEBHOOK_SECRET_A PSP_WEBHOOK_SECRET_B SIM_CONTROL_TOKEN TICKET_SIGNING_KEY)
 
 # key_pair <private name> <public name> prints a JSON patch adding a fresh Ed25519 pair (hex seed
 # and hex public key).

@@ -53,6 +53,12 @@ export type SnapshotProduct = {
   requires: string[];
   priceSteps: SnapshotPriceStep[];
   instalments: SnapshotInstalments | null;
+  /** Step 7 (absent in older snapshots): a named product's personalisation deadline (ISO instant). */
+  personaliseBy?: string | null;
+  /** Step 7: the online check-in deadline (ISO instant); null: no online check-in. */
+  checkinBy?: string | null;
+  /** Step 7: the late check-in fee after the deadline, priced like a price step. */
+  lateCheckin?: { faceMinor: number; allInMinor: number; fanFeeMinor: number; organiserNetMinor: number } | null;
 };
 
 export type SnapshotPoolInstance = {

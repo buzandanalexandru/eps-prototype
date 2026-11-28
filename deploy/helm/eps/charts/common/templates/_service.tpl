@@ -102,6 +102,17 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
       optional: false
 {{- end }}
 {{- end }}
+{{- with .ctx.Values.ticketKeys }}
+# Step 7, the ticket signing key from eps-runtime (the core only; never Vercel or the browser).
+{{- range $k := . }}
+- name: {{ $k }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $.ctx.Values.global.runtimeSecret }}
+      key: {{ $k }}
+      optional: false
+{{- end }}
+{{- end }}
 {{- with .ctx.Values.extraEnv }}
 {{- range $k, $v := . }}
 - name: {{ $k }}

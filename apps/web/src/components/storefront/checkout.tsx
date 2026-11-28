@@ -366,7 +366,15 @@ function OrderScreen(props: ScreenProps) {
       {(order.state === "paid" || order.state === "issued") && (
         <div className={box} data-testid="order-paid">
           <p className="text-xl font-bold">{order.state === "issued" ? labels.issuedTitle : labels.paidTitle}</p>
-          {order.state === "paid" && <p>{labels.paidLead}</p>}
+          {order.state === "paid" && <p data-testid="issuing-tickets">{labels.paidLead}</p>}
+          {order.state === "issued" && (order.ticketsToken || (order.access === "buyer" && order.buyerKind === "account")) && (
+            <>
+              <p className="text-sm">{labels.ticketsLead}</p>
+              <a href={order.ticketsToken ? `/t/${order.ticketsToken}` : "/wallet"} className={primary} data-testid="open-tickets">
+                {labels.openTickets}
+              </a>
+            </>
+          )}
         </div>
       )}
       {order.plan && order.plan.state !== "pending" && <PlanView {...props} />}

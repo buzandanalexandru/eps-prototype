@@ -588,3 +588,30 @@ func (s *Service) CloseSeason(ctx context.Context, org string, expires time.Time
 	})
 	return n, total, err
 }
+
+// PayFeeTx charges a fee (a late check-in, step 7) from a fan's EPS Wallet to the organiser's sales
+// account inside the caller's transaction: season credit first, then the balance, one ledger entry
+// (kind order_payment, ref naming what it paid). A balance that does not cover it is refused with
+// EPS-WALLET-INSUFFICIENT and nothing is written.
+func (s *Service) PayFeeTx(ctx context.Context, tx pgx.Tx, org, owner, currency string, amount int64, ref, memo string) (string, error) {
+	if amount <= 0 {
+		return "", apperr.New(http.StatusUnprocessableEntity, "invalid_request", "Nothing to pay.", false)
+	}
+	balID, bal, credID, cred, err := fanAccounts(ctx, tx, org, owner, currency, s.now())
+	if err != nil {
+		return "", err
+	}
+	fromCred, fromBal, ok := spend(amount, cred, bal)
+	if !ok {
+		return "", insufficient().With("amountMinor", amount).With("currency", currency)
+	}
+	salesID, err := AccountTx(ctx, tx, org, OrganiserSales, org, currency)
+	if err != nil {
+		return "", err
+	}
+	id, err := PostTx(ctx, tx, org, "order_payment", ref, memo, currency, []Line{{credID, -fromCred}, {balID, -fromBal}, {salesID, amount}})
+	if isOverspend(err) {
+		return "", insufficient()
+	}
+	return id, err
+}

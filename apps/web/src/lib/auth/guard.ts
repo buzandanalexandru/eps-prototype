@@ -2,7 +2,8 @@
 // sign-in do not.
 
 export function isProtectedPath(pathname: string): boolean {
-  return pathname === "/studio" || pathname.startsWith("/studio/");
+  // Step 7: the trip wallet, the fan account and the door page need a session too.
+  return ["/studio", "/wallet", "/account", "/door"].some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 /** Only same-site relative paths are allowed as a return target. */

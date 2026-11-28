@@ -224,6 +224,7 @@ type OrderView struct {
 	Access          string                 `json:"access"`
 	ResumeToken     string                 `json:"resumeToken,omitempty"`
 	ViewToken       string                 `json:"viewToken,omitempty"`
+	TicketsToken    string                 `json:"ticketsToken,omitempty"`
 	Wallet          *walletOption          `json:"wallet,omitempty"`
 	SavedCards      []payments.SavedMethod `json:"savedCards"`
 }
@@ -333,8 +334,14 @@ func (s *Server) viewOf(ctx context.Context, o *checkout.Order, access string) O
 	if live && holdLive && (access == accessBuyer || access == accessLink) {
 		v.ResumeToken = sh.Checkout.Links.ResumeLink(o)
 	}
-	if access == accessBuyer && o.BuyerKind == "guest" {
+	// The order link stays on the page when it was opened with it (step 7: a guest who signs in on
+	// the order link can then add the order to the account; before, the claim button vanished).
+	if (access == accessBuyer || access == accessViewLink) && o.BuyerKind == "guest" {
 		v.ViewToken = sh.Checkout.Links.ViewLink(o)
+	}
+	// A guest's tickets open from a signed link once issued (step 7).
+	if (access == accessBuyer || access == accessViewLink) && s.Tickets != nil && s.Tickets.Svc != nil {
+		v.TicketsToken = s.Tickets.Svc.LinkFor(ctx, o)
 	}
 	return v
 }

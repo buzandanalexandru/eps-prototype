@@ -25,6 +25,57 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for DoorScansResultResultsResult.
+const (
+	DoorScansResultResultsResultAdmitted DoorScansResultResultsResult = "admitted"
+	DoorScansResultResultsResultConflict DoorScansResultResultsResult = "conflict"
+	DoorScansResultResultsResultUnknown  DoorScansResultResultsResult = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the DoorScansResultResultsResult enum.
+func (e DoorScansResultResultsResult) Valid() bool {
+	switch e {
+	case DoorScansResultResultsResultAdmitted:
+		return true
+	case DoorScansResultResultsResultConflict:
+		return true
+	case DoorScansResultResultsResultUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DoorSyncFeedKind.
+const (
+	DoorSyncFeedKindConflict  DoorSyncFeedKind = "conflict"
+	DoorSyncFeedKindEntry     DoorSyncFeedKind = "entry"
+	DoorSyncFeedKindLifted    DoorSyncFeedKind = "lifted"
+	DoorSyncFeedKindManifest  DoorSyncFeedKind = "manifest"
+	DoorSyncFeedKindRevoked   DoorSyncFeedKind = "revoked"
+	DoorSyncFeedKindSuspended DoorSyncFeedKind = "suspended"
+)
+
+// Valid indicates whether the value is a known member of the DoorSyncFeedKind enum.
+func (e DoorSyncFeedKind) Valid() bool {
+	switch e {
+	case DoorSyncFeedKindConflict:
+		return true
+	case DoorSyncFeedKindEntry:
+		return true
+	case DoorSyncFeedKindLifted:
+		return true
+	case DoorSyncFeedKindManifest:
+		return true
+	case DoorSyncFeedKindRevoked:
+		return true
+	case DoorSyncFeedKindSuspended:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	Ok HealthStatus = "ok"
@@ -676,6 +727,27 @@ func (e SimulationRunState) Valid() bool {
 	}
 }
 
+// Defines values for TicketItemState.
+const (
+	TicketItemStateCancelled TicketItemState = "cancelled"
+	TicketItemStateSuspended TicketItemState = "suspended"
+	TicketItemStateValid     TicketItemState = "valid"
+)
+
+// Valid indicates whether the value is a known member of the TicketItemState enum.
+func (e TicketItemState) Valid() bool {
+	switch e {
+	case TicketItemStateCancelled:
+		return true
+	case TicketItemStateSuspended:
+		return true
+	case TicketItemStateValid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TopupRequestCurrency.
 const (
 	TopupRequestCurrencyEUR TopupRequestCurrency = "EUR"
@@ -869,6 +941,12 @@ type Check struct {
 	Ok   bool   `json:"ok"`
 }
 
+// CheckInRequest defines model for CheckInRequest.
+type CheckInRequest struct {
+	// PayLate Pay the late check-in fee from the EPS Wallet when the deadline has passed.
+	PayLate *bool `json:"payLate,omitempty"`
+}
+
 // ClaimRequest defines model for ClaimRequest.
 type ClaimRequest struct {
 	OrderId *openapi_types.UUID `json:"orderId,omitempty"`
@@ -881,6 +959,89 @@ type ClaimResult struct {
 
 // CreateOrderRequest defines model for CreateOrderRequest.
 type CreateOrderRequest = checkout.CreateRequest
+
+// DoorDevice defines model for DoorDevice.
+type DoorDevice struct {
+	DeviceId string `json:"deviceId"`
+	EventId  string `json:"eventId"`
+	Gate     string `json:"gate"`
+}
+
+// DoorDeviceRequest defines model for DoorDeviceRequest.
+type DoorDeviceRequest struct {
+	Gate string `json:"gate"`
+}
+
+// DoorScansRequest defines model for DoorScansRequest.
+type DoorScansRequest struct {
+	DeviceId openapi_types.UUID `json:"deviceId"`
+	Scans    []struct {
+		Generation int                `json:"generation"`
+		Id         openapi_types.UUID `json:"id"`
+		ScannedAt  time.Time          `json:"scannedAt"`
+		TicketId   openapi_types.UUID `json:"ticketId"`
+	} `json:"scans"`
+}
+
+// DoorScansResult defines model for DoorScansResult.
+type DoorScansResult struct {
+	Results []struct {
+		FirstAt   *time.Time                   `json:"firstAt,omitempty"`
+		FirstGate *string                      `json:"firstGate,omitempty"`
+		Id        string                       `json:"id"`
+		Result    DoorScansResultResultsResult `json:"result"`
+	} `json:"results"`
+}
+
+// DoorScansResultResultsResult defines model for DoorScansResult.Results.Result.
+type DoorScansResultResultsResult string
+
+// DoorSync defines model for DoorSync.
+type DoorSync struct {
+	Cursor int64 `json:"cursor"`
+	Event  *struct {
+		EndsAt   string `json:"endsAt"`
+		Name     L10n   `json:"name"`
+		StartsAt string `json:"startsAt"`
+		Timezone string `json:"timezone"`
+	} `json:"event,omitempty"`
+	EventId string `json:"eventId"`
+	Feed    []struct {
+		At         time.Time        `json:"at"`
+		Data       map[string]any   `json:"data"`
+		Generation *int             `json:"generation,omitempty"`
+		Kind       DoorSyncFeedKind `json:"kind"`
+		Seq        int64            `json:"seq"`
+		TicketId   string           `json:"ticketId"`
+	} `json:"feed"`
+	Manifest *[]struct {
+		D  *string    `json:"d,omitempty"`
+		Ea *time.Time `json:"ea,omitempty"`
+		Eg *string    `json:"eg,omitempty"`
+		G  int        `json:"g"`
+		N  *string    `json:"n,omitempty"`
+		P  string     `json:"p"`
+		S  string     `json:"s"`
+		T  string     `json:"t"`
+	} `json:"manifest,omitempty"`
+	ManifestNext *string          `json:"manifestNext,omitempty"`
+	More         bool             `json:"more"`
+	Products     *map[string]L10n `json:"products,omitempty"`
+	ServerTime   time.Time        `json:"serverTime"`
+}
+
+// DoorSyncFeedKind defines model for DoorSync.Feed.Kind.
+type DoorSyncFeedKind string
+
+// Erased defines model for Erased.
+type Erased struct {
+	Orders       int `json:"orders"`
+	Organisers   int `json:"organisers"`
+	QueueEntries int `json:"queueEntries"`
+	SavedCards   int `json:"savedCards"`
+	Tickets      int `json:"tickets"`
+	Wallets      int `json:"wallets"`
+}
 
 // Health defines model for Health.
 type Health struct {
@@ -1060,6 +1221,9 @@ type OrderView struct {
 	SnapshotVersion int            `json:"snapshotVersion"`
 	State           OrderViewState `json:"state"`
 
+	// TicketsToken A guest's signed tickets link (step 7), once the order is issued; opens /t/<token>.
+	TicketsToken *string `json:"ticketsToken,omitempty"`
+
 	// TotalMinor An amount in minor units (bani, cents).
 	TotalMinor Money `json:"totalMinor"`
 
@@ -1155,6 +1319,11 @@ type PaymentResult struct {
 	// ActionUrl The provider page to open (hosted card, wallet sheet or bank challenge).
 	ActionUrl *string   `json:"actionUrl,omitempty"`
 	Order     OrderView `json:"order"`
+}
+
+// PickDayRequest defines model for PickDayRequest.
+type PickDayRequest struct {
+	Day openapi_types.Date `json:"day"`
 }
 
 // PoolUsage defines model for PoolUsage.
@@ -1513,6 +1682,77 @@ type StandPaymentRequest struct {
 	PayCode string `json:"payCode"`
 }
 
+// TicketCodes defines model for TicketCodes.
+type TicketCodes struct {
+	Codes []struct {
+		Code      string    `json:"code"`
+		ExpiresAt time.Time `json:"expiresAt"`
+		ValidAt   time.Time `json:"validAt"`
+		Window    int64     `json:"window"`
+	} `json:"codes"`
+	Generation    int       `json:"generation"`
+	ServerTime    time.Time `json:"serverTime"`
+	TicketId      string    `json:"ticketId"`
+	WindowSeconds int       `json:"windowSeconds"`
+}
+
+// TicketItem defines model for TicketItem.
+type TicketItem struct {
+	CancelReason        *string            `json:"cancelReason,omitempty"`
+	CheckedInAt         *time.Time         `json:"checkedInAt,omitempty"`
+	CheckinBy           *time.Time         `json:"checkinBy,omitempty"`
+	CreatedAt           time.Time          `json:"createdAt"`
+	Day                 *string            `json:"day,omitempty"`
+	EventId             string             `json:"eventId"`
+	Generation          int                `json:"generation"`
+	HolderKind          string             `json:"holderKind"`
+	HolderName          *string            `json:"holderName,omitempty"`
+	Id                  openapi_types.UUID `json:"id"`
+	Instance            *string            `json:"instance,omitempty"`
+	LateCheckinFeeMinor *int64             `json:"lateCheckinFeeMinor,omitempty"`
+	LineNo              int                `json:"lineNo"`
+	NameLocked          bool               `json:"nameLocked"`
+	Named               bool               `json:"named"`
+	NeedsName           bool               `json:"needsName"`
+	OrderId             string             `json:"orderId"`
+	OrganiserId         string             `json:"organiserId"`
+	Overdue             *struct {
+		AmountMinor int64   `json:"amountMinor"`
+		GraceUntil  *string `json:"graceUntil,omitempty"`
+	} `json:"overdue,omitempty"`
+	PersonaliseBy   *time.Time      `json:"personaliseBy,omitempty"`
+	PickDays        *[]string       `json:"pickDays,omitempty"`
+	PickedDay       *string         `json:"pickedDay,omitempty"`
+	ProductId       string          `json:"productId"`
+	ProductName     L10n            `json:"productName"`
+	ProductType     string          `json:"productType"`
+	SnapshotVersion int             `json:"snapshotVersion"`
+	StartsAt        *time.Time      `json:"startsAt,omitempty"`
+	State           TicketItemState `json:"state"`
+	UnitNo          int             `json:"unitNo"`
+	Zone            *string         `json:"zone"`
+}
+
+// TicketItemState defines model for TicketItem.State.
+type TicketItemState string
+
+// TicketKeys defines model for TicketKeys.
+type TicketKeys struct {
+	Keys []struct {
+		KeyId     int        `json:"keyId"`
+		PublicKey string     `json:"publicKey"`
+		ValidFrom time.Time  `json:"validFrom"`
+		ValidTo   *time.Time `json:"validTo"`
+	} `json:"keys"`
+	ServerTime    time.Time `json:"serverTime"`
+	WindowSeconds *int      `json:"windowSeconds,omitempty"`
+}
+
+// TicketNameRequest defines model for TicketNameRequest.
+type TicketNameRequest struct {
+	Name string `json:"name"`
+}
+
 // TopupRequest defines model for TopupRequest.
 type TopupRequest struct {
 	AmountMinor int64                `json:"amountMinor"`
@@ -1536,6 +1776,35 @@ type TopupResult struct {
 	ActionUrl *string        `json:"actionUrl,omitempty"`
 	Attempt   PaymentAttempt `json:"attempt"`
 	Wallet    *Wallet        `json:"wallet,omitempty"`
+}
+
+// Trip defines model for Trip.
+type Trip struct {
+	Events     []TripEvent `json:"events"`
+	ServerTime time.Time   `json:"serverTime"`
+}
+
+// TripEvent defines model for TripEvent.
+type TripEvent struct {
+	BrandId     string       `json:"brandId"`
+	Currency    string       `json:"currency"`
+	EndsAt      string       `json:"endsAt"`
+	EventId     string       `json:"eventId"`
+	IsSample    bool         `json:"isSample"`
+	Items       []TicketItem `json:"items"`
+	Name        L10n         `json:"name"`
+	OrganiserId string       `json:"organiserId"`
+	Pending     []struct {
+		Lines []struct {
+			ProductId   string `json:"productId"`
+			ProductName L10n   `json:"productName"`
+			Qty         int    `json:"qty"`
+		} `json:"lines"`
+		OrderId string `json:"orderId"`
+	} `json:"pending"`
+	StartsAt string          `json:"startsAt"`
+	Timezone string          `json:"timezone"`
+	Venue    *map[string]any `json:"venue,omitempty"`
 }
 
 // Version defines model for Version.
@@ -1603,6 +1872,9 @@ type IdempotencyKey = string
 // IdempotencyKeyRequired defines model for IdempotencyKeyRequired.
 type IdempotencyKeyRequired = string
 
+// LinkToken defines model for LinkToken.
+type LinkToken = string
+
 // OrderId defines model for OrderId.
 type OrderId = openapi_types.UUID
 
@@ -1633,10 +1905,21 @@ type SessionRequired = string
 // Tab defines model for Tab.
 type Tab = string
 
+// TicketId defines model for TicketId.
+type TicketId = openapi_types.UUID
+
 // GetReadyzParams defines parameters for GetReadyz.
 type GetReadyzParams struct {
 	// Verbose Include every check, not only the failing ones.
 	Verbose *bool `form:"verbose,omitempty" json:"verbose,omitempty"`
+}
+
+// DoorSyncParams defines parameters for DoorSync.
+type DoorSyncParams struct {
+	Since    *int64  `form:"since,omitempty" json:"since,omitempty"`
+	Manifest *bool   `form:"manifest,omitempty" json:"manifest,omitempty"`
+	After    *string `form:"after,omitempty" json:"after,omitempty"`
+	Device   *string `form:"device,omitempty" json:"device,omitempty"`
 }
 
 // SetProviderKnobsParamsProvider defines parameters for SetProviderKnobs.
@@ -1800,6 +2083,21 @@ type TopUpWalletParams struct {
 	IdempotencyKey IdempotencyKeyRequired `json:"Idempotency-Key"`
 }
 
+// CheckInMyTicketJSONRequestBody defines body for CheckInMyTicket for application/json ContentType.
+type CheckInMyTicketJSONRequestBody = CheckInRequest
+
+// NameMyTicketJSONRequestBody defines body for NameMyTicket for application/json ContentType.
+type NameMyTicketJSONRequestBody = TicketNameRequest
+
+// PickMyTicketDayJSONRequestBody defines body for PickMyTicketDay for application/json ContentType.
+type PickMyTicketDayJSONRequestBody = PickDayRequest
+
+// RegisterDoorDeviceJSONRequestBody defines body for RegisterDoorDevice for application/json ContentType.
+type RegisterDoorDeviceJSONRequestBody = DoorDeviceRequest
+
+// UploadDoorScansJSONRequestBody defines body for UploadDoorScans for application/json ContentType.
+type UploadDoorScansJSONRequestBody = DoorScansRequest
+
 // CreateSaleJSONRequestBody defines body for CreateSale for application/json ContentType.
 type CreateSaleJSONRequestBody = SaleCreate
 
@@ -1845,6 +2143,9 @@ type PayOrderJSONRequestBody = PayRequest
 // TopUpWalletJSONRequestBody defines body for TopUpWallet for application/json ContentType.
 type TopUpWalletJSONRequestBody = TopupRequest
 
+// NameTicketLinkJSONRequestBody defines body for NameTicketLink for application/json ContentType.
+type NameTicketLinkJSONRequestBody = TicketNameRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetHealthz Liveness
@@ -1856,6 +2157,36 @@ type ServerInterface interface {
 	// LiveStream The live on-sale frames of a sale as server-sent events (gateway; the sale's organiser only)
 	// (GET /v1/live/{saleId})
 	LiveStream(w http.ResponseWriter, r *http.Request, saleId SaleId)
+	// EraseMyData Delete the caller's personal sales data (GDPR)
+	// (POST /v1/me/erase)
+	EraseMyData(w http.ResponseWriter, r *http.Request)
+	// GetMyTicket One ticket the caller holds, with its event
+	// (GET /v1/me/tickets/{ticketId})
+	GetMyTicket(w http.ResponseWriter, r *http.Request, ticketId TicketId)
+	// CheckInMyTicket Check a ticket in online (free until the deadline, then the late fee from the EPS Wallet)
+	// (POST /v1/me/tickets/{ticketId}/check-in)
+	CheckInMyTicket(w http.ResponseWriter, r *http.Request, ticketId TicketId)
+	// GetMyTicketCodes Signed entry codes for the current window and the next 39 (10 minutes)
+	// (GET /v1/me/tickets/{ticketId}/codes)
+	GetMyTicketCodes(w http.ResponseWriter, r *http.Request, ticketId TicketId)
+	// NameMyTicket Name a ticket before its personalisation deadline
+	// (PUT /v1/me/tickets/{ticketId}/name)
+	NameMyTicket(w http.ResponseWriter, r *http.Request, ticketId TicketId)
+	// PickMyTicketDay Pick the day of a flexible day ticket (a reissue; final)
+	// (POST /v1/me/tickets/{ticketId}/pick-day)
+	PickMyTicketDay(w http.ResponseWriter, r *http.Request, ticketId TicketId)
+	// GetMyTrip The caller's trip wallet across organisers
+	// (GET /v1/me/trip)
+	GetMyTrip(w http.ResponseWriter, r *http.Request)
+	// DoorSync The event's door feed since a cursor, or a manifest page while preparing
+	// (GET /v1/organiser/events/{eventId}/door-sync)
+	DoorSync(w http.ResponseWriter, r *http.Request, eventId EventId, params DoorSyncParams)
+	// RegisterDoorDevice Register a door device for an event at a gate
+	// (POST /v1/organiser/events/{eventId}/door/devices)
+	RegisterDoorDevice(w http.ResponseWriter, r *http.Request, eventId EventId)
+	// UploadDoorScans Upload a device's scans (idempotent by scan id; first entry by device time wins)
+	// (POST /v1/organiser/events/{eventId}/door/scans)
+	UploadDoorScans(w http.ResponseWriter, r *http.Request, eventId EventId)
 	// GetPoolUsage Units sold or held per pool instance
 	// (GET /v1/organiser/events/{eventId}/pool-usage)
 	GetPoolUsage(w http.ResponseWriter, r *http.Request, eventId EventId)
@@ -1979,6 +2310,18 @@ type ServerInterface interface {
 	// GetTopup A top-up's state
 	// (GET /v1/shop/wallets/{organiserId}/topups/{attemptId})
 	GetTopup(w http.ResponseWriter, r *http.Request, organiserId OrganiserId, attemptId openapi_types.UUID)
+	// GetTicketKeys The public keys that verify ticket codes
+	// (GET /v1/ticket-keys)
+	GetTicketKeys(w http.ResponseWriter, r *http.Request)
+	// GetTicketLink A guest order's tickets through its signed link
+	// (GET /v1/ticket-links/{linkToken})
+	GetTicketLink(w http.ResponseWriter, r *http.Request, linkToken LinkToken)
+	// GetTicketLinkCodes Codes of a ticket through its order's signed link
+	// (GET /v1/ticket-links/{linkToken}/tickets/{ticketId}/codes)
+	GetTicketLinkCodes(w http.ResponseWriter, r *http.Request, linkToken LinkToken, ticketId TicketId)
+	// NameTicketLink Name a ticket through its order's signed link
+	// (PUT /v1/ticket-links/{linkToken}/tickets/{ticketId}/name)
+	NameTicketLink(w http.ResponseWriter, r *http.Request, linkToken LinkToken, ticketId TicketId)
 	// GetVersion Build and schema version of this service
 	// (GET /v1/version)
 	GetVersion(w http.ResponseWriter, r *http.Request)
@@ -2060,6 +2403,297 @@ func (siw *ServerInterfaceWrapper) LiveStream(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.LiveStream(w, r, saleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EraseMyData operation middleware
+func (siw *ServerInterfaceWrapper) EraseMyData(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EraseMyData(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMyTicket operation middleware
+func (siw *ServerInterfaceWrapper) GetMyTicket(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ticketId" -------------
+	var ticketId TicketId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticketId", r.PathValue("ticketId"), &ticketId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ticketId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyTicket(w, r, ticketId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CheckInMyTicket operation middleware
+func (siw *ServerInterfaceWrapper) CheckInMyTicket(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ticketId" -------------
+	var ticketId TicketId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticketId", r.PathValue("ticketId"), &ticketId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ticketId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckInMyTicket(w, r, ticketId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMyTicketCodes operation middleware
+func (siw *ServerInterfaceWrapper) GetMyTicketCodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ticketId" -------------
+	var ticketId TicketId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticketId", r.PathValue("ticketId"), &ticketId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ticketId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyTicketCodes(w, r, ticketId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// NameMyTicket operation middleware
+func (siw *ServerInterfaceWrapper) NameMyTicket(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ticketId" -------------
+	var ticketId TicketId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticketId", r.PathValue("ticketId"), &ticketId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ticketId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.NameMyTicket(w, r, ticketId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PickMyTicketDay operation middleware
+func (siw *ServerInterfaceWrapper) PickMyTicketDay(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "ticketId" -------------
+	var ticketId TicketId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticketId", r.PathValue("ticketId"), &ticketId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ticketId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PickMyTicketDay(w, r, ticketId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMyTrip operation middleware
+func (siw *ServerInterfaceWrapper) GetMyTrip(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMyTrip(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DoorSync operation middleware
+func (siw *ServerInterfaceWrapper) DoorSync(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DoorSyncParams
+
+	// ------------- Optional query parameter "since" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "since", r.URL.Query(), &params.Since, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "since"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "since", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "manifest" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "manifest", r.URL.Query(), &params.Manifest, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "manifest"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "manifest", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "device" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "device", r.URL.Query(), &params.Device, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "device"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "device", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DoorSync(w, r, eventId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RegisterDoorDevice operation middleware
+func (siw *ServerInterfaceWrapper) RegisterDoorDevice(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RegisterDoorDevice(w, r, eventId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UploadDoorScans operation middleware
+func (siw *ServerInterfaceWrapper) UploadDoorScans(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "eventId" -------------
+	var eventId EventId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "eventId", r.PathValue("eventId"), &eventId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "eventId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadDoorScans(w, r, eventId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3729,6 +4363,116 @@ func (siw *ServerInterfaceWrapper) GetTopup(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// GetTicketKeys operation middleware
+func (siw *ServerInterfaceWrapper) GetTicketKeys(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTicketKeys(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTicketLink operation middleware
+func (siw *ServerInterfaceWrapper) GetTicketLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "linkToken" -------------
+	var linkToken LinkToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "linkToken", r.PathValue("linkToken"), &linkToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "linkToken", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTicketLink(w, r, linkToken)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTicketLinkCodes operation middleware
+func (siw *ServerInterfaceWrapper) GetTicketLinkCodes(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "linkToken" -------------
+	var linkToken LinkToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "linkToken", r.PathValue("linkToken"), &linkToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "linkToken", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "ticketId" -------------
+	var ticketId TicketId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticketId", r.PathValue("ticketId"), &ticketId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ticketId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTicketLinkCodes(w, r, linkToken, ticketId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// NameTicketLink operation middleware
+func (siw *ServerInterfaceWrapper) NameTicketLink(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "linkToken" -------------
+	var linkToken LinkToken
+
+	err = runtime.BindStyledParameterWithOptions("simple", "linkToken", r.PathValue("linkToken"), &linkToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "linkToken", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "ticketId" -------------
+	var ticketId TicketId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ticketId", r.PathValue("ticketId"), &ticketId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "ticketId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.NameTicketLink(w, r, linkToken, ticketId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetVersion operation middleware
 func (siw *ServerInterfaceWrapper) GetVersion(w http.ResponseWriter, r *http.Request) {
 
@@ -3923,6 +4667,20 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/organiser/simulations/{runId}", wrapper.GetSimulation)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/simulations/{runId}/stop", wrapper.StopSimulation)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/live/{saleId}", wrapper.LiveStream)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/ticket-keys", wrapper.GetTicketKeys)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me/trip", wrapper.GetMyTrip)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me/tickets/{ticketId}", wrapper.GetMyTicket)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/me/tickets/{ticketId}/codes", wrapper.GetMyTicketCodes)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/me/tickets/{ticketId}/name", wrapper.NameMyTicket)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/tickets/{ticketId}/check-in", wrapper.CheckInMyTicket)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/tickets/{ticketId}/pick-day", wrapper.PickMyTicketDay)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/me/erase", wrapper.EraseMyData)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/ticket-links/{linkToken}", wrapper.GetTicketLink)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/ticket-links/{linkToken}/tickets/{ticketId}/codes", wrapper.GetTicketLinkCodes)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/ticket-links/{linkToken}/tickets/{ticketId}/name", wrapper.NameTicketLink)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/events/{eventId}/door/devices", wrapper.RegisterDoorDevice)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/organiser/events/{eventId}/door-sync", wrapper.DoorSync)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/organiser/events/{eventId}/door/scans", wrapper.UploadDoorScans)
 
 	return m
 }
@@ -4060,6 +4818,400 @@ type LiveStreamdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response LiveStreamdefaultApplicationProblemPlusJSONResponse) VisitLiveStreamResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EraseMyDataRequestObject struct {
+}
+
+type EraseMyDataResponseObject interface {
+	VisitEraseMyDataResponse(w http.ResponseWriter) error
+}
+
+type EraseMyData200JSONResponse Erased
+
+func (response EraseMyData200JSONResponse) VisitEraseMyDataResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EraseMyDatadefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response EraseMyDatadefaultApplicationProblemPlusJSONResponse) VisitEraseMyDataResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyTicketRequestObject struct {
+	TicketId TicketId `json:"ticketId"`
+}
+
+type GetMyTicketResponseObject interface {
+	VisitGetMyTicketResponse(w http.ResponseWriter) error
+}
+
+type GetMyTicket200JSONResponse TripEvent
+
+func (response GetMyTicket200JSONResponse) VisitGetMyTicketResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyTicketdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetMyTicketdefaultApplicationProblemPlusJSONResponse) VisitGetMyTicketResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckInMyTicketRequestObject struct {
+	TicketId TicketId `json:"ticketId"`
+	Body     *CheckInMyTicketJSONRequestBody
+}
+
+type CheckInMyTicketResponseObject interface {
+	VisitCheckInMyTicketResponse(w http.ResponseWriter) error
+}
+
+type CheckInMyTicket200JSONResponse TripEvent
+
+func (response CheckInMyTicket200JSONResponse) VisitCheckInMyTicketResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CheckInMyTicketdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CheckInMyTicketdefaultApplicationProblemPlusJSONResponse) VisitCheckInMyTicketResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyTicketCodesRequestObject struct {
+	TicketId TicketId `json:"ticketId"`
+}
+
+type GetMyTicketCodesResponseObject interface {
+	VisitGetMyTicketCodesResponse(w http.ResponseWriter) error
+}
+
+type GetMyTicketCodes200JSONResponse TicketCodes
+
+func (response GetMyTicketCodes200JSONResponse) VisitGetMyTicketCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyTicketCodesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetMyTicketCodesdefaultApplicationProblemPlusJSONResponse) VisitGetMyTicketCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type NameMyTicketRequestObject struct {
+	TicketId TicketId `json:"ticketId"`
+	Body     *NameMyTicketJSONRequestBody
+}
+
+type NameMyTicketResponseObject interface {
+	VisitNameMyTicketResponse(w http.ResponseWriter) error
+}
+
+type NameMyTicket200JSONResponse TripEvent
+
+func (response NameMyTicket200JSONResponse) VisitNameMyTicketResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type NameMyTicketdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response NameMyTicketdefaultApplicationProblemPlusJSONResponse) VisitNameMyTicketResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PickMyTicketDayRequestObject struct {
+	TicketId TicketId `json:"ticketId"`
+	Body     *PickMyTicketDayJSONRequestBody
+}
+
+type PickMyTicketDayResponseObject interface {
+	VisitPickMyTicketDayResponse(w http.ResponseWriter) error
+}
+
+type PickMyTicketDay200JSONResponse TripEvent
+
+func (response PickMyTicketDay200JSONResponse) VisitPickMyTicketDayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PickMyTicketDaydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PickMyTicketDaydefaultApplicationProblemPlusJSONResponse) VisitPickMyTicketDayResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyTripRequestObject struct {
+}
+
+type GetMyTripResponseObject interface {
+	VisitGetMyTripResponse(w http.ResponseWriter) error
+}
+
+type GetMyTrip200JSONResponse Trip
+
+func (response GetMyTrip200JSONResponse) VisitGetMyTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMyTripdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetMyTripdefaultApplicationProblemPlusJSONResponse) VisitGetMyTripResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DoorSyncRequestObject struct {
+	EventId EventId `json:"eventId"`
+	Params  DoorSyncParams
+}
+
+type DoorSyncResponseObject interface {
+	VisitDoorSyncResponse(w http.ResponseWriter) error
+}
+
+type DoorSync200JSONResponse DoorSync
+
+func (response DoorSync200JSONResponse) VisitDoorSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DoorSyncdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DoorSyncdefaultApplicationProblemPlusJSONResponse) VisitDoorSyncResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterDoorDeviceRequestObject struct {
+	EventId EventId `json:"eventId"`
+	Body    *RegisterDoorDeviceJSONRequestBody
+}
+
+type RegisterDoorDeviceResponseObject interface {
+	VisitRegisterDoorDeviceResponse(w http.ResponseWriter) error
+}
+
+type RegisterDoorDevice201JSONResponse DoorDevice
+
+func (response RegisterDoorDevice201JSONResponse) VisitRegisterDoorDeviceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterDoorDevicedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RegisterDoorDevicedefaultApplicationProblemPlusJSONResponse) VisitRegisterDoorDeviceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDoorScansRequestObject struct {
+	EventId EventId `json:"eventId"`
+	Body    *UploadDoorScansJSONRequestBody
+}
+
+type UploadDoorScansResponseObject interface {
+	VisitUploadDoorScansResponse(w http.ResponseWriter) error
+}
+
+type UploadDoorScans200JSONResponse DoorScansResult
+
+func (response UploadDoorScans200JSONResponse) VisitUploadDoorScansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UploadDoorScansdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UploadDoorScansdefaultApplicationProblemPlusJSONResponse) VisitUploadDoorScansResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
@@ -5821,6 +6973,164 @@ func (response GetTopupdefaultApplicationProblemPlusJSONResponse) VisitGetTopupR
 	return err
 }
 
+type GetTicketKeysRequestObject struct {
+}
+
+type GetTicketKeysResponseObject interface {
+	VisitGetTicketKeysResponse(w http.ResponseWriter) error
+}
+
+type GetTicketKeys200JSONResponse TicketKeys
+
+func (response GetTicketKeys200JSONResponse) VisitGetTicketKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTicketKeysdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetTicketKeysdefaultApplicationProblemPlusJSONResponse) VisitGetTicketKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTicketLinkRequestObject struct {
+	LinkToken LinkToken `json:"linkToken"`
+}
+
+type GetTicketLinkResponseObject interface {
+	VisitGetTicketLinkResponse(w http.ResponseWriter) error
+}
+
+type GetTicketLink200JSONResponse TripEvent
+
+func (response GetTicketLink200JSONResponse) VisitGetTicketLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTicketLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetTicketLinkdefaultApplicationProblemPlusJSONResponse) VisitGetTicketLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTicketLinkCodesRequestObject struct {
+	LinkToken LinkToken `json:"linkToken"`
+	TicketId  TicketId  `json:"ticketId"`
+}
+
+type GetTicketLinkCodesResponseObject interface {
+	VisitGetTicketLinkCodesResponse(w http.ResponseWriter) error
+}
+
+type GetTicketLinkCodes200JSONResponse TicketCodes
+
+func (response GetTicketLinkCodes200JSONResponse) VisitGetTicketLinkCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTicketLinkCodesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetTicketLinkCodesdefaultApplicationProblemPlusJSONResponse) VisitGetTicketLinkCodesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type NameTicketLinkRequestObject struct {
+	LinkToken LinkToken `json:"linkToken"`
+	TicketId  TicketId  `json:"ticketId"`
+	Body      *NameTicketLinkJSONRequestBody
+}
+
+type NameTicketLinkResponseObject interface {
+	VisitNameTicketLinkResponse(w http.ResponseWriter) error
+}
+
+type NameTicketLink200JSONResponse TripEvent
+
+func (response NameTicketLink200JSONResponse) VisitNameTicketLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type NameTicketLinkdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response NameTicketLinkdefaultApplicationProblemPlusJSONResponse) VisitNameTicketLinkResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := runtime.JSONMarshalWrite(&buf, response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetVersionRequestObject struct {
 }
 
@@ -5924,6 +7234,36 @@ type StrictServerInterface interface {
 	// LiveStream The live on-sale frames of a sale as server-sent events (gateway; the sale's organiser only)
 	// (GET /v1/live/{saleId})
 	LiveStream(ctx context.Context, request LiveStreamRequestObject) (LiveStreamResponseObject, error)
+	// EraseMyData Delete the caller's personal sales data (GDPR)
+	// (POST /v1/me/erase)
+	EraseMyData(ctx context.Context, request EraseMyDataRequestObject) (EraseMyDataResponseObject, error)
+	// GetMyTicket One ticket the caller holds, with its event
+	// (GET /v1/me/tickets/{ticketId})
+	GetMyTicket(ctx context.Context, request GetMyTicketRequestObject) (GetMyTicketResponseObject, error)
+	// CheckInMyTicket Check a ticket in online (free until the deadline, then the late fee from the EPS Wallet)
+	// (POST /v1/me/tickets/{ticketId}/check-in)
+	CheckInMyTicket(ctx context.Context, request CheckInMyTicketRequestObject) (CheckInMyTicketResponseObject, error)
+	// GetMyTicketCodes Signed entry codes for the current window and the next 39 (10 minutes)
+	// (GET /v1/me/tickets/{ticketId}/codes)
+	GetMyTicketCodes(ctx context.Context, request GetMyTicketCodesRequestObject) (GetMyTicketCodesResponseObject, error)
+	// NameMyTicket Name a ticket before its personalisation deadline
+	// (PUT /v1/me/tickets/{ticketId}/name)
+	NameMyTicket(ctx context.Context, request NameMyTicketRequestObject) (NameMyTicketResponseObject, error)
+	// PickMyTicketDay Pick the day of a flexible day ticket (a reissue; final)
+	// (POST /v1/me/tickets/{ticketId}/pick-day)
+	PickMyTicketDay(ctx context.Context, request PickMyTicketDayRequestObject) (PickMyTicketDayResponseObject, error)
+	// GetMyTrip The caller's trip wallet across organisers
+	// (GET /v1/me/trip)
+	GetMyTrip(ctx context.Context, request GetMyTripRequestObject) (GetMyTripResponseObject, error)
+	// DoorSync The event's door feed since a cursor, or a manifest page while preparing
+	// (GET /v1/organiser/events/{eventId}/door-sync)
+	DoorSync(ctx context.Context, request DoorSyncRequestObject) (DoorSyncResponseObject, error)
+	// RegisterDoorDevice Register a door device for an event at a gate
+	// (POST /v1/organiser/events/{eventId}/door/devices)
+	RegisterDoorDevice(ctx context.Context, request RegisterDoorDeviceRequestObject) (RegisterDoorDeviceResponseObject, error)
+	// UploadDoorScans Upload a device's scans (idempotent by scan id; first entry by device time wins)
+	// (POST /v1/organiser/events/{eventId}/door/scans)
+	UploadDoorScans(ctx context.Context, request UploadDoorScansRequestObject) (UploadDoorScansResponseObject, error)
 	// GetPoolUsage Units sold or held per pool instance
 	// (GET /v1/organiser/events/{eventId}/pool-usage)
 	GetPoolUsage(ctx context.Context, request GetPoolUsageRequestObject) (GetPoolUsageResponseObject, error)
@@ -6047,6 +7387,18 @@ type StrictServerInterface interface {
 	// GetTopup A top-up's state
 	// (GET /v1/shop/wallets/{organiserId}/topups/{attemptId})
 	GetTopup(ctx context.Context, request GetTopupRequestObject) (GetTopupResponseObject, error)
+	// GetTicketKeys The public keys that verify ticket codes
+	// (GET /v1/ticket-keys)
+	GetTicketKeys(ctx context.Context, request GetTicketKeysRequestObject) (GetTicketKeysResponseObject, error)
+	// GetTicketLink A guest order's tickets through its signed link
+	// (GET /v1/ticket-links/{linkToken})
+	GetTicketLink(ctx context.Context, request GetTicketLinkRequestObject) (GetTicketLinkResponseObject, error)
+	// GetTicketLinkCodes Codes of a ticket through its order's signed link
+	// (GET /v1/ticket-links/{linkToken}/tickets/{ticketId}/codes)
+	GetTicketLinkCodes(ctx context.Context, request GetTicketLinkCodesRequestObject) (GetTicketLinkCodesResponseObject, error)
+	// NameTicketLink Name a ticket through its order's signed link
+	// (PUT /v1/ticket-links/{linkToken}/tickets/{ticketId}/name)
+	NameTicketLink(ctx context.Context, request NameTicketLinkRequestObject) (NameTicketLinkResponseObject, error)
 	// GetVersion Build and schema version of this service
 	// (GET /v1/version)
 	GetVersion(ctx context.Context, request GetVersionRequestObject) (GetVersionResponseObject, error)
@@ -6166,6 +7518,298 @@ func (sh *strictHandler) LiveStream(w http.ResponseWriter, r *http.Request, sale
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(LiveStreamResponseObject); ok {
 		if err := validResponse.VisitLiveStreamResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EraseMyData operation middleware
+func (sh *strictHandler) EraseMyData(w http.ResponseWriter, r *http.Request) {
+	var request EraseMyDataRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.EraseMyData(ctx, request.(EraseMyDataRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EraseMyData")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EraseMyDataResponseObject); ok {
+		if err := validResponse.VisitEraseMyDataResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyTicket operation middleware
+func (sh *strictHandler) GetMyTicket(w http.ResponseWriter, r *http.Request, ticketId TicketId) {
+	var request GetMyTicketRequestObject
+
+	request.TicketId = ticketId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetMyTicket(ctx, request.(GetMyTicketRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyTicket")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyTicketResponseObject); ok {
+		if err := validResponse.VisitGetMyTicketResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CheckInMyTicket operation middleware
+func (sh *strictHandler) CheckInMyTicket(w http.ResponseWriter, r *http.Request, ticketId TicketId) {
+	var request CheckInMyTicketRequestObject
+
+	request.TicketId = ticketId
+
+	var body CheckInMyTicketJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.CheckInMyTicket(ctx, request.(CheckInMyTicketRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CheckInMyTicket")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CheckInMyTicketResponseObject); ok {
+		if err := validResponse.VisitCheckInMyTicketResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyTicketCodes operation middleware
+func (sh *strictHandler) GetMyTicketCodes(w http.ResponseWriter, r *http.Request, ticketId TicketId) {
+	var request GetMyTicketCodesRequestObject
+
+	request.TicketId = ticketId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetMyTicketCodes(ctx, request.(GetMyTicketCodesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyTicketCodes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyTicketCodesResponseObject); ok {
+		if err := validResponse.VisitGetMyTicketCodesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// NameMyTicket operation middleware
+func (sh *strictHandler) NameMyTicket(w http.ResponseWriter, r *http.Request, ticketId TicketId) {
+	var request NameMyTicketRequestObject
+
+	request.TicketId = ticketId
+
+	var body NameMyTicketJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.NameMyTicket(ctx, request.(NameMyTicketRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "NameMyTicket")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(NameMyTicketResponseObject); ok {
+		if err := validResponse.VisitNameMyTicketResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PickMyTicketDay operation middleware
+func (sh *strictHandler) PickMyTicketDay(w http.ResponseWriter, r *http.Request, ticketId TicketId) {
+	var request PickMyTicketDayRequestObject
+
+	request.TicketId = ticketId
+
+	var body PickMyTicketDayJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.PickMyTicketDay(ctx, request.(PickMyTicketDayRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PickMyTicketDay")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PickMyTicketDayResponseObject); ok {
+		if err := validResponse.VisitPickMyTicketDayResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMyTrip operation middleware
+func (sh *strictHandler) GetMyTrip(w http.ResponseWriter, r *http.Request) {
+	var request GetMyTripRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetMyTrip(ctx, request.(GetMyTripRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMyTrip")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMyTripResponseObject); ok {
+		if err := validResponse.VisitGetMyTripResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DoorSync operation middleware
+func (sh *strictHandler) DoorSync(w http.ResponseWriter, r *http.Request, eventId EventId, params DoorSyncParams) {
+	var request DoorSyncRequestObject
+
+	request.EventId = eventId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.DoorSync(ctx, request.(DoorSyncRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DoorSync")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DoorSyncResponseObject); ok {
+		if err := validResponse.VisitDoorSyncResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RegisterDoorDevice operation middleware
+func (sh *strictHandler) RegisterDoorDevice(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request RegisterDoorDeviceRequestObject
+
+	request.EventId = eventId
+
+	var body RegisterDoorDeviceJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.RegisterDoorDevice(ctx, request.(RegisterDoorDeviceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RegisterDoorDevice")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegisterDoorDeviceResponseObject); ok {
+		if err := validResponse.VisitRegisterDoorDeviceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UploadDoorScans operation middleware
+func (sh *strictHandler) UploadDoorScans(w http.ResponseWriter, r *http.Request, eventId EventId) {
+	var request UploadDoorScansRequestObject
+
+	request.EventId = eventId
+
+	var body UploadDoorScansJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.UploadDoorScans(ctx, request.(UploadDoorScansRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UploadDoorScans")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UploadDoorScansResponseObject); ok {
+		if err := validResponse.VisitUploadDoorScansResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -7351,6 +8995,117 @@ func (sh *strictHandler) GetTopup(w http.ResponseWriter, r *http.Request, organi
 	}
 }
 
+// GetTicketKeys operation middleware
+func (sh *strictHandler) GetTicketKeys(w http.ResponseWriter, r *http.Request) {
+	var request GetTicketKeysRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetTicketKeys(ctx, request.(GetTicketKeysRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTicketKeys")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTicketKeysResponseObject); ok {
+		if err := validResponse.VisitGetTicketKeysResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTicketLink operation middleware
+func (sh *strictHandler) GetTicketLink(w http.ResponseWriter, r *http.Request, linkToken LinkToken) {
+	var request GetTicketLinkRequestObject
+
+	request.LinkToken = linkToken
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetTicketLink(ctx, request.(GetTicketLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTicketLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTicketLinkResponseObject); ok {
+		if err := validResponse.VisitGetTicketLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTicketLinkCodes operation middleware
+func (sh *strictHandler) GetTicketLinkCodes(w http.ResponseWriter, r *http.Request, linkToken LinkToken, ticketId TicketId) {
+	var request GetTicketLinkCodesRequestObject
+
+	request.LinkToken = linkToken
+	request.TicketId = ticketId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.GetTicketLinkCodes(ctx, request.(GetTicketLinkCodesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTicketLinkCodes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTicketLinkCodesResponseObject); ok {
+		if err := validResponse.VisitGetTicketLinkCodesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// NameTicketLink operation middleware
+func (sh *strictHandler) NameTicketLink(w http.ResponseWriter, r *http.Request, linkToken LinkToken, ticketId TicketId) {
+	var request NameTicketLinkRequestObject
+
+	request.LinkToken = linkToken
+	request.TicketId = ticketId
+
+	var body NameTicketLinkJSONRequestBody
+	if err := runtime.BindJSONBody(r, &body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		return sh.ssi.NameTicketLink(ctx, request.(NameTicketLinkRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "NameTicketLink")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(NameTicketLinkResponseObject); ok {
+		if err := validResponse.VisitNameTicketLinkResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetVersion operation middleware
 func (sh *strictHandler) GetVersion(w http.ResponseWriter, r *http.Request) {
 	var request GetVersionRequestObject
@@ -7404,196 +9159,242 @@ func (sh *strictHandler) GetWhoami(w http.ResponseWriter, r *http.Request) {
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"bw2JTRq//Prl/wYAAP//",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

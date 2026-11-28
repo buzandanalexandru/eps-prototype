@@ -138,6 +138,11 @@ jobs:
           lease=$(helm template eps-ci deploy/helm/eps --show-only charts/simulator/templates/lease.yaml)
           grep -q 'resources: \["leases"\]' <<<"$lease" && ! grep -q 'kind: ClusterRole' <<<"$lease"
           grep -q 'redis:8\.[0-9]*\.[0-9]*' <<<"$out"
+          # Step 7: only the core holds the ticket signing key.
+          grep -q 'key: TICKET_SIGNING_KEY' <<<"$core"
+          ! grep -q 'TICKET_SIGNING_KEY' <<<"$gw"
+          ! grep -q 'TICKET_SIGNING_KEY' <<<"$sim"
+          ! helm template eps-ci deploy/helm/eps --show-only charts/worker/templates/worker.yaml | grep -q 'TICKET_SIGNING_KEY'
 
   migrations:
     name: migration dry run (ephemeral postgres:18)

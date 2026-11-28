@@ -10,7 +10,7 @@ Gives each fan one timeline of everything they hold across events and organisers
 The trip wallet SHALL show every item the signed-in fan currently holds, across all organisers, grouped by event and ordered by start time. Items without their own time MUST sit at their event's start. Each event group MUST use that organiser's brand tokens.
 
 #### Scenario: Mixed items for one event
-- **WHEN** a fan holds a 3-day pass, a camping add-on, a table on Friday, a padel slot on Saturday at 11:00 and a bus seat on Thursday evening for one event
+- **WHEN** a fan holds a 3-day pass, a camping add-on, a table on Friday, a padel slot on Saturday at 11:00 and a bus seat (a time slot) on Thursday evening for one event
 - **THEN** the wallet shows one event group with the bus seat first, then the pass and camping at the event start, then the table and the padel slot in time order
 Test: apps/web/tests/unit/trip-timeline.test.ts
 
@@ -67,6 +67,6 @@ Test: apps/web/tests/e2e/trip-wallet.spec.ts
 The trip wallet and the live ticket SHALL be available in Romanian and English with correct diacritics, and dates and prices MUST be formatted for the chosen language and the shop's currency.
 
 #### Scenario: Romanian wallet
-- **WHEN** the fan opens `/ro/wallet`
+- **WHEN** the fan opens the wallet with Romanian chosen
 - **THEN** all labels, actions and deadlines are in Romanian with diacritics and dates use Romanian format
 Test: apps/web/tests/e2e/trip-wallet.spec.ts

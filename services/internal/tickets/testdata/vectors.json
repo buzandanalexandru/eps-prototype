@@ -1,0 +1,68 @@
+{
+  "seedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+  "publicKey": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+  "keyId": 1,
+  "valid": [
+    {
+      "name": "valid",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAABBwiJgHyHW4SlEUAzzwith2KJkGfeVuN2Sq2x4FgcNXYMABcOFfYvgtIUDVYzxr7tfyDDzaHznxBUQDzivZCG_3at9gU",
+      "eventId": "1b4e28ba-2fa1-4d2a-883f-0016d3cca427",
+      "ticketId": "6f1c1a3e-9b7a-4c55-b1b0-3d1f2e4a5b6c",
+      "generation": 1,
+      "window": 118000000
+    },
+    {
+      "name": "valid",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAACBwiJgXqJNjxn6cKR0KWYgOTz77r-fVlP9XOvU_OjJSaYyYAbZAyqkam44oPWL12yfhcweBSUPKJuH5CsUSgCv079vwA",
+      "eventId": "1b4e28ba-2fa1-4d2a-883f-0016d3cca427",
+      "ticketId": "6f1c1a3e-9b7a-4c55-b1b0-3d1f2e4a5b6c",
+      "generation": 2,
+      "window": 118000001
+    },
+    {
+      "name": "valid",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbP__7msoAONfrEX_ciqJUNefJ_LC1tBuLI731zXeelHUomeDWAf5ZS4zAyHkuKT8L2o5BQ-xX2Y2pCYnrQw_EtuL0aA6JgM",
+      "eventId": "1b4e28ba-2fa1-4d2a-883f-0016d3cca427",
+      "ticketId": "6f1c1a3e-9b7a-4c55-b1b0-3d1f2e4a5b6c",
+      "generation": 65535,
+      "window": 4000000000
+    }
+  ],
+  "invalid": [
+    {
+      "name": "generation changed",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAAABwiJgHyHW4SlEUAzzwith2KJkGfeVuN2Sq2x4FgcNXYMABcOFfYvgtIUDVYzxr7tfyDDzaHznxBUQDzivZCG_3at9gU",
+      "error": "signature"
+    },
+    {
+      "name": "window changed",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAABBwiJgXyHW4SlEUAzzwith2KJkGfeVuN2Sq2x4FgcNXYMABcOFfYvgtIUDVYzxr7tfyDDzaHznxBUQDzivZCG_3at9gU",
+      "error": "signature"
+    },
+    {
+      "name": "ticket changed",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwbPpt6TFWxsD0fLkpbbAABBwiJgHyHW4SlEUAzzwith2KJkGfeVuN2Sq2x4FgcNXYMABcOFfYvgtIUDVYzxr7tfyDDzaHznxBUQDzivZCG_3at9gU",
+      "error": "signature"
+    },
+    {
+      "name": "signature changed",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAABBwiJgHyHW4SlEUAzzwith2KJkGfeVuN2Sq2x4FgcNXYMABYOFfYvgtIUDVYzxr7tfyDDzaHznxBUQDzivZCG_3at9gU",
+      "error": "signature"
+    },
+    {
+      "name": "unknown key id",
+      "code": "E1.AQcbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAABBwiJgJsjE9plgJ8eIwAuQ0Jf29BkkpfROvbOKOW4_ToMBK9fFBkrGkwsgJHAcwb7TejnIeGsscsyRAq8gEUvLUQVbQE",
+      "error": "unknown_key"
+    },
+    {
+      "name": "truncated",
+      "code": "E1.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAABBwiJgHyHW4SlEUAzzwith2KJkGfeVuN2Sq2x4FgcNXYMABcOFfYvgtIUDVYzxr7tfyDDzaHznxBUQDzivZCG_3a",
+      "error": "malformed"
+    },
+    {
+      "name": "wrong prefix",
+      "code": "E2.AQEbTii6L6FNKog_ABbTzKQnbxwaPpt6TFWxsD0fLkpbbAABBwiJgHyHW4SlEUAzzwith2KJkGfeVuN2Sq2x4FgcNXYMABcOFfYvgtIUDVYzxr7tfyDDzaHznxBUQDzivZCG_3at9gU",
+      "error": "malformed"
+    }
+  ]
+}
