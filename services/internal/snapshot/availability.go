@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -52,12 +53,26 @@ type ProductAvailability struct {
 	Remaining      *int64     `json:"remaining,omitempty"`
 }
 
+// InstanceAvailability is one pool instance (an event pool, a day or a slot) that is sold out or
+// has few left; instances not listed have room.
+type InstanceAvailability struct {
+	InstanceID string `json:"instanceId"`
+	Status     string `json:"status"` // on_sale | sold_out
+	Remaining  int64  `json:"remaining"`
+}
+
 // Availability is an event's public availability, from one snapshot version.
 type Availability struct {
-	EventID     string                `json:"eventId"`
-	Version     int                   `json:"version"`
-	GeneratedAt time.Time             `json:"generatedAt"`
-	Products    []ProductAvailability `json:"products"`
+	EventID     string                 `json:"eventId"`
+	Version     int                    `json:"version"`
+	GeneratedAt time.Time              `json:"generatedAt"`
+	Products    []ProductAvailability  `json:"products"`
+	Instances   []InstanceAvailability `json:"instances"`
+}
+
+// fewLeft is the rule for showing a remaining count: at most 50, or at most 5% of capacity.
+func fewLeft(remaining, capacity int64) bool {
+	return remaining <= FewLeftAbsolute || remaining*10000 <= capacity*FewLeftShareBps
 }
 
 // ActiveStep is the index of the price step in force at `at` with `sold` units sold: the last step
@@ -88,7 +103,29 @@ func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time)
 	for _, p := range s.Pools {
 		pools[p.PoolID] = p
 	}
-	out := Availability{EventID: s.EventID, Version: s.Version, GeneratedAt: now.UTC(), Products: []ProductAvailability{}}
+	out := Availability{EventID: s.EventID, Version: s.Version, GeneratedAt: now.UTC(), Products: []ProductAvailability{}, Instances: []InstanceAvailability{}}
+	// Per instance (days and slots included): only those something was taken from and that are
+	// sold out or have few left, so an answer stays small for a season of 1,480 slots.
+	for _, p := range s.Pools {
+		for _, in := range p.Instances {
+			used := poolUsed[in.InstanceID]
+			if used <= 0 {
+				continue
+			}
+			left := in.Capacity - used
+			if left < 0 {
+				left = 0
+			}
+			if !fewLeft(left, in.Capacity) {
+				continue
+			}
+			st := OnSale
+			if left == 0 {
+				st = SoldOut
+			}
+			out.Instances = append(out.Instances, InstanceAvailability{InstanceID: in.InstanceID, Status: st, Remaining: left})
+		}
+	}
 	prods := append([]Product(nil), s.Products...)
 	sort.SliceStable(prods, func(i, j int) bool { return prods[i].SortOrder < prods[j].SortOrder })
 	for _, p := range prods {
@@ -126,7 +163,7 @@ func Compute(s *Snapshot, poolUsed, productSold map[string]int64, now time.Time)
 		default:
 			pa.Status = OnSale
 		}
-		if pa.Status == OnSale && remaining > 0 && (remaining <= FewLeftAbsolute || remaining*10000 <= capacity*FewLeftShareBps) {
+		if pa.Status == OnSale && remaining > 0 && fewLeft(remaining, capacity) {
 			r := remaining
 			pa.Remaining = &r
 		}
@@ -164,9 +201,12 @@ func (a *AvailabilityService) Get(ctx context.Context, eventID string) (Availabi
 	key, kerr := redisx.Key(snap.OrganiserID, eventID, "availability", "v"+itoa(snap.Version))
 	if a.Redis != nil && kerr == nil {
 		if b, err := a.Redis.Get(ctx, key).Bytes(); err == nil {
-			var cached Availability
-			if json.Unmarshal(b, &cached) == nil && cached.Version == snap.Version {
-				return cached, nil
+			// "<signature>.<json>": an answer without a valid signature is ignored.
+			if sig, body, ok := strings.Cut(string(b), "."); ok && a.Store.Verify(sig, "availability", key, body) {
+				var cached Availability
+				if json.Unmarshal([]byte(body), &cached) == nil && cached.Version == snap.Version {
+					return cached, nil
+				}
 			}
 		}
 	}
@@ -185,7 +225,7 @@ func (a *AvailabilityService) Get(ctx context.Context, eventID string) (Availabi
 	out := Compute(snap, used, sold, now())
 	if a.Redis != nil && kerr == nil {
 		if b, err := json.Marshal(out); err == nil {
-			_ = a.Redis.Set(ctx, key, b, ttl).Err()
+			_ = a.Redis.Set(ctx, key, a.Store.Sign("availability", key, string(b))+"."+string(b), ttl).Err()
 		}
 	}
 	return out, nil

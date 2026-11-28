@@ -31,7 +31,8 @@ func main() {
 	var snaps *snapshot.Store
 	var avail *snapshot.AvailabilityService
 	if pool != nil {
-		snaps = snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{})
+		// Copies in Redis are signed with SNAPSHOT_CACHE_KEY (a secret CI generates per environment).
+		snaps = snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{MACKey: []byte(os.Getenv("SNAPSHOT_CACHE_KEY"))})
 		avail = &snapshot.AvailabilityService{Store: snaps, Usage: snapshot.NoUsage{}, Redis: rdb}
 	}
 	srv := &coreapi.Server{

@@ -116,7 +116,10 @@ func (s *Server) GetAvailability(ctx context.Context, req api.GetAvailabilityReq
 	if err != nil {
 		return nil, err
 	}
-	out := api.Availability{EventId: req.EventId, Version: a.Version, GeneratedAt: a.GeneratedAt, Products: make([]api.ProductAvailability, 0, len(a.Products))}
+	out := api.Availability{EventId: req.EventId, Version: a.Version, GeneratedAt: a.GeneratedAt, Products: make([]api.ProductAvailability, 0, len(a.Products)), Instances: make([]api.InstanceAvailability, 0, len(a.Instances))}
+	for _, in := range a.Instances {
+		out.Instances = append(out.Instances, api.InstanceAvailability{InstanceId: in.InstanceID, Status: api.InstanceAvailabilityStatus(in.Status), Remaining: in.Remaining})
+	}
 	for _, p := range a.Products {
 		var id openapi_types.UUID
 		_ = id.UnmarshalText([]byte(p.ProductID))

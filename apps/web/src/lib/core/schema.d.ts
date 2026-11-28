@@ -136,7 +136,8 @@ export interface paths {
          * Public availability of an event's products
          * @description Per visible product of the live snapshot: its sale status, the current price step and its
          *     all-in amount, and the remaining quantity only when at most 50 or 5% of capacity remain
-         *     (design D3.4). Cached 2 seconds; no token needed. 404 when the event has no live snapshot.
+         *     (design D3.4), and the day and slot instances that are sold out or have few left. Cached 2
+         *     seconds; no token needed. 404 when the event has no live snapshot (or is off sale).
          */
         get: operations["getAvailability"];
         put?: never;
@@ -250,6 +251,19 @@ export interface components {
             /** Format: date-time */
             generatedAt: string;
             products: components["schemas"]["ProductAvailability"][];
+            /**
+             * @description Pool instances (an event pool, a day `<poolId>@<date>` or a slot `<poolId>@<date>T<HH:MM>`)
+             *     that units were taken from and that are sold out or have few left. Instances not listed
+             *     have room; the shop greys out sold-out days and slots and caps its picker by `remaining`.
+             */
+            instances: components["schemas"]["InstanceAvailability"][];
+        };
+        InstanceAvailability: {
+            instanceId: string;
+            /** @enum {string} */
+            status: "on_sale" | "sold_out";
+            /** Format: int64 */
+            remaining: number;
         };
         Problem: {
             /** @description A URI reference identifying the problem type. */

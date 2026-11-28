@@ -130,3 +130,25 @@ func TestAvailabilityCachedTwoSeconds(t *testing.T) {
 		t.Fatal("availability window is 2 seconds")
 	}
 }
+
+// Per-instance availability: a sold-out day and a day with few left are listed; untouched ones not.
+func TestInstancesSoldOutOrFewLeft(t *testing.T) {
+	s := fixtureSnap(t)
+	d := "0c000000-0000-4000-8000-0000000000d1"
+	d1, d2, d3 := "2027-07-15", "2027-07-16", "2027-07-17"
+	s.Pools = append(s.Pools, snapshot.Pool{PoolID: d, Name: "Per day", Scope: "day", Instances: []snapshot.PoolInstance{
+		{InstanceID: d + "@" + d1, Date: &d1, Capacity: 8000},
+		{InstanceID: d + "@" + d2, Date: &d2, Capacity: 8000},
+		{InstanceID: d + "@" + d3, Date: &d3, Capacity: 8000},
+	}})
+	a := snapshot.Compute(s, map[string]int64{d + "@" + d1: 8000, d + "@" + d2: 7990, d + "@" + d3: 10}, nil, demoNow)
+	if len(a.Instances) != 2 {
+		t.Fatalf("instances: %+v", a.Instances)
+	}
+	if a.Instances[0].InstanceID != d+"@"+d1 || a.Instances[0].Status != snapshot.SoldOut || a.Instances[0].Remaining != 0 {
+		t.Fatalf("sold-out day: %+v", a.Instances[0])
+	}
+	if a.Instances[1].InstanceID != d+"@"+d2 || a.Instances[1].Status != snapshot.OnSale || a.Instances[1].Remaining != 10 {
+		t.Fatalf("few-left day: %+v", a.Instances[1])
+	}
+}

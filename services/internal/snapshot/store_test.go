@@ -2,8 +2,12 @@ package snapshot_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -209,5 +213,103 @@ func TestActivationForeignEventNotFound(t *testing.T) {
 	}
 	if _, err := st.Activate(ctx, w.org, w.event, 9); !errors.Is(err, snapshot.ErrNotFound) {
 		t.Fatalf("unknown version: %v", err)
+	}
+}
+
+type countingSource struct {
+	src snapshot.Source
+	mu  sync.Mutex
+	n   int
+}
+
+func (c *countingSource) Fetch(ctx context.Context, eventID string, version int) (snapshot.Stored, error) {
+	c.mu.Lock()
+	c.n++
+	c.mu.Unlock()
+	time.Sleep(20 * time.Millisecond) // a slow database: concurrent misses overlap
+	return c.src.Fetch(ctx, eventID, version)
+}
+
+func (c *countingSource) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.n
+}
+
+// Security review: a copy in Redis that was not written by a core holding the cache key is never
+// used, even when its content matches its own hash.
+func TestUnsignedRedisCopyIsIgnored(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := testdb.Migrated(t)
+	rdb := redisClient(t)
+	w := newWorld(t, pool)
+	w.publish(t, 1, 53900)
+	key := []byte("test-cache-key-0123456789abcdef")
+	first := snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, nil, snapshot.Options{RedisTTL: time.Minute, MACKey: key})
+	if _, err := first.Load(ctx, w.event); err != nil {
+		t.Fatal(err)
+	}
+	// Forge a self-consistent copy (new content, its own hash) without the key.
+	rk, _ := redisx.Key(w.org, w.event, "snapshot", "live")
+	forged := w.doc(t, uuid(), 1, 100)
+	sum := sha256.Sum256([]byte(forged))
+	var m map[string]any
+	_ = json.Unmarshal([]byte(forged), &m)
+	if err := rdb.HSet(ctx, rk, "doc", forged, "sha256", hex.EncodeToString(sum[:]), "mac", strings.Repeat("0", 64)).Err(); err != nil {
+		t.Fatal(err)
+	}
+	log, buf := newLog()
+	second := snapshot.NewStore(snapshot.DBSource{Pool: pool}, rdb, log, snapshot.Options{RedisTTL: time.Minute, MACKey: key})
+	s, err := second.Load(ctx, w.event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gaAllIn(t, s) != 55248 {
+		t.Fatalf("served the forged copy: %d", gaAllIn(t, s))
+	}
+	if !strings.Contains(buf.String(), "not signed") {
+		t.Fatalf("forgery not logged: %s", buf.String())
+	}
+}
+
+// Security review: requests for an unknown event reach the database once per window, and
+// concurrent misses for one event share one load.
+func TestUnknownEventsAndConcurrentMissesSpareTheDatabase(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := testdb.Migrated(t)
+	w := newWorld(t, pool)
+	w.publish(t, 1, 53900)
+	src := &countingSource{src: snapshot.DBSource{Pool: pool}}
+	shared := []byte("shared-cache-key")
+	st := snapshot.NewStore(src, redisClient(t), nil, snapshot.Options{MissingTTL: time.Minute, MACKey: shared})
+	ghost := uuid()
+	for i := 0; i < 20; i++ {
+		if _, err := st.Load(ctx, ghost); !errors.Is(err, snapshot.ErrNotFound) {
+			t.Fatal(err)
+		}
+	}
+	if src.count() != 1 {
+		t.Fatalf("unknown event: %d database loads", src.count())
+	}
+	// Another core shares the "missing" mark through Redis.
+	other := snapshot.NewStore(src, redisClient(t), nil, snapshot.Options{MissingTTL: time.Minute, MACKey: shared})
+	if _, err := other.Load(ctx, ghost); !errors.Is(err, snapshot.ErrNotFound) || src.count() != 1 {
+		t.Fatalf("missing mark not shared: %v, %d loads", err, src.count())
+	}
+	fresh := &countingSource{src: snapshot.DBSource{Pool: pool}}
+	cold := snapshot.NewStore(fresh, nil, nil, snapshot.Options{})
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := cold.Load(ctx, w.event); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if fresh.count() != 1 {
+		t.Fatalf("50 concurrent misses made %d database loads", fresh.count())
 	}
 }
