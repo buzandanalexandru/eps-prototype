@@ -21,7 +21,8 @@ export type ShopEvent = {
   endsAt: string;
   timezone: string;
   currency: Currency;
-  venue: { name: string; address: string; lat: number | null; lng: number | null } | null;
+  /** `map`: the stored static map image (/assets/maps/...), or null when none is stored yet. */
+  venue: { name: string; address: string; lat: number | null; lng: number | null; map: string | null } | null;
   days: { date: string; opens: string; closes: string }[];
   lineup: { date: string; artist: string; stage: string; starts: string }[];
   products: ShopProduct[];

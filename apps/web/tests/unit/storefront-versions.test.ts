@@ -70,7 +70,7 @@ describeDb("storefront versions", () => {
       rev = (await tx(o.scope, (c) => saveDraft(c, o.sf.id, { revision: rev, document: d }))).revision;
       await tx(o.scope, (c) => publishDraft(c, { storefrontId: o.sf.id, revision: rev, userId: o.user.id }));
     }
-    const v4 = await tx(o.scope, (c) => restoreVersion(c, { storefrontId: o.sf.id, number: 1, userId: o.user.id }));
+    const v4 = await tx(o.scope, (c) => restoreVersion(c, { storefrontId: o.sf.id, number: 1, revision: rev, userId: o.user.id }));
     expect(v4).toMatchObject({ number: 4, restored_from: 1, state: "published" });
     const versions = await tx(o.scope, (c) => listVersions(c, o.sf.id));
     expect(versions.map((v) => [v.number, v.state])).toEqual([
@@ -85,4 +85,18 @@ describeDb("storefront versions", () => {
     expect((sf!.document.pages[0].sections[0].settings.heading as { en: string }).en).toBe("One"); // the draft follows
     expect(versions[0].author).toMatch(/^User/);
   });
+
+  it("publish and restore are refused when the draft has moved on; a double publish of the current revision publishes once", async () => {
+    const o = await shopOrganiser();
+    const rev = (await tx(o.scope, (c) => saveDraft(c, o.sf.id, { revision: 1, document: clone(o.sf.document) }))).revision;
+    await tx(o.scope, (c) => publishDraft(c, { storefrontId: o.sf.id, revision: rev, userId: null }));
+    const rev2 = (await tx(o.scope, (c) => saveDraft(c, o.sf.id, { revision: rev, document: clone(o.sf.document) }))).revision;
+    // Publishing the revision already published, now that the draft moved on, is a conflict.
+    await expect(tx(o.scope, (c) => publishDraft(c, { storefrontId: o.sf.id, revision: rev, userId: null }))).rejects.toMatchObject({ code: "draft_conflict", currentRevision: rev2 });
+    // A restore based on an older revision would overwrite newer work: refused.
+    await expect(tx(o.scope, (c) => restoreVersion(c, { storefrontId: o.sf.id, number: 1, revision: rev, userId: null }))).rejects.toMatchObject({ code: "draft_conflict", currentRevision: rev2 });
+    const ok = await tx(o.scope, (c) => restoreVersion(c, { storefrontId: o.sf.id, number: 1, revision: rev2, userId: null }));
+    expect(ok.number).toBe(2);
+  });
 });
+

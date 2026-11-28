@@ -6,11 +6,12 @@ import { isUuid, loadEventGraphs, stepsOf } from "../catalogue/domain";
 import { priceSides } from "../catalogue/display";
 import { activePriceStep } from "../pricing/ladder";
 import type { ShopCatalogue, ShopEvent } from "./catalogue";
+import { storedTiles, tileFor, tileUrl } from "./maps";
+import { LIMITS } from "./schema";
 
-const MAX_EVENTS = 60;
 
 export async function loadShopCatalogue(c: ClientBase, eventIds: string[], now = new Date()): Promise<ShopCatalogue> {
-  const ids = [...new Set(eventIds.filter(isUuid))].slice(0, MAX_EVENTS);
+  const ids = [...new Set(eventIds.filter(isUuid))].slice(0, LIMITS.events);
   if (!ids.length) return {};
   const graphs = await loadEventGraphs(c, ids);
   const venueIds = [...new Set(graphs.map((g) => g.venue?.id).filter((v): v is string => !!v))];
@@ -20,6 +21,9 @@ export async function loadShopCatalogue(c: ClientBase, eventIds: string[], now =
         [venueIds],
       )).rows
     : [];
+  const points = venues.filter((v) => v.lat !== null && v.lng !== null).map((v) => [v.id, tileFor(v.lat!, v.lng!)] as const);
+  const stored = await storedTiles(c, points.map(([, t]) => t));
+  const mapOf = new Map(points.filter(([, t]) => stored.has(`${t.z}/${t.x}/${t.y}`)).map(([id, t]) => [id, tileUrl(t)]));
   const out: ShopCatalogue = {};
   for (const g of graphs) {
     const dayOf = new Map(g.days.map((d) => [d.id, d.day]));
@@ -41,7 +45,7 @@ export async function loadShopCatalogue(c: ClientBase, eventIds: string[], now =
       endsAt: g.event.ends_at.toISOString(),
       timezone: g.event.timezone,
       currency: g.brand.currency,
-      venue: v ? { name: v.name, address: v.address, lat: v.lat, lng: v.lng } : null,
+      venue: v ? { name: v.name, address: v.address, lat: v.lat, lng: v.lng, map: mapOf.get(v.id) ?? null } : null,
       days: g.days.map((d) => ({ date: d.day, opens: d.opens.slice(0, 5), closes: d.closes.slice(0, 5) })).sort((a, b) => a.date.localeCompare(b.date)),
       lineup: g.lineup
         .map((l) => ({ date: dayOf.get(l.day_id) ?? "", artist: l.artist, stage: l.stage, starts: l.starts.slice(0, 5), sort: l.sort }))

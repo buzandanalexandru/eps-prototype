@@ -7,6 +7,7 @@ import { assertCanDesign, sameOrigin } from "@/lib/storefront/access";
 import { DraftConflictError, getStorefront, saveDraft } from "@/lib/storefront/domain";
 import { LIMITS } from "@/lib/storefront/schema";
 import { requireActive, studioTx } from "@/lib/studio/context";
+import { storeMapTiles } from "@/lib/storefront/map-store";
 
 const body = z.strictObject({ revision: z.int().min(1), document: z.unknown() });
 const noStore = { "Cache-Control": "private, no-store" };
@@ -51,6 +52,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     const s = await requireActive();
     assertCanDesign(s.active.role);
     const r = await studioTx(s, (c) => saveDraft(c, id, p.data));
+    await storeMapTiles(s, p.data.document);
     return NextResponse.json(r, { headers: noStore });
   } catch (err) {
     return fail(err);

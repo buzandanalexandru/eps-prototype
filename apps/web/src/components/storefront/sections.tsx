@@ -6,6 +6,7 @@ import type { Localized } from "@/lib/catalogue/schema";
 import type { ShopBrand, ShopCatalogue, ShopEvent } from "@/lib/storefront/catalogue";
 import type { ShopLabels } from "@/lib/storefront/labels";
 import { imageUrl } from "@/lib/storefront/links";
+import { osmLink } from "@/lib/storefront/maps";
 import type { Locale, Section } from "@/lib/storefront/schema";
 import { formatMoney } from "@/lib/pricing/money";
 import { Countdown } from "./countdown";
@@ -23,6 +24,8 @@ export type RenderCtx = {
   mode: RenderMode;
   /** Prefix of site-relative links ("/s/<brand>/<locale>" on the public shop). */
   hrefBase: string;
+  /** On preview-link pages: the link's token, so the draft's uploads load. */
+  previewToken?: string | null;
 };
 
 export function tx(v: Partial<Localized> | undefined | null, locale: Locale): string {
@@ -59,7 +62,7 @@ type P = { s: Section; ctx: RenderCtx };
 type S<T> = { s: Section & { settings: T }; ctx: RenderCtx };
 
 function Hero({ s, ctx }: S<{ heading: Localized; subheading: Localized; image: string; align: "left" | "center" }>) {
-  const img = s.settings.image ? imageUrl(s.settings.image) : null;
+  const img = s.settings.image ? imageUrl(s.settings.image, ctx.previewToken) : null;
   const center = s.settings.align === "center";
   return (
     <div className="relative overflow-hidden">
@@ -184,51 +187,32 @@ function Calendar({ s, ctx }: S<{ heading: Localized }>) {
   );
 }
 
-/** OpenStreetMap tile coordinates for a point (Web Mercator). */
-export function tileFor(lat: number, lng: number, zoom: number): { x: number; y: number } {
-  const n = 2 ** zoom;
-  const rad = (lat * Math.PI) / 180;
-  return { x: Math.floor(((lng + 180) / 360) * n), y: Math.floor(((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) * n) };
-}
-
-function MapSection({ s, ctx }: S<{ heading: Localized; zoom: number }>) {
+function MapSection({ s, ctx }: S<{ heading: Localized }>) {
   const ev = eventOf(s, ctx);
   const v = ev?.venue;
   const hasPoint = v && v.lat !== null && v.lng !== null;
-  const t = hasPoint ? tileFor(v.lat!, v.lng!, s.settings.zoom) : null;
   return (
     <Wrap>
       <Heading v={s.settings.heading} ctx={ctx} />
       {!ev ? (
         <Missing ctx={ctx} />
       ) : (
-        <div className={`${card} grid gap-4 overflow-hidden p-4 sm:grid-cols-[256px_1fr]`}>
-          {t && (
-            // A static tile and a link out: no third-party frame or script (D2.2).
+        <div className={`${card} grid gap-4 overflow-hidden p-4 ${v?.map ? "sm:grid-cols-[256px_1fr]" : ""}`}>
+          {v?.map && (
+            // A static map stored on our own origin and a link out: the fan's browser makes no
+            // request to a map service (review decision on step 2).
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={`https://tile.openstreetmap.org/${s.settings.zoom}/${t.x}/${t.y}.png`}
-              alt=""
-              width={256}
-              height={256}
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              className="h-auto w-full max-w-64 rounded-[var(--eps-radius)]"
-            />
+            <img src={v.map} alt="" width={256} height={256} loading="lazy" className="h-auto w-full max-w-64 rounded-[var(--eps-radius)]" data-testid="map-image" />
           )}
           <div className="min-w-0 space-y-2">
             <p className="font-semibold">{v?.name}</p>
             <p className="text-sm text-[var(--eps-muted)]">{v?.address}</p>
             {hasPoint && (
-              <a
-                className="text-sm font-semibold text-[var(--eps-primary)] underline"
-                rel="noopener noreferrer"
-                href={`https://www.openstreetmap.org/?mlat=${v!.lat}&mlon=${v!.lng}#map=${s.settings.zoom}/${v!.lat}/${v!.lng}`}
-              >
+              <a className="text-sm font-semibold underline" rel="noopener noreferrer" href={osmLink(v!.lat!, v!.lng!)}>
                 {ctx.labels.map}
               </a>
             )}
-            {t && <p className="text-xs text-[var(--eps-muted)]">{ctx.labels.mapAttribution}</p>}
+            {v?.map && <p className="text-xs text-[var(--eps-muted)]">{ctx.labels.mapAttribution}</p>}
           </div>
         </div>
       )}
@@ -258,7 +242,7 @@ function Faq({ s, ctx }: S<{ heading: Localized }>) {
 function GallerySection({ s, ctx }: S<{ heading: Localized; layout: "grid" | "carousel" }>) {
   const images = s.blocks.flatMap((b) => {
     const st = b.settings as { image: string; alt: Localized };
-    const src = imageUrl(st.image);
+    const src = imageUrl(st.image, ctx.previewToken);
     return src ? [{ id: b.id, src, alt: tx(st.alt, ctx.locale), sample: st.image.startsWith("sample:") }] : [];
   });
   return (

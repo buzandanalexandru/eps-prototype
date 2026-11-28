@@ -3,11 +3,18 @@
 // (step 3) the public shop.
 import { tokenVars } from "@/lib/storefront/tokens";
 import { imageUrl } from "@/lib/storefront/links";
+import type { ShopCatalogue } from "@/lib/storefront/catalogue";
 import type { Page, Section, StorefrontDocument } from "@/lib/storefront/schema";
 import { SectionView, tx, type RenderCtx } from "./sections";
 
-export function pagePath(p: Pick<Page, "kind" | "slug">): string {
-  return p.kind === "home" ? "/" : p.kind === "event" ? `/e/${p.slug}` : `/${p.slug}`;
+/**
+ * A page's address inside the shop (spec-map): "/" for home, "/e/<event slug>" for an event page
+ * (by the event's own slug, from the catalogue), "/<page slug>" for an info page.
+ */
+export function pagePath(p: Pick<Page, "kind" | "slug" | "eventId">, catalogue: ShopCatalogue): string {
+  if (p.kind === "home") return "/";
+  if (p.kind === "event") return `/e/${(p.eventId && catalogue[p.eventId]?.slug) || ""}`;
+  return `/${p.slug}`;
 }
 
 export type StorefrontViewProps = {
@@ -22,7 +29,7 @@ export type StorefrontViewProps = {
 };
 
 export function StorefrontView({ doc, page, ctx, fontClass, selectedSectionId, scheme, banner }: StorefrontViewProps) {
-  const logo = doc.tokens.logo ? imageUrl(doc.tokens.logo) : null;
+  const logo = doc.tokens.logo ? imageUrl(doc.tokens.logo, ctx.previewToken) : null;
   const nav = doc.pages.filter((p) => p.kind !== "home");
   const home = doc.pages[0];
   return (
@@ -46,7 +53,7 @@ export function StorefrontView({ doc, page, ctx, fontClass, selectedSectionId, s
           {nav.length > 0 && (
             <nav aria-label={ctx.labels.navigation} className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-sm">
               {nav.map((p) => (
-                <a key={p.id} href={`${ctx.hrefBase}${pagePath(p)}`} data-eps-page={p.id} className={p.id === page.id ? "font-semibold text-[var(--eps-primary)] underline" : "hover:underline"}>
+                <a key={p.id} href={`${ctx.hrefBase}${pagePath(p, ctx.catalogue)}`} data-eps-page={p.id} className={p.id === page.id ? "font-semibold text-[var(--eps-primary)] underline" : "hover:underline"}>
                   {tx(p.title, ctx.locale)}
                 </a>
               ))}

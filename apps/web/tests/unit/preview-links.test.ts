@@ -1,7 +1,7 @@
 // Storefront builder spec "Private preview links": hashed tokens, expiry, revocation, guessing.
 import { randomBytes } from "node:crypto";
 import { expect, it } from "vitest";
-import { createPreviewLink, hashPreviewToken, listPreviewLinks, resolvePreviewToken, revokePreviewLink } from "@/lib/storefront/domain";
+import { createPreviewLink, hashPreviewToken, listPreviewLinks, MAX_ACTIVE_PREVIEW_LINKS, resolvePreviewToken, revokeAllPreviewLinks, revokePreviewLink } from "@/lib/storefront/domain";
 import { layoutFor } from "@/proxy";
 import { asOwner, describeDb, tx } from "./db";
 import { shopOrganiser } from "./storefront-fixtures";
@@ -53,4 +53,17 @@ describeDb("preview links", () => {
     expect(layoutFor("/studio/builder")).toBe("wide");
     expect(layoutFor("/studio")).toBeNull();
   });
+
+  it("lists every active link, caps active links per storefront and revokes all at once", async () => {
+    const o = await shopOrganiser();
+    for (let i = 0; i < MAX_ACTIVE_PREVIEW_LINKS; i++) await tx(o.scope, (c) => createPreviewLink(c, o.sf.id, o.user.id));
+    expect((await tx(o.scope, (c) => listPreviewLinks(c, o.sf.id))).filter((l) => !l.revoked_at && !l.expired)).toHaveLength(MAX_ACTIVE_PREVIEW_LINKS);
+    await expect(tx(o.scope, (c) => createPreviewLink(c, o.sf.id, o.user.id))).rejects.toMatchObject({ code: "too_many_links" });
+    expect(await tx(o.scope, (c) => revokeAllPreviewLinks(c, o.sf.id))).toBe(MAX_ACTIVE_PREVIEW_LINKS);
+    const after = await tx(o.scope, (c) => listPreviewLinks(c, o.sf.id));
+    expect(after.every((l) => l.revoked_at)).toBe(true);
+    expect(after.length).toBeLessThanOrEqual(10); // inactive links: the latest ten
+    await tx(o.scope, (c) => createPreviewLink(c, o.sf.id, o.user.id));
+  });
 });
+

@@ -1,7 +1,7 @@
 // Storefront builder spec: "Invalid document refused", "Footer cannot be removed", "Section limits",
 // "Dangerous link", "Layout key on checkout"; the JSON Schema export for the copilot.
 import { describe, expect, it } from "vitest";
-import { addSection, moveSection, removeSection, toggleHidden } from "@/lib/storefront/edit";
+import { addSection, canAddSection, moveSection, removeSection, toggleHidden } from "@/lib/storefront/edit";
 import { documentJsonSchema, LIMITS, parseDocument } from "@/lib/storefront/schema";
 import { isSafeLink, parseImageRef } from "@/lib/storefront/links";
 import { clone, doc } from "./storefront-fixtures";
@@ -148,4 +148,40 @@ describe("storefront document schema", () => {
     expect(s.additionalProperties).toBe(false);
     expect(Object.keys(s.properties)).toEqual(["schemaVersion", "tokens", "locales", "pages", "checkout", "messages"]);
   });
+
+  it("page addresses: reserved slugs are refused, event pages take the event's slug, one page per event", () => {
+    for (const slug of ["checkout", "e", "p", "assets", "api", "s"]) {
+      const d = clone(doc());
+      d.pages.find((p) => p.kind === "info")!.slug = slug;
+      expect(parseDocument(d), slug).toMatchObject({ ok: false, code: "slug_reserved" });
+    }
+    const ev = clone(doc());
+    ev.pages.find((p) => p.kind === "event")!.slug = "galaxia-2027";
+    expect(parseDocument(ev)).toMatchObject({ ok: false, code: "event_page_slug" });
+    const twice = clone(doc());
+    const e = twice.pages.find((p) => p.kind === "event")!;
+    twice.pages.splice(1, 0, { ...clone(e), id: "p-second", sections: e.sections.map((s, i) => ({ ...clone(s), id: `x${i}` })) });
+    expect(parseDocument(twice)).toMatchObject({ ok: false, code: "taken" });
+  });
+
+  it("an oversized document names the part that takes the space", () => {
+    const d = clone(doc());
+    const info = d.pages.findIndex((p) => p.kind === "info");
+    const page = d.pages[info];
+    const text = page.sections[0];
+    page.sections = [...Array.from({ length: 39 }, (_, j) => ({ ...clone(text), id: `big-${j}`, settings: { ...text.settings, body: { ro: "x".repeat(5000), en: "y".repeat(5000) } } })), page.sections.at(-1)!];
+    for (let k = 0; k < 2; k++) d.pages.push({ ...clone(page), id: `copy-${k}`, slug: `copy-${k}`, sections: page.sections.map((s) => ({ ...clone(s), id: `${s.id}-${k}` })) });
+    expect(parseDocument(d)).toMatchObject({ ok: false, code: "document_too_large", path: expect.stringMatching(/^pages\.[2-9]$/) });
+    void info;
+  });
+
+  it("canAddSection turns false at the limit, and adding then does nothing", () => {
+    let d = doc("festival", null);
+    const pid = d.pages[0].id;
+    expect(canAddSection(d.pages[0])).toBe(true);
+    for (let r = addSection(d, pid, "text"); r.id; r = addSection(d, pid, "text")) d = r.doc;
+    expect(canAddSection(d.pages[0])).toBe(false);
+    expect(addSection(d, pid, "faq")).toEqual({ doc: d, id: null });
+  });
 });
+

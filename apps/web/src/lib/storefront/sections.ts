@@ -2,7 +2,7 @@
 // it may hold, its limits and its defaults. The editor's forms, the renderer and the publish check
 // all read this one table; adding a section type means adding it here and a renderer.
 import * as z from "zod";
-import { choice, datetime, eventRef, flag, image, int, link, localized, markdown } from "./fields";
+import { choice, datetime, eventRef, flag, image, link, localized, markdown } from "./fields";
 
 const L = (ro: string, en: string) => ({ ro, en });
 
@@ -62,11 +62,11 @@ export const SECTIONS = {
     defaults: ({ eventId }) => ({ heading: L("Program", "Schedule"), eventId: eventId ?? "" }),
   },
   map: {
-    settings: z.strictObject({ heading: heading(), eventId: eventRef(true), zoom: int(10, 17) }),
+    settings: z.strictObject({ heading: heading(), eventId: eventRef(true) }),
     blocks: {},
     maxBlocks: 0,
     catalogue: true,
-    defaults: ({ eventId }) => ({ heading: L("Cum ajungi", "Getting there"), eventId: eventId ?? "", zoom: 14 }),
+    defaults: ({ eventId }) => ({ heading: L("Cum ajungi", "Getting there"), eventId: eventId ?? "" }),
   },
   faq: {
     settings: z.strictObject({ heading: heading() }),

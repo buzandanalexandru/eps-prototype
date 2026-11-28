@@ -206,15 +206,17 @@ export async function publishDraft(
   hooks: PublishHook[] = publishHooks,
 ): Promise<VersionRow & { created: boolean }> {
   const sf = await lockStorefront(c, p.storefrontId);
+  const draft = need(
+    (await c.query<{ document: StorefrontDocument; revision: number }>("select document, revision from control.storefront_versions where storefront_id = $1 and state = 'draft'", [sf.id])).rows[0],
+  );
+  // Only while the draft is still at that revision: a double click publishes once, but a publish of
+  // an older revision (another tab saved since) is a conflict, never a silent no-op.
+  if (draft.revision !== p.revision) throw new DraftConflictError(draft.revision);
   const done = await c.query<{ number: number }>(
     "select number from control.storefront_versions where storefront_id = $1 and state <> 'draft' and revision = $2",
     [sf.id, p.revision],
   );
   if (done.rows[0]) return { ...need(await getVersion(c, sf.id, done.rows[0].number)), created: false };
-  const draft = need(
-    (await c.query<{ document: StorefrontDocument; revision: number }>("select document, revision from control.storefront_versions where storefront_id = $1 and state = 'draft'", [sf.id])).rows[0],
-  );
-  if (draft.revision !== p.revision) throw new DraftConflictError(draft.revision);
   const parsed = parseDocument(draft.document);
   if (!parsed.ok) throw new PublishBlockedError([{ code: "invalid", path: parsed.path, detail: parsed.code }]);
   return { ...(await writeVersion(c, sf, { document: parsed.doc, revision: draft.revision, userId: p.userId, restoredFrom: null }, hooks)), created: true };
@@ -226,11 +228,14 @@ export async function publishDraft(
  */
 export async function restoreVersion(
   c: ClientBase,
-  p: { storefrontId: string; number: number; userId: string | null },
+  p: { storefrontId: string; number: number; revision: number; userId: string | null },
   hooks: PublishHook[] = publishHooks,
 ): Promise<VersionRow> {
   const sf = await lockStorefront(c, p.storefrontId);
   if (!Number.isInteger(p.number) || p.number < 1) throw new DomainError("not_found");
+  // The restore replaces the draft: only the draft the organiser is looking at, never newer work.
+  const cur = need((await c.query<{ revision: number }>("select revision from control.storefront_versions where storefront_id = $1 and state = 'draft'", [sf.id])).rows[0]);
+  if (cur.revision !== p.revision) throw new DraftConflictError(cur.revision);
   const old = need(
     (await c.query<{ document: StorefrontDocument }>("select document from control.storefront_versions where storefront_id = $1 and number = $2", [sf.id, p.number])).rows[0],
   );
@@ -238,8 +243,8 @@ export async function restoreVersion(
   if (!parsed.ok) throw new PublishBlockedError([{ code: "invalid", path: parsed.path, detail: parsed.code }]);
   const d = await c.query<{ revision: number }>(
     `update control.storefront_versions set document = $2, revision = revision + 1, updated_at = now()
-     where storefront_id = $1 and state = 'draft' returning revision`,
-    [sf.id, JSON.stringify(parsed.doc)],
+     where storefront_id = $1 and state = 'draft' and revision = $3 returning revision`,
+    [sf.id, JSON.stringify(parsed.doc), p.revision],
   );
   return writeVersion(c, sf, { document: parsed.doc, revision: need(d.rows[0]).revision, userId: p.userId, restoredFrom: p.number }, hooks);
 }
@@ -286,6 +291,8 @@ export async function applyTemplate(c: ClientBase, storefrontId: string, p: { re
 // ---------------------------------------------------------------- preview links
 
 export const PREVIEW_LINK_DAYS = 7;
+/** Active (unexpired, unrevoked) preview links per storefront. */
+export const MAX_ACTIVE_PREVIEW_LINKS = 20;
 const TOKEN = /^[A-Za-z0-9_-]{22}$/;
 
 export function hashPreviewToken(token: string): string {
@@ -294,7 +301,12 @@ export function hashPreviewToken(token: string): string {
 
 /** A new link: 128 random bits in the URL, only their SHA-256 stored. The token is shown once. */
 export async function createPreviewLink(c: ClientBase, storefrontId: string, userId: string | null, days = PREVIEW_LINK_DAYS): Promise<{ id: string; token: string; expiresAt: Date }> {
-  need(await getStorefront(c, storefrontId));
+  need(await lockStorefront(c, storefrontId));
+  const active = await c.query<{ n: number }>(
+    "select count(*)::int as n from control.preview_links where storefront_id = $1 and revoked_at is null and expires_at > now()",
+    [storefrontId],
+  );
+  if (active.rows[0].n >= MAX_ACTIVE_PREVIEW_LINKS) throw new DomainError("too_many_links", undefined, { max: MAX_ACTIVE_PREVIEW_LINKS });
   const token = randomBytes(16).toString("base64url");
   const r = await c.query<{ id: string; expires_at: Date }>(
     `insert into control.preview_links (organiser_id, storefront_id, token_hash, created_by, expires_at)
@@ -311,7 +323,12 @@ export async function listPreviewLinks(c: ClientBase, storefrontId: string): Pro
   return (
     await c.query<PreviewLinkRow>(
       `select l.id, l.created_at, l.expires_at, l.revoked_at, l.expires_at <= now() as expired, u.name as author from control.preview_links l
-       left join control."user" u on u.id = l.created_by where l.storefront_id = $1 order by l.created_at desc limit 20`,
+       left join control."user" u on u.id = l.created_by where l.storefront_id = $1 and l.revoked_at is null and l.expires_at > now()
+       union all
+       (select l.id, l.created_at, l.expires_at, l.revoked_at, true, u.name from control.preview_links l
+        left join control."user" u on u.id = l.created_by where l.storefront_id = $1 and (l.revoked_at is not null or l.expires_at <= now())
+        order by l.created_at desc limit 10)
+       order by 2 desc`,
       [storefrontId],
     )
   ).rows;
@@ -321,6 +338,13 @@ export async function revokePreviewLink(c: ClientBase, storefrontId: string, lin
   if (!UUID.test(storefrontId) || !UUID.test(linkId)) throw new DomainError("not_found");
   const r = await c.query("update control.preview_links set revoked_at = coalesce(revoked_at, now()) where id = $1 and storefront_id = $2", [linkId, storefrontId]);
   if (!r.rowCount) throw new DomainError("not_found");
+}
+
+/** Revokes every active link of a storefront; returns how many. */
+export async function revokeAllPreviewLinks(c: ClientBase, storefrontId: string): Promise<number> {
+  need(await getStorefront(c, storefrontId));
+  const r = await c.query("update control.preview_links set revoked_at = now() where storefront_id = $1 and revoked_at is null and expires_at > now()", [storefrontId]);
+  return r.rowCount ?? 0;
 }
 
 /** Which storefront a preview token opens (no organiser scope needed); null when unknown, expired or revoked. */

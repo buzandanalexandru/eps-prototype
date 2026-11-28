@@ -53,9 +53,13 @@ export function parseImageRef(ref: string): ImageRef | null {
   return null;
 }
 
-/** The URL an image reference is served from (always on our own origin). */
-export function imageUrl(ref: string): string | null {
+/**
+ * The URL an image reference is served from (always on our own origin). `previewToken` is added to
+ * uploads on preview-link pages, where the draft's images are not public yet.
+ */
+export function imageUrl(ref: string, previewToken?: string | null): string | null {
   const r = parseImageRef(ref);
   if (!r) return null;
-  return r.kind === "asset" ? `/assets/${r.id}` : `/samples/${r.name}.svg`;
+  if (r.kind === "sample") return `/samples/${r.name}.svg`;
+  return previewToken ? `/assets/${r.id}?p=${encodeURIComponent(previewToken)}` : `/assets/${r.id}`;
 }

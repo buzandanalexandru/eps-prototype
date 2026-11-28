@@ -17,10 +17,12 @@ import {
   PublishBlockedError,
   publishDraft,
   restoreVersion,
+  revokeAllPreviewLinks,
   revokePreviewLink,
 } from "@/lib/storefront/domain";
+import { storeMapTiles } from "@/lib/storefront/map-store";
 import type { PublishProblem } from "@/lib/storefront/publish-checks";
-import type { StorefrontDocument } from "@/lib/storefront/schema";
+import { LIMITS, type StorefrontDocument } from "@/lib/storefront/schema";
 import { TEMPLATE_IDS } from "@/lib/storefront/templates";
 import { requireActive, studioTx } from "@/lib/studio/context";
 
@@ -70,22 +72,27 @@ export async function publishAction(storefrontId: string, revision: number) {
   if (id === undefined) return bad;
   const rev = parse(z.int().min(1), revision);
   if (rev === undefined) return bad;
-  return run((s) =>
-    studioTx(s, async (c) => {
+  return run(async (s) => {
+    const r = await studioTx(s, async (c) => {
       const v = await publishDraft(c, { storefrontId: id, revision: rev, userId: s.user.id });
-      return { number: v.number, created: v.created, ...(await history(c, id)) };
-    }),
-  );
+      return { number: v.number, created: v.created, document: (await getStorefront(c, id))!.document, ...(await history(c, id)) };
+    });
+    await storeMapTiles(s, r.document);
+    const { document: _d, ...rest } = r; // eslint-disable-line @typescript-eslint/no-unused-vars
+    return rest;
+  });
 }
 
-export async function restoreAction(storefrontId: string, number: number) {
+export async function restoreAction(storefrontId: string, number: number, revision: number) {
   const id = parse(uuid, storefrontId);
   if (id === undefined) return bad;
   const n = parse(z.int().min(1), number);
   if (n === undefined) return bad;
+  const rev = parse(z.int().min(1), revision);
+  if (rev === undefined) return bad;
   return run((s) =>
     studioTx(s, async (c) => {
-      const v = await restoreVersion(c, { storefrontId: id, number: n, userId: s.user.id });
+      const v = await restoreVersion(c, { storefrontId: id, number: n, revision: rev, userId: s.user.id });
       const sf = (await getStorefront(c, id))!;
       return { number: v.number, revision: sf.draft_revision, document: sf.document as StorefrontDocument, ...(await history(c, id)) };
     }),
@@ -139,6 +146,17 @@ export async function revokeLinkAction(storefrontId: string, linkId: string) {
   );
 }
 
+export async function revokeAllLinksAction(storefrontId: string) {
+  const id = parse(uuid, storefrontId);
+  if (id === undefined) return bad;
+  return run((s) =>
+    studioTx(s, async (c) => {
+      await revokeAllPreviewLinks(c, id);
+      return (await listPreviewLinks(c, id)).map(linkView);
+    }),
+  );
+}
+
 export async function changeTemplateAction(storefrontId: string, revision: number, template: string) {
   const id = parse(uuid, storefrontId);
   if (id === undefined) return bad;
@@ -153,7 +171,7 @@ export async function changeTemplateAction(storefrontId: string, revision: numbe
 export async function frameCatalogueAction(storefrontId: string, eventIds: string[]): Promise<ActionResult<ShopCatalogue>> {
   const id = parse(uuid, storefrontId);
   if (id === undefined) return bad;
-  const ids = parse(z.array(uuid).max(60), eventIds);
+  const ids = parse(z.array(uuid).max(LIMITS.events), eventIds);
   if (ids === undefined) return bad;
   return run(
     (s) =>

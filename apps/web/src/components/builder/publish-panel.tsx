@@ -64,7 +64,7 @@ export function PublishPanel(props: {
     setBusy(true);
     setMessage(null);
     await props.flush();
-    const r = await restoreAction(props.storefrontId, n);
+    const r = await restoreAction(props.storefrontId, n, props.getRevision());
     setBusy(false);
     setRestoring(null);
     if (r.ok) {

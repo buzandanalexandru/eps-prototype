@@ -32,7 +32,7 @@ export default async function PreviewLinkPage({ params, searchParams }: { params
   const doc = data.sf.document;
   const preferred = sp.lang === "ro" || sp.lang === "en" ? sp.lang : resolveLocale((await cookies()).get(LOCALE_COOKIE)?.value, (await headers()).get("accept-language"));
   const locale: Locale = doc.locales.enabled.includes(preferred) ? preferred : doc.locales.default;
-  const page = doc.pages.find((p) => pagePath(p) === (sp.page || "/")) ?? doc.pages[0];
+  const page = doc.pages.find((p) => pagePath(p, data.catalogue) === (sp.page || "/")) ?? doc.pages[0];
   const labels = SHOP_LABELS[locale];
   return (
     <StorefrontView
@@ -47,6 +47,7 @@ export default async function PreviewLinkPage({ params, searchParams }: { params
         brand: { name: data.ctx.brand.name, slug: data.ctx.brand.slug, currency: data.ctx.brand.currency, organiserName: data.ctx.organiser.name, isSample: data.ctx.organiser.is_sample },
         mode: "link",
         hrefBase: `/p/${token}?page=`,
+        previewToken: token,
       }}
     />
   );

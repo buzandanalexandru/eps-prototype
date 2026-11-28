@@ -20,7 +20,7 @@ describeDb("storefront isolation", () => {
     expect(await tx(a.scope, (c) => ownedAssets(c, [asset.id]))).toEqual(new Set());
     await expect(tx(a.scope, (c) => saveDraft(c, b.sf.id, { revision: 1, document: a.sf.document }))).rejects.toMatchObject({ code: "not_found" });
     await expect(tx(a.scope, (c) => publishDraft(c, { storefrontId: b.sf.id, revision: 1, userId: a.user.id }))).rejects.toMatchObject({ code: "not_found" });
-    await expect(tx(a.scope, (c) => restoreVersion(c, { storefrontId: b.sf.id, number: 1, userId: a.user.id }))).rejects.toMatchObject({ code: "not_found" });
+    await expect(tx(a.scope, (c) => restoreVersion(c, { storefrontId: b.sf.id, number: 1, revision: 1, userId: a.user.id }))).rejects.toMatchObject({ code: "not_found" });
     await expect(tx(a.scope, (c) => createPreviewLink(c, b.sf.id, a.user.id))).rejects.toMatchObject({ code: "not_found" });
     // Raw reads in A's scope see nothing of B.
     for (const t of ["storefronts", "storefront_versions", "preview_links", "assets"]) {

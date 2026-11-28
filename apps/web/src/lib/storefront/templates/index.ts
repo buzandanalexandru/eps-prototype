@@ -167,7 +167,7 @@ export function buildTemplate(id: TemplateId, input: TemplateInput): StorefrontD
     pages.push(
       page({
         kind: "event",
-        slug: ev.slug,
+        slug: "",
         title: { ro: ev.name.ro || ev.name.en, en: ev.name.en || ev.name.ro },
         eventId: ev.id,
         sections: [

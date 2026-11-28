@@ -2,7 +2,7 @@
 // returns a new document and keeps the rules the schema enforces: the footer stays last and cannot be
 // removed, moved or hidden; limits are not exceeded.
 import { sectionDef, SECTIONS, type SectionType } from "./sections";
-import { LIMITS, newDocId, type Block, type Page, type Section, type StorefrontDocument } from "./schema";
+import { LIMITS, newDocId, RESERVED_PAGE_SLUGS, type Block, type Page, type Section, type StorefrontDocument } from "./schema";
 
 type Doc = StorefrontDocument;
 
@@ -108,9 +108,14 @@ export function setPage(doc: Doc, pageId: string, patch: Partial<Pick<Page, "tit
 
 export function addPage(doc: Doc, kind: "info" | "event", opts: { eventId?: string; slug?: string } = {}): { doc: Doc; id: string | null } {
   if (doc.pages.length >= LIMITS.pages) return { doc, id: null };
+  if (kind === "event" && (!opts.eventId || doc.pages.some((p) => p.kind === "event" && p.eventId === opts.eventId))) return { doc, id: null };
   const taken = new Set(doc.pages.map((p) => p.slug));
-  let slug = opts.slug || (kind === "info" ? "info" : "event");
-  for (let i = 2; taken.has(slug); i++) slug = `${opts.slug || (kind === "info" ? "info" : "event")}-${i}`;
+  let slug = "";
+  if (kind === "info") {
+    const base = opts.slug || "info";
+    slug = base;
+    for (let i = 2; taken.has(slug) || (RESERVED_PAGE_SLUGS as readonly string[]).includes(slug); i++) slug = `${base}-${i}`;
+  }
   const id = newDocId("p");
   const footer = { id: newDocId("footer"), type: "footer", hidden: false, settings: SECTIONS.footer.defaults(), blocks: [] };
   const first =

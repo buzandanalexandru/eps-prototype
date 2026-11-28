@@ -39,7 +39,9 @@ CREATE TABLE control.storefront_versions (
     published_at   timestamptz,
     CHECK ((state = 'draft') = (number IS NULL)),
     CHECK ((state = 'draft') = (published_at IS NULL)),
-    CHECK (octet_length(document::text) <= 600000),
+    -- The app refuses documents over 512 KB (as JSON); jsonb's text form is longer, so the database
+    -- limit sits well above it and never binds first.
+    CHECK (octet_length(document::text) <= 1048576),
     UNIQUE (organiser_id, id),
     UNIQUE (organiser_id, storefront_id, id),
     UNIQUE (storefront_id, number),
@@ -120,7 +122,22 @@ CREATE TABLE control.assets (
     UNIQUE (organiser_id, id)
 );
 CREATE INDEX assets_org_idx ON control.assets (organiser_id, created_at DESC);
-CREATE INDEX assets_created_by_idx ON control.assets (created_by);
+-- The same image uploaded twice by one organiser is stored once.
+CREATE UNIQUE INDEX assets_org_sha_key ON control.assets (organiser_id, sha256);
+-- The per-user upload rate limit counts recent uploads.
+CREATE INDEX assets_created_by_idx ON control.assets (created_by, created_at DESC);
+
+-- Static map images for storefront map sections (platform table: OpenStreetMap tiles keyed by
+-- position, no organiser data). Fetched by the server at save and publish; fans never call OSM.
+CREATE TABLE control.map_tiles (
+    z          int         NOT NULL CHECK (z BETWEEN 0 AND 19),
+    x          int         NOT NULL CHECK (x >= 0),
+    y          int         NOT NULL CHECK (y >= 0),
+    bytes      bytea       NOT NULL CHECK (octet_length(bytes) BETWEEN 1 AND 262144),
+    fetched_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (z, x, y)
+);
+REVOKE UPDATE, DELETE ON control.map_tiles FROM eps_web;
 
 -- +goose StatementBegin
 DO $$
@@ -153,7 +170,8 @@ GRANT UPDATE (revoked_at) ON control.preview_links TO eps_web;
 -- function returns, through policies of its own:
 --   preview_link_target(hash): which storefront a valid (unexpired, unrevoked) preview link shows;
 --     the app then reads that draft in a transaction scoped to its organiser.
---   public_asset(id): an uploaded image's bytes for /assets/<id> (fan pages show them).
+--   public_asset(id, hash): an uploaded image's bytes for /assets/<id>, only while a live version
+--     shows it or through a valid preview link whose draft shows it.
 -- +goose StatementBegin
 DO $$
 BEGIN
@@ -171,8 +189,14 @@ GRANT eps_asset_read TO CURRENT_USER WITH INHERIT FALSE, SET TRUE;
 GRANT USAGE ON SCHEMA control TO eps_preview_read, eps_asset_read;
 GRANT SELECT (organiser_id, storefront_id, token_hash, expires_at, revoked_at) ON control.preview_links TO eps_preview_read;
 CREATE POLICY preview_read ON control.preview_links FOR SELECT TO eps_preview_read USING (true);
-GRANT SELECT (id, mime, bytes, sha256) ON control.assets TO eps_asset_read;
+GRANT SELECT (id, organiser_id, mime, bytes, sha256) ON control.assets TO eps_asset_read;
 CREATE POLICY asset_read ON control.assets FOR SELECT TO eps_asset_read USING (true);
+GRANT SELECT (id, organiser_id, live_version_id) ON control.storefronts TO eps_asset_read;
+CREATE POLICY asset_read ON control.storefronts FOR SELECT TO eps_asset_read USING (true);
+GRANT SELECT (id, organiser_id, storefront_id, state, document) ON control.storefront_versions TO eps_asset_read;
+CREATE POLICY asset_read ON control.storefront_versions FOR SELECT TO eps_asset_read USING (true);
+GRANT SELECT (organiser_id, storefront_id, token_hash, expires_at, revoked_at) ON control.preview_links TO eps_asset_read;
+CREATE POLICY asset_read ON control.preview_links FOR SELECT TO eps_asset_read USING (true);
 
 -- +goose StatementBegin
 CREATE FUNCTION control.preview_link_target(hash text)
@@ -183,19 +207,35 @@ AS $fn$
     WHERE l.token_hash = hash AND l.revoked_at IS NULL AND l.expires_at > now()
 $fn$;
 -- +goose StatementEnd
+-- An upload is public only while a live storefront version of its organiser shows it, or through a
+-- valid preview link whose draft shows it (hash = the link token's SHA-256, or NULL). Returns
+-- 'live' or 'preview' as the scope, so the response can be cached publicly only in the first case.
 -- +goose StatementBegin
-CREATE FUNCTION control.public_asset(asset_id uuid)
-RETURNS TABLE (mime text, bytes bytea, sha256 text)
+CREATE FUNCTION control.public_asset(asset_id uuid, hash text)
+RETURNS TABLE (mime text, bytes bytea, sha256 text, scope text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp
 AS $fn$
-    SELECT a.mime, a.bytes, a.sha256 FROM control.assets a WHERE a.id = asset_id
+    SELECT a.mime, a.bytes, a.sha256,
+           CASE WHEN EXISTS (
+                    SELECT 1 FROM control.storefronts s JOIN control.storefront_versions v ON v.id = s.live_version_id
+                    WHERE s.organiser_id = a.organiser_id AND strpos(v.document::text, 'asset:' || a.id::text) > 0)
+                THEN 'live' ELSE 'preview' END
+    FROM control.assets a
+    WHERE a.id = asset_id
+      AND (EXISTS (SELECT 1 FROM control.storefronts s JOIN control.storefront_versions v ON v.id = s.live_version_id
+                   WHERE s.organiser_id = a.organiser_id AND strpos(v.document::text, 'asset:' || a.id::text) > 0)
+           OR (hash IS NOT NULL AND EXISTS (
+                   SELECT 1 FROM control.preview_links l
+                   JOIN control.storefront_versions d ON d.storefront_id = l.storefront_id AND d.state = 'draft'
+                   WHERE l.token_hash = hash AND l.revoked_at IS NULL AND l.expires_at > now()
+                     AND l.organiser_id = a.organiser_id AND strpos(d.document::text, 'asset:' || a.id::text) > 0)))
 $fn$;
 -- +goose StatementEnd
 REVOKE ALL ON FUNCTION control.preview_link_target(text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION control.public_asset(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION control.public_asset(uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION control.preview_link_target(text) TO eps_web;
-GRANT EXECUTE ON FUNCTION control.public_asset(uuid) TO eps_web;
+GRANT EXECUTE ON FUNCTION control.public_asset(uuid, text) TO eps_web;
 GRANT CREATE ON SCHEMA control TO eps_preview_read, eps_asset_read;
 ALTER FUNCTION control.preview_link_target(text) OWNER TO eps_preview_read;
-ALTER FUNCTION control.public_asset(uuid) OWNER TO eps_asset_read;
+ALTER FUNCTION control.public_asset(uuid, text) OWNER TO eps_asset_read;
 REVOKE CREATE ON SCHEMA control FROM eps_preview_read, eps_asset_read;

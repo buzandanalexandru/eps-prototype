@@ -13,7 +13,7 @@ export const catalogue = {
     endsAt: "2027-07-19T00:00:00.000Z",
     timezone: "Europe/Bucharest",
     currency: "RON" as const,
-    venue: { name: "Arena", address: "Costinești", lat: 43.93, lng: 28.63 },
+    venue: { name: "Arena", address: "Costinești", lat: 43.93, lng: 28.63, map: "/assets/maps/15/18862/11919.png" },
     days: [{ date: "2027-07-15", opens: "17:00", closes: "03:00" }],
     lineup: [{ date: "2027-07-15", artist: "Headliner", stage: "Main", starts: "22:00" }],
     products: [{ id: "p1", type: "pass", name: { ro: "Abonament GA", en: "GA pass" }, perks: [{ ro: "Acces", en: "Entry" }], allInMinor: 55248, fanFeeMinor: 1348 }],

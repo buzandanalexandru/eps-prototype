@@ -7,7 +7,14 @@ import { image, localized } from "./fields";
 import { SECTIONS, SECTION_TYPES, type SectionDef, type SectionType } from "./sections";
 
 export const SCHEMA_VERSION = 1;
-export const LIMITS = { bytes: 512 * 1024, pages: 30, sectionsPerPage: 40, blocksPerSection: 50, slotsPerKind: 20 } as const;
+export const LIMITS = { bytes: 512 * 1024, pages: 30, sectionsPerPage: 40, blocksPerSection: 50, slotsPerKind: 20, events: 60 } as const;
+
+/**
+ * Page addresses (spec-map): the home page is /s/<brand>/<locale>, an event page is
+ * /s/<brand>/<locale>/e/<event slug> (by the EVENT's slug; event pages store no slug) and an info
+ * page is /s/<brand>/<locale>/<page slug>. These slugs would collide with platform routes.
+ */
+export const RESERVED_PAGE_SLUGS = ["checkout", "e", "p", "assets", "api", "s"] as const;
 export const LOCALES = ["ro", "en"] as const;
 export type Locale = (typeof LOCALES)[number];
 
@@ -51,7 +58,7 @@ export const pageSchema = z.strictObject({
   id: docId,
   kind: z.enum(["home", "event", "info"]),
   eventId: z.uuid().nullable(),
-  slug: z.string().regex(/^$|^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]$/, "slug_characters"),
+  slug: z.string().regex(/^$|^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/, "slug_characters"),
   title: localized(120, true),
   sections: z.array(sectionSchema).min(1, "footer_required").max(LIMITS.sectionsPerPage, "too_many_sections"),
 });
@@ -91,13 +98,20 @@ export const documentSchema = z
       ids.add(id);
     };
     const slugs = new Set<string>();
+    const eventPages = new Set<string>();
     doc.pages.forEach((p, pi) => {
       unique(p.id, ["pages", pi, "id"]);
       if (pi === 0 && (p.kind !== "home" || p.slug !== "")) issue(["pages", pi, "kind"], "home_first");
       if (pi > 0 && p.kind === "home") issue(["pages", pi, "kind"], "one_home");
-      if (pi > 0 && p.slug === "") issue(["pages", pi, "slug"], "required");
-      if (slugs.has(p.slug)) issue(["pages", pi, "slug"], "taken");
+      if (p.kind === "info" && p.slug === "") issue(["pages", pi, "slug"], "required");
+      if (p.kind === "event" && p.slug !== "") issue(["pages", pi, "slug"], "event_page_slug");
+      if ((RESERVED_PAGE_SLUGS as readonly string[]).includes(p.slug)) issue(["pages", pi, "slug"], "slug_reserved");
+      if (p.slug && slugs.has(p.slug)) issue(["pages", pi, "slug"], "taken");
       slugs.add(p.slug);
+      if (p.kind === "event" && p.eventId) {
+        if (eventPages.has(p.eventId)) issue(["pages", pi, "eventId"], "taken");
+        eventPages.add(p.eventId);
+      }
       if (p.kind === "event" && !p.eventId) issue(["pages", pi, "eventId"], "required");
       if (p.kind !== "event" && p.eventId) issue(["pages", pi, "eventId"], "invalid");
       const sections = p.sections as { id: string; type: SectionType; hidden: boolean; blocks: { id: string }[] }[];
@@ -110,6 +124,7 @@ export const documentSchema = z
       });
       if (sections.at(-1)?.type !== "footer") issue(["pages", pi, "sections"], "footer_last");
     });
+    if (referencedEvents(doc as unknown as StorefrontDocument).length > LIMITS.events) issue(["pages"], "too_many_events");
   });
 
 export type Block = { id: string; type: string; settings: Record<string, unknown> };
@@ -124,6 +139,25 @@ export function byteSize(raw: unknown): number {
   return utf8.encode(typeof raw === "string" ? raw : (JSON.stringify(raw) ?? "")).length;
 }
 
+/** The page (or top-level part) taking the most space, so the size error points somewhere useful. */
+function largestPart(raw: unknown): string {
+  if (!raw || typeof raw !== "object") return "";
+  const r = raw as Record<string, unknown>;
+  let best = "";
+  let max = -1;
+  const pages = Array.isArray(r.pages) ? r.pages : [];
+  pages.forEach((p, i) => {
+    const n = byteSize(p);
+    if (n > max) [best, max] = [`pages.${i}`, n];
+  });
+  for (const k of Object.keys(r)) {
+    if (k === "pages") continue;
+    const n = byteSize(r[k]);
+    if (n > max) [best, max] = [k, n];
+  }
+  return best;
+}
+
 /** Validates a document; on failure, the path and code of the first problem. */
 export function parseDocument(raw: unknown): ParseResult {
   let size: number;
@@ -132,7 +166,7 @@ export function parseDocument(raw: unknown): ParseResult {
   } catch {
     return { ok: false, path: "", code: "invalid" };
   }
-  if (size > LIMITS.bytes) return { ok: false, path: "", code: "document_too_large" };
+  if (size > LIMITS.bytes) return { ok: false, path: largestPart(raw), code: "document_too_large" };
   const r = documentSchema.safeParse(raw);
   if (r.success) return { ok: true, doc: r.data as unknown as StorefrontDocument };
   const first = r.error.issues[0];
