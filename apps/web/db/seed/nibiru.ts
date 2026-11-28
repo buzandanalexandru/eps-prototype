@@ -29,6 +29,11 @@ function pass(key: string, ro: string, en: string, zone: string, priceMinor: num
     config: { zone, days: GALAXIA_DAYS },
     perks: perks.map(([r, e]) => ({ ro: r, en: e })),
     named: true,
+    // ASSUMPTION: NIBIRU asks for names and an online check-in before the festival (teardown §5);
+    // the dates and the late fee are placeholders: names by 1 July, check-in by 10 July, then 20 RON.
+    personaliseDeadline: "2027-06-30T21:00:00.000Z",
+    checkinDeadline: "2027-07-09T21:00:00.000Z",
+    lateCheckinFeeMinor: 2000,
     salesFrom: PRESALE,
     maxPerOrder: 6,
     sort,

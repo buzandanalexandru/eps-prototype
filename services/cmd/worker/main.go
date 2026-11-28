@@ -1,7 +1,7 @@
 // Command worker runs the background work of the sales side (step 4): the hold sweeper, the payment
 // reconciler, the instalment runner and the plan defaults, the outbox relay to Redis Streams, the
-// purge of old idempotency keys and webhook ids, the stub issuer that marks paid orders issued
-// until step 7 issues real tickets, and step 5's shard sweeper, inventory reconciler, queue audit
+// purge of old idempotency keys and webhook ids, the issuer (step 7: tickets from order.paid, with
+// its backstop and the one-off backfill of orders step 4's stub marked issued), and step 5's shard sweeper, inventory reconciler, queue audit
 // and pass/cap ends. Each loop has its own small connection pool (review M1), so a
 // slow provider never starves the sweeper.
 package main
@@ -80,6 +80,9 @@ func main() {
 		// of the worker lease runs them, the other is a hot standby that takes over within seconds.
 		// The order-event consumers run on both (consumer groups share the work).
 		inv := &inventory.Sharded{Redis: rdb, LiveOrders: sweep.Checkout.LiveHoldRefs}
+		// Step 7: the tickets service of the issuer, the backstop and the backfill (its own pool).
+		issueSvc, _ := with("ISSUER", 4)
+		ts := wire.Tickets(issueSvc.Checkout.Pool, rdb, snaps, issueSvc, nil, log)
 		go leader(ctx, rdb, host, log, func(lctx context.Context) {
 			go (&checkout.Sweeper{Svc: sweep.Checkout, Log: log, Index: inv}).Run(lctx, time.Second)
 			go (&payments.Reconciler{Svc: recon.Payments, Log: log}).Run(lctx, 5*time.Second)
@@ -113,6 +116,24 @@ func main() {
 				agg.Prom = &live.Prom{BaseURL: u}
 			}
 			go agg.Run(lctx, nil)
+			// Step 7: the issuer's backstop (paid orders without tickets 30 s after payment, a lost
+			// event) every 15 s, and once per lease the backfill of orders step 4's stub marked
+			// issued without tickets.
+			go every(lctx, 15*time.Second, func() {
+				if n, err := ts.Backstop(lctx, 30*time.Second, 200); err != nil {
+					log.Warn("issuer backstop", "error", err.Error())
+				} else if n > 0 {
+					log.Info("issuer backstop issued orders", "orders", n)
+				}
+			})
+			go func() {
+				n, err := ts.RunBackfill(lctx)
+				if err != nil && lctx.Err() == nil {
+					log.Warn("ticket backfill", "error", err.Error(), "orders", n)
+					return
+				}
+				log.Info("ticket backfill done", "orders", n)
+			}()
 			cleaner := &simulation.Cleaner{Pool: pool, Redis: rdb, Sales: salesSvc, Log: log}
 			go every(lctx, 30*time.Second, func() {
 				if _, err := cleaner.RunOnce(lctx); err != nil {
@@ -121,20 +142,10 @@ func main() {
 			})
 		})
 		registerGauges(ctx, pool)
-		// Stub issuer (step 7 replaces it): order.paid → issued.
-		issuer := &outbox.Consumer{Redis: rdb, Topic: outbox.TopicOrders, Group: "issuer", Name: host, Log: log,
-			Handle: func(ctx context.Context, e outbox.Envelope) error {
-				if e.Type != "order.paid" {
-					return nil
-				}
-				var p struct {
-					OrderID string `json:"orderId"`
-				}
-				if err := jsonUnmarshal(e.Payload, &p); err != nil || p.OrderID == "" {
-					return nil
-				}
-				return svc.Checkout.Issue(ctx, e.OrganiserID, p.OrderID)
-			}}
+		// Step 7: the issuer (it replaces step 4's stub, under the same consumer group): order.paid
+		// issues tickets, instalment events suspend and lift them, cancellations and refunds cancel
+		// them, a claim moves them. Up to 8 entries at once, on its own pool.
+		issuer := &outbox.Consumer{Redis: rdb, Topic: outbox.TopicOrders, Group: "issuer", Name: host, Log: log, Handle: ts.HandleEvent, Parallel: 8}
 		go issuer.Run(ctx)
 		life := &onsale.Lifecycle{Checkout: svc.Checkout, Engine: &queue.Engine{Redis: rdb}, Caps: &botdefence.Caps{Redis: rdb}}
 		go (&outbox.Consumer{Redis: rdb, Topic: outbox.TopicOrders, Group: "onsale", Name: host, Log: log, Handle: life.Handle}).Run(ctx)

@@ -795,10 +795,474 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ticket-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The public keys that verify ticket codes
+         * @description Every key id with its Ed25519 public key (raw 32 bytes, base64url) and validity (step 7, design
+         *     D3). An old key stays listed until every event signed with it has ended. No private material.
+         *     Door devices cache this set and verify codes offline; `serverTime` lets them correct their clock.
+         */
+        get: operations["getTicketKeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/trip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The caller's trip wallet across organisers
+         * @description Every ticket the caller holds now and the paid orders still being issued, grouped by event, ordered by event start.
+         */
+        get: operations["getMyTrip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tickets/{ticketId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One ticket the caller holds, with its event
+         * @description Not found for anyone but the holder; the holder before the last reissue gets 410 EPS-TICKET-MOVED.
+         */
+        get: operations["getMyTicket"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tickets/{ticketId}/codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Signed entry codes for the current window and the next 39 (10 minutes)
+         * @description Only to the ticket's current holder, for its current generation (design D4). A suspended,
+         *     cancelled or unnamed (named product) ticket gets 409 with its code; anyone else 404.
+         */
+        get: operations["getMyTicketCodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tickets/{ticketId}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Name a ticket before its personalisation deadline */
+        put: operations["nameMyTicket"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tickets/{ticketId}/check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check a ticket in online (free until the deadline, then the late fee from the EPS Wallet) */
+        post: operations["checkInMyTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/tickets/{ticketId}/pick-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pick the day of a flexible day ticket (a reissue; final) */
+        post: operations["pickMyTicketDay"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/me/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete the caller's personal sales data (GDPR)
+         * @description Across organisers: orders and payments lose the person's id, name, email and answers (amounts
+         *     and states stay, anonymised, as the law requires), held tickets are cancelled, wallets and
+         *     saved cards lose their owner, waiting-room audit rows are deleted. Refused while an order is
+         *     in progress. Accounts only.
+         */
+        post: operations["eraseMyData"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ticket-links/{linkToken}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A guest order's tickets through its signed link
+         * @description The link is order-scoped and signed; a changed or expired link is 404 EPS-LINK-NOT-VALID, a claimed order 410.
+         */
+        get: operations["getTicketLink"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ticket-links/{linkToken}/tickets/{ticketId}/codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Codes of a ticket through its order's signed link */
+        get: operations["getTicketLinkCodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ticket-links/{linkToken}/tickets/{ticketId}/name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Name a ticket through its order's signed link */
+        put: operations["nameTicketLink"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/events/{eventId}/door/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register a door device for an event at a gate
+         * @description Owner, admin or box office of the event's organiser; anyone else 404.
+         */
+        post: operations["registerDoorDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/events/{eventId}/door-sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The event's door feed since a cursor, or a manifest page while preparing
+         * @description Revocations, suspensions and their lifting, entries by other devices, conflicts and manifest
+         *     changes in sequence order after `since` (at most 1,000; `more` when there are others), with the
+         *     server time. With `manifest=true`: a page of 2,000 tickets after `after` and the cursor to sync
+         *     from. Owner, admin or box office of the event's organiser; anyone else 404.
+         */
+        get: operations["doorSync"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/organiser/events/{eventId}/door/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a device's scans (idempotent by scan id; first entry by device time wins) */
+        post: operations["uploadDoorScans"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        TicketKeys: {
+            /** Format: date-time */
+            serverTime: string;
+            windowSeconds?: number;
+            keys: {
+                keyId: number;
+                publicKey: string;
+                /** Format: date-time */
+                validFrom: string;
+                /** Format: date-time */
+                validTo: string | null;
+            }[];
+        };
+        TicketItem: {
+            /** Format: uuid */
+            id: string;
+            organiserId: string;
+            eventId: string;
+            orderId: string;
+            lineNo: number;
+            unitNo: number;
+            productId: string;
+            instance?: string;
+            snapshotVersion: number;
+            generation: number;
+            holderKind: string;
+            /** @enum {string} */
+            state: "valid" | "suspended" | "cancelled";
+            cancelReason?: string;
+            holderName?: string;
+            pickedDay?: string;
+            /** Format: date-time */
+            checkedInAt?: string;
+            /** Format: date-time */
+            createdAt: string;
+            productType: string;
+            productName: components["schemas"]["L10n"];
+            zone?: string | null;
+            /** Format: date-time */
+            startsAt?: string;
+            day?: string;
+            needsName: boolean;
+            named: boolean;
+            nameLocked: boolean;
+            /** Format: date-time */
+            personaliseBy?: string;
+            /** Format: date-time */
+            checkinBy?: string;
+            /** Format: int64 */
+            lateCheckinFeeMinor?: number;
+            pickDays?: string[];
+            overdue?: {
+                /** Format: int64 */
+                amountMinor: number;
+                graceUntil?: string;
+            };
+        };
+        TripEvent: {
+            eventId: string;
+            organiserId: string;
+            brandId: string;
+            name: components["schemas"]["L10n"];
+            startsAt: string;
+            endsAt: string;
+            timezone: string;
+            venue?: {
+                [key: string]: unknown;
+            };
+            currency: string;
+            isSample: boolean;
+            items: components["schemas"]["TicketItem"][];
+            pending: {
+                orderId: string;
+                lines: {
+                    productId: string;
+                    productName: components["schemas"]["L10n"];
+                    qty: number;
+                }[];
+            }[];
+        };
+        Trip: {
+            /** Format: date-time */
+            serverTime: string;
+            events: components["schemas"]["TripEvent"][];
+        };
+        TicketCodes: {
+            /** Format: date-time */
+            serverTime: string;
+            ticketId: string;
+            generation: number;
+            windowSeconds: number;
+            codes: {
+                /** Format: int64 */
+                window: number;
+                /** Format: date-time */
+                validAt: string;
+                /** Format: date-time */
+                expiresAt: string;
+                code: string;
+            }[];
+        };
+        TicketNameRequest: {
+            name: string;
+        };
+        CheckInRequest: {
+            /** @description Pay the late check-in fee from the EPS Wallet when the deadline has passed. */
+            payLate?: boolean;
+        };
+        PickDayRequest: {
+            /** Format: date */
+            day: string;
+        };
+        Erased: {
+            organisers: number;
+            orders: number;
+            tickets: number;
+            wallets: number;
+            savedCards: number;
+            queueEntries: number;
+        };
+        DoorDeviceRequest: {
+            gate: string;
+        };
+        DoorDevice: {
+            deviceId: string;
+            eventId: string;
+            gate: string;
+        };
+        DoorSync: {
+            /** Format: date-time */
+            serverTime: string;
+            eventId: string;
+            /** Format: int64 */
+            cursor: number;
+            more: boolean;
+            feed: {
+                /** Format: int64 */
+                seq: number;
+                /** @enum {string} */
+                kind: "revoked" | "suspended" | "lifted" | "entry" | "conflict" | "manifest";
+                ticketId: string;
+                generation?: number;
+                data: {
+                    [key: string]: unknown;
+                };
+                /** Format: date-time */
+                at: string;
+            }[];
+            manifest?: {
+                t: string;
+                p: string;
+                g: number;
+                s: string;
+                n?: string;
+                d?: string;
+                /** Format: date-time */
+                ea?: string;
+                eg?: string;
+            }[];
+            manifestNext?: string;
+            products?: {
+                [key: string]: components["schemas"]["L10n"];
+            };
+            event?: {
+                name: components["schemas"]["L10n"];
+                startsAt: string;
+                endsAt: string;
+                timezone: string;
+            };
+        };
+        DoorScansRequest: {
+            /** Format: uuid */
+            deviceId: string;
+            scans: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                ticketId: string;
+                generation: number;
+                /** Format: date-time */
+                scannedAt: string;
+            }[];
+        };
+        DoorScansResult: {
+            results: {
+                id: string;
+                /** @enum {string} */
+                result: "admitted" | "conflict" | "unknown";
+                /** Format: date-time */
+                firstAt?: string;
+                firstGate?: string;
+            }[];
+        };
         SaleSettings: {
             /** Format: date-time */
             opensAt: string;
@@ -1407,6 +1871,8 @@ export interface components {
             access: "buyer" | "link" | "view_link" | "expired_link";
             /** @description The signed resume link token, until the hold deadline (live orders only). */
             resumeToken?: string;
+            /** @description A guest's signed tickets link (step 7), once the order is issued; opens /t/<token>. */
+            ticketsToken?: string;
             /** @description A guest's order-link token (30 days). */
             viewToken?: string;
             /** @description The caller's wallet at this organiser (accounts only). */
@@ -1429,6 +1895,8 @@ export interface components {
         };
     };
     parameters: {
+        TicketId: string;
+        LinkToken: string;
         RunId: string;
         SaleId: string;
         /** @description The waiting room's signed pass (required on sales with a waiting room). */
@@ -2650,6 +3118,353 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getTicketKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key set. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketKeys"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMyTrip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The trip. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMyTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticketId: components["parameters"]["TicketId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ticket in its event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripEvent"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getMyTicketCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticketId: components["parameters"]["TicketId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The code buffer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketCodes"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    nameMyTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticketId: components["parameters"]["TicketId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TicketNameRequest"];
+            };
+        };
+        responses: {
+            /** @description The ticket in its event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripEvent"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    checkInMyTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticketId: components["parameters"]["TicketId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckInRequest"];
+            };
+        };
+        responses: {
+            /** @description The ticket in its event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripEvent"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    pickMyTicketDay: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ticketId: components["parameters"]["TicketId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PickDayRequest"];
+            };
+        };
+        responses: {
+            /** @description The ticket in its event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripEvent"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    eraseMyData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What was erased (counts). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Erased"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getTicketLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                linkToken: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The order's tickets in their event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripEvent"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getTicketLinkCodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                linkToken: components["parameters"]["LinkToken"];
+                ticketId: components["parameters"]["TicketId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The code buffer. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketCodes"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    nameTicketLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                linkToken: components["parameters"]["LinkToken"];
+                ticketId: components["parameters"]["TicketId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TicketNameRequest"];
+            };
+        };
+        responses: {
+            /** @description The ticket in its event. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripEvent"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    registerDoorDevice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoorDeviceRequest"];
+            };
+        };
+        responses: {
+            /** @description The device. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DoorDevice"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    doorSync: {
+        parameters: {
+            query?: {
+                since?: number;
+                manifest?: boolean;
+                after?: string;
+                device?: string;
+            };
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The sync package. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DoorSync"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    uploadDoorScans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: components["parameters"]["EventId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoorScansRequest"];
+            };
+        };
+        responses: {
+            /** @description The decision on each scan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DoorScansResult"];
                 };
             };
             default: components["responses"]["Problem"];

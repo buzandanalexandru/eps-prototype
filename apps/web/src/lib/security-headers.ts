@@ -7,7 +7,8 @@ export function isFrameRoute(pathname: string): boolean {
 }
 
 export function needsCsp(pathname: string): boolean {
-  return pathname === "/studio" || pathname.startsWith("/studio/") || pathname.startsWith("/p/");
+  // Step 7: the fan's ticket pages, the signed guest link and the door page as well.
+  return ["/studio", "/wallet", "/account", "/door"].some((p) => pathname === p || pathname.startsWith(`${p}/`)) || pathname.startsWith("/p/") || pathname.startsWith("/t/");
 }
 
 /** The public shop (/s/...): static pages cached at the edge, so a fixed policy without a nonce. */

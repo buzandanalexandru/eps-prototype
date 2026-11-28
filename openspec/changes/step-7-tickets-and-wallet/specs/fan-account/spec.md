@@ -11,8 +11,8 @@ The fan account SHALL list the fan's orders, newest first, each with its organis
 
 #### Scenario: Orders with different states
 - **WHEN** a fan with one paid order and one expired order opens the account
-- **THEN** both appear with their true states and totals, and the paid one links to its tickets
-Test: manual check on the deployed preview (account page lists a paid and an expired order)
+- **THEN** both appear with their true states and totals, and the issued one links to its tickets
+Test: manual check on the deployed preview (account page lists an issued and an expired order)
 
 #### Scenario: Claimed guest order
 - **WHEN** a fan claims an order bought as a guest
@@ -28,7 +28,7 @@ The fan account SHALL list the tickets the fan currently holds with their produc
 Test: manual check on the deployed preview (open a ticket from the account)
 
 ### Requirement: Instalment schedules
-The fan account SHALL show each instalment plan with its payments, due dates and statuses (scheduled, paid, overdue, grace period), and a "Pay now" action for the next or overdue payment that runs through the simulated payment flow.
+The fan account SHALL show each instalment plan with its payments, due dates and statuses (scheduled, paid, overdue, grace period), and a "Pay now" action for the next or overdue payment that charges the plan's saved card through the simulated payment flow.
 
 #### Scenario: Pay the next instalment
 - **WHEN** the fan presses Pay now on a scheduled instalment and the simulated payment succeeds
@@ -38,4 +38,22 @@ Test: apps/web/tests/e2e/fan-account.spec.ts
 #### Scenario: Overdue plan
 - **WHEN** a plan has an overdue payment
 - **THEN** the plan is marked overdue with the amount due, and the account links to the suspended ticket
-Test: manual check on the deployed preview (seeded overdue plan shows as overdue)
+Test: manual check on the deployed preview (a plan whose next payment the provider declines shows as overdue, linking to its suspended ticket)
+
+### Requirement: Delete my personal data
+A signed-in fan SHALL be able to delete their account and personal data in every organiser's sales data (GDPR): afterwards nothing on their orders (including guest orders with their verified email and rehearsal orders), tickets, wallets, saved cards, payments, caps or waiting-room rows names them. Money records the law requires MUST stay, anonymised. Held tickets MUST be revoked at the door. It MUST be refused while an order is in progress or for an organiser's team member.
+
+#### Scenario: Delete my data
+- **WHEN** a fan with paid orders at two organisers, a guest order placed with their email, a rehearsal order, a wallet and waiting-room rows deletes their data
+- **THEN** no order, ticket, wallet, saved card, payment attempt or waiting-room row names them any more, the amounts and the ledger are unchanged, and their tickets are cancelled with the door told
+Test: services/internal/tickets/erase_test.go
+
+#### Scenario: Order in progress
+- **WHEN** the fan holds tickets in an unpaid order and asks to delete their data
+- **THEN** nothing is changed and the fan is asked to finish or cancel the order first
+Test: services/internal/tickets/erase_test.go
+
+#### Scenario: Account removed
+- **WHEN** the fan confirms "Delete my data" on the account page
+- **THEN** they are signed out, their account no longer exists and their old ticket is not found for anyone
+Test: apps/web/tests/e2e/fan-account.spec.ts

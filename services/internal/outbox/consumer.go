@@ -6,6 +6,8 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -30,6 +32,10 @@ type Consumer struct {
 	Organiser string
 	Log       *slog.Logger
 	Block     time.Duration
+	// Parallel handles up to this many entries of one read at once (default 1, in order). Only for
+	// handlers that are safe in any order (step 7's issuer recomputes from the order's truth under
+	// its row lock).
+	Parallel int
 }
 
 func (c *Consumer) dedupKey(id string) string {
@@ -80,11 +86,7 @@ func (c *Consumer) ReadOnce(ctx context.Context, count int64) (int, error) {
 	// Entries another consumer took and left unacknowledged for 30 s (it died) are taken over
 	// (review D-j).
 	if msgs, _, err := c.Redis.XAutoClaim(ctx, &redis.XAutoClaimArgs{Stream: StreamKey(c.Topic), Group: c.Group, Consumer: c.Name, MinIdle: ClaimIdle, Start: "0-0", Count: count}).Result(); err == nil {
-		for _, m := range msgs {
-			if c.handle(ctx, StreamKey(c.Topic), m) {
-				handled++
-			}
-		}
+		handled += c.handleAll(ctx, StreamKey(c.Topic), msgs)
 	}
 	for _, start := range []string{"0", ">"} {
 		block := time.Duration(-1)
@@ -102,14 +104,38 @@ func (c *Consumer) ReadOnce(ctx context.Context, count int64) (int, error) {
 			return handled, err
 		}
 		for _, st := range res {
-			for _, m := range st.Messages {
-				if c.handle(ctx, st.Stream, m) {
-					handled++
-				}
-			}
+			handled += c.handleAll(ctx, st.Stream, st.Messages)
 		}
 	}
 	return handled, nil
+}
+
+// handleAll handles entries in order, or Parallel at a time.
+func (c *Consumer) handleAll(ctx context.Context, stream string, msgs []redis.XMessage) int {
+	if c.Parallel <= 1 || len(msgs) <= 1 {
+		n := 0
+		for _, m := range msgs {
+			if c.handle(ctx, stream, m) {
+				n++
+			}
+		}
+		return n
+	}
+	var n atomic.Int64
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, c.Parallel)
+	for _, m := range msgs {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(m redis.XMessage) {
+			defer func() { <-sem; wg.Done() }()
+			if c.handle(ctx, stream, m) {
+				n.Add(1)
+			}
+		}(m)
+	}
+	wg.Wait()
+	return int(n.Load())
 }
 
 // ClaimIdle is how long an unacknowledged entry waits before another consumer takes it.

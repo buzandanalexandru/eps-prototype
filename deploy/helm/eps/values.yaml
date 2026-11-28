@@ -41,6 +41,9 @@ core:
   # Step 6: the simulator's public key (rehearsal tokens) and the internal API's token; the
   # internal port serves the simulator only (the Service exposes it, no ingress routes to it).
   simKeys: [SIM_TOKEN_PUBLIC_KEY, SIM_CONTROL_TOKEN]
+  # Step 7: the ticket signing key (an Ed25519 seed), the core only: it signs the rotating entry
+  # codes and publishes the public key; the core stops without it outside EPS_ENV=dev.
+  ticketKeys: [TICKET_SIGNING_KEY]
   internalPort: 8089
   scrapeInterval: 2s
   extraEnv:

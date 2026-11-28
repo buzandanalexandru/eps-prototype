@@ -13,6 +13,7 @@ import (
 	"github.com/buzandanalexandru/eps-prototype/services/internal/checkout"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/coreapi"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/db"
+	"github.com/buzandanalexandru/eps-prototype/services/internal/door"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/health"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/httpx"
 	"github.com/buzandanalexandru/eps-prototype/services/internal/inventory"
@@ -43,6 +44,9 @@ func main() {
 	var hooks *payments.Webhooks
 	var onSale *coreapi.OnSale
 	var sim *simulation.Service
+	var tix *coreapi.Tickets
+	// Step 7: the ticket signing key; outside EPS_ENV=dev the core stops without it.
+	ticketKeys := wire.TicketKeys(log)
 	if pool != nil {
 		// Copies in Redis are signed with SNAPSHOT_CACHE_KEY (a secret CI generates per environment).
 		// Rehearsal events (step 6) are served from their source event's pinned version.
@@ -52,6 +56,8 @@ func main() {
 			usage = checkout.Usage{Svc: shop.Checkout, HeldBy: inventory.HeldOf(shop.Checkout.Inv)}
 			onSale = wire.OnSale(pool, rdb, snaps, shop.Checkout, log)
 			sim = wire.Simulation(pool, rdb, snaps, onSale.Sales, shop.Knobs, log)
+			ts := wire.Tickets(pool, rdb, snaps, &wire.Services{Checkout: shop.Checkout, Payments: shop.Payments, Wallet: shop.Wallet}, ticketKeys, log)
+			tix = &coreapi.Tickets{Svc: ts, Door: &door.Service{Pool: pool, Snaps: snaps}}
 		}
 		avail = &snapshot.AvailabilityService{Store: snaps, Usage: usage, Redis: rdb}
 		if u, ok := usage.(checkout.Usage); ok {
@@ -68,6 +74,7 @@ func main() {
 		Shop:         shop,
 		OnSale:       onSale,
 		Sim:          sim,
+		Tickets:      tix,
 		Service:      "core",
 		Pool:         pool,
 		Checks: []health.Checker{
@@ -75,6 +82,7 @@ func main() {
 			health.Redis(rdb),
 			health.SchemaAtLeast(pool, db.Sales, salesVersion),
 			health.SchemaAtLeast(pool, db.Control, db.MinControlVersion),
+			ticketKeys,
 		},
 	}
 	var keys auth.KeySource = auth.DBKeySource{Pool: pool}
