@@ -322,22 +322,55 @@ func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, 
 	if provider != "" {
 		providers = []string{provider} // a saved card lives at one provider
 	}
-	var last error = busy()
-	tried := 0
+	// Nothing is sent and the order is not touched when every breaker is open.
+	anyOpen := false
+	for _, pv := range providers {
+		if _, ok := s.Providers[pv]; ok && s.Breaker.Read(ctx, o.OrganiserID, pv).State != Open {
+			anyOpen = true
+		}
+	}
+	if !anyOpen {
+		return nil, busy()
+	}
+	plan := "full"
+	var offerJSON []byte
+	if offer != nil {
+		plan = "instalments"
+		offerJSON, _ = json.Marshal(offer)
+	}
+	// Whatever happens below, a press that ends without an open attempt leaves the order
+	// payment_failed with its hold, never paying (review H4).
+	began := false
+	defer func() {
+		if !began {
+			return
+		}
+		_ = db.WithTx(context.WithoutCancel(ctx), s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
+			var openN int
+			if err := tx.QueryRow(ctx, `select count(*) from sales.payment_attempts where order_id = $1 and purpose = 'order'
+				and state in ('created', 'submitted', 'challenge_required', 'unknown')`, o.ID).Scan(&openN); err != nil || openN > 0 {
+				return err
+			}
+			var st string
+			if err := tx.QueryRow(ctx, "select state from sales.orders where id = $1", o.ID).Scan(&st); err != nil || st != checkout.Paying {
+				return err
+			}
+			return s.Checkout.FailPayingTx(ctx, tx, o.ID, apperr.PayProvidersBusy)
+		})
+	}()
 	var prev *string
 	for _, pv := range providers {
-		if _, ok := s.Providers[pv]; !ok || !s.Breaker.Allow(ctx, o.OrganiserID, pv) {
+		if _, ok := s.Providers[pv]; !ok {
 			continue
 		}
-		tried++
 		a := &Attempt{ID: uuid.NewString(), OrganiserID: o.OrganiserID, Purpose: "order", OrderID: &o.ID, BuyerID: b.ID, Provider: pv, Method: req.Method,
-			SavedMethodID: savedID, SaveCard: saveCard, AmountMinor: amount, Currency: o.Currency, FailoverOf: prev,
+			SavedMethodID: savedID, SaveCard: saveCard, AmountMinor: amount, Currency: o.Currency, FailoverOf: prev, Plan: plan,
 			DeadlineAt: s.now().Add(checkout.AttemptLimit), CreatedAt: s.now()}
 		a.ProviderKey = a.ID
 		var deadline time.Time
 		err := db.WithTx(ctx, s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
 			if prev == nil {
-				cur, d, err := s.Checkout.BeginPayingTx(ctx, tx, o.ID)
+				cur, d, err := s.Checkout.BeginPayingTx(ctx, tx, o.ID, plan)
 				if err != nil {
 					return err
 				}
@@ -352,7 +385,7 @@ func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, 
 					return err
 				}
 			}
-			return insertAttempt(ctx, tx, a)
+			return insertAttempt(ctx, tx, a, offerJSON)
 		})
 		var pe *pgconn.PgError
 		if errors.As(err, &pe) && pe.ConstraintName == "attempts_one_open_per_order" {
@@ -363,14 +396,16 @@ func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, 
 		if err != nil {
 			return nil, err
 		}
+		began = true
 		if prev == nil {
 			s.Checkout.ExtendHold(ctx, o, deadline)
 		} else {
-			failovers.Inc()
+			countFailover(s.other(pv), pv)
+			s.log().Info("payment failover", "organiser", o.OrganiserID, "order", o.ID, "from", s.other(pv), "to", pv)
 		}
 		done, err := s.submit(ctx, a, ChargeRequest{AmountMinor: amount, Currency: o.Currency, Method: req.Method, Token: token, CustomerRef: b.ID,
 			SaveCard: saveCard, ReturnURL: req.ReturnURL, Merchant: o.OrganiserID, Locale: o.Locale,
-			Metadata: map[string]string{"organiser_id": o.OrganiserID, "attempt_id": a.ID, "order_id": o.ID, "purpose": "order"}})
+			Metadata: map[string]string{"organiser_id": o.OrganiserID, "attempt_id": a.ID, "order_id": o.ID, "purpose": "order", "merchant_name": req.MerchantName, "order_ref": o.ID[:8]}})
 		if err == nil {
 			return s.result(done), nil
 		}
@@ -378,16 +413,10 @@ func (s *Service) pay(ctx context.Context, b checkout.Buyer, o *checkout.Order, 
 			return nil, err
 		}
 		prev = &a.ID
-		last = busy()
 	}
-	// Nothing could be sent (both breakers open) or every provider failed before accepting: the
-	// order keeps its hold (payment failed, retry allowed).
-	if tried > 0 {
-		_ = db.WithTx(ctx, s.Pool, db.RoleCore, o.OrganiserID, func(tx pgx.Tx) error {
-			return s.Checkout.FailPayingTx(ctx, tx, o.ID, apperr.PayProvidersBusy)
-		})
-	}
-	return nil, last
+	// Every provider failed before accepting: the deferred check leaves the order payment_failed
+	// with its hold (retry allowed).
+	return nil, busy()
 }
 
 var errFailover = errors.New("payments: failed before acceptance")
@@ -404,6 +433,13 @@ func (s *Service) submit(ctx context.Context, a *Attempt, r ChargeRequest) (*Att
 	r.IdempotencyKey = a.ProviderKey
 	if s.WebhookURL != nil {
 		r.WebhookURL = s.WebhookURL(a.Provider)
+	}
+	// The breaker decides right before the call it guards (review H2).
+	if !s.Breaker.Allow(ctx, a.OrganiserID, a.Provider) {
+		if err := s.failAttempt(ctx, a, "breaker_open", false); err != nil {
+			return nil, err
+		}
+		return nil, errFailover
 	}
 	ch, err := pv.Create(ctx, r)
 	switch {
@@ -459,7 +495,7 @@ func (s *Service) submit(ctx context.Context, a *Attempt, r ChargeRequest) (*Att
 func (s *Service) failAttempt(ctx context.Context, a *Attempt, reason string, final bool) error {
 	return db.WithTx(ctx, s.Pool, db.RoleCore, a.OrganiserID, func(tx pgx.Tx) error {
 		code := apperr.PayProvidersBusy
-		if _, err := moveAttempt(ctx, tx, a.ID, Failed, []string{Created, Unknown}, ", error_code = $4", code); err != nil {
+		if _, err := moveAttempt(ctx, tx, a.ID, Failed, []string{Created, Unknown}, ", error_code = $4, failure_reason = $5", code, reason); err != nil {
 			return err
 		}
 		if final && a.OrderID != nil && a.Purpose == "order" {
