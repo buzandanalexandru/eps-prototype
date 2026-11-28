@@ -85,7 +85,7 @@ Each admitted fan SHALL receive a signed pass valid for 10 minutes, bound to the
 - Test: services/internal/queue/pass_test.go
 
 ### Requirement: Checkout requires a valid pass
-On a sale with the queue on, the checkout SHALL refuse to hold stock, take payment or check an OTP without a pass that has a valid signature, has not expired, matches the sale and event and belongs to the requesting session.
+On a sale with the queue on, the checkout SHALL refuse to hold stock, take payment or check an OTP without a pass that has a valid signature, has not expired, matches the sale and event and belongs to the requesting session and account. A payment or OTP for an order already held under a pass SHALL accept that pass after its 10 minutes (the hold bounds it), and a payment through the order's own signed link SHALL need no pass.
 
 #### Scenario: No pass
 - **WHEN** a request tries to hold tickets without a pass
@@ -100,6 +100,11 @@ On a sale with the queue on, the checkout SHALL refuse to hold stock, take payme
 #### Scenario: Forged pass
 - **WHEN** a pass's payload is edited or it is signed with another key
 - **THEN** it is refused
+- Test: services/internal/queue/gate_test.go
+
+#### Scenario: Payment needs the order's pass
+- **WHEN** a held order is paid without its pass from the same session
+- **THEN** the payment is refused, while a payment through the order's signed link goes ahead
 - Test: services/internal/queue/gate_test.go
 
 ### Requirement: Queue off still uses passes

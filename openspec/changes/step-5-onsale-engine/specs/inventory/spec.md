@@ -56,6 +56,11 @@ Committing a hold on payment SHALL move its stock to sold exactly once, and rele
 ### Requirement: Honest sold-out
 A pool SHALL be shown sold out only when no stock is free and no holds remain; while holds remain, the shop SHALL say that all tickets are held and some may come back.
 
+#### Scenario: Shop answer for held stock
+- **WHEN** every ticket of a product's pool is held by live holds
+- **THEN** the availability answer marks it all held, and once the holds are paid it is plainly sold out
+- Test: services/internal/inventory/soldout_test.go
+
 #### Scenario: Held, not sold
 - **WHEN** a pool has 0 free and 40 held
 - **THEN** the shop shows "All tickets are held right now; some may come back"

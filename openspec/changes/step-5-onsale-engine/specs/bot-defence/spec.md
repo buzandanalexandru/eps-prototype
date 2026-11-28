@@ -7,7 +7,7 @@ Keeps bots and bulk buyers from crowding out real fans during an on-sale, by sco
 ## ADDED Requirements
 
 ### Requirement: Silent bot scoring
-When bot defence is on, the system SHALL score each queue place from 0 to 100 using behaviour signals (missing proof of work, polling too fast or too regularly, many places per address, automation markers, shared fingerprints, very new accounts, checkout without a valid pass). Scores SHALL be shown only to the organiser.
+When bot defence is on, the system SHALL score each queue place from 0 to 100 using behaviour signals (missing proof of work, polling too fast or too regularly, many places per address or address block, hosting addresses, automation markers, shared browser prints, checkout with another session's pass, all codes of an OTP used). Scores SHALL be shown only to the organiser.
 
 #### Scenario: Refresh-spamming bot
 - **WHEN** a client without proof of work polls status every 200 milliseconds
