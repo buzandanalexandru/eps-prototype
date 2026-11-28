@@ -29,10 +29,10 @@
 
 - [x] 5.1 Run the step's tests locally (Vitest, Go with testcontainers, the local Playwright specs), then the full suite once; verify all pass
 - [x] 5.2 Run `npx openspec validate step-3-publish-and-storefront --strict`; verify it passes
-- [ ] 5.3 Open the PR to `main`; verify CI is green, the preview is seeded and published, and the preview core serves availability for Galaxia 2027
-- [ ] 5.4 Run the three adversarial reviewers in parallel (correctness, including publish races and cache staleness; security and data, including the published-only reads and host routing; spec and scale, including cache hit behaviour under load), fix every confirmed finding or record its rejection, re-run affected tests; verify no open confirmed finding
-- [ ] 5.5 Run Playwright against the deployed preview URL (publish then shop refresh, all-in prices, picker, availability failure, host-routing unit coverage, desktop and phone, RO and EN, no console errors, no horizontal scroll) plus API checks on the preview core (`availability`, `activate` without and with the wrong organiser); verify all pass
-- [ ] 5.6 Squash-merge when green; verify the production deploy and the Playwright smoke test (NIBIRU shop shows 552.48 RON for GA) pass
+- [x] 5.3 Open the PR to `main`; verify CI is green, the preview is seeded and published, and the preview core serves availability for Galaxia 2027
+- [x] 5.4 Run the three adversarial reviewers in parallel (correctness, including publish races and cache staleness; security and data, including the published-only reads and host routing; spec and scale, including cache hit behaviour under load), fix every confirmed finding or record its rejection, re-run affected tests; verify no open confirmed finding
+- [x] 5.5 Run Playwright against the deployed preview URL (publish then shop refresh, all-in prices, picker, availability failure, host-routing unit coverage, desktop and phone, RO and EN, no console errors, no horizontal scroll) plus API checks on the preview core (`availability`, `activate` without and with the wrong organiser); verify all pass
+- [x] 5.6 Squash-merge when green; verify the production deploy and the Playwright smoke test (NIBIRU shop shows 552.48 RON for GA) pass
 
 ## Workflow follow-up
 
