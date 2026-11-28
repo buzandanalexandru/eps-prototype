@@ -91,6 +91,10 @@ eps.dev/env: {{ .ctx.Values.global.env | quote }}
 - name: QUEUE_JOINS_PER_MINUTE
   value: {{ . | quote }}
 {{- end }}
+{{- with .ctx.Values.queueNewGuestsPerMinute }}
+- name: QUEUE_NEW_GUESTS_PER_MINUTE
+  value: {{ . | quote }}
+{{- end }}
 {{- if .ctx.Values.paymentSecrets }}
 - name: PSP_A_URL
   value: {{ printf "http://%s-psp-a" .ctx.Release.Name | quote }}

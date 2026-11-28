@@ -42,7 +42,8 @@ func main() {
 		verifier := auth.NewVerifier(auth.RedisKeySource{Redis: rdb, MACKey: mac}, auth.IssuersFromEnv(os.Getenv)...)
 		verifier.Start(ctx)
 		perMin, _ := strconv.Atoi(os.Getenv("QUEUE_JOINS_PER_MINUTE"))
-		engine := &queue.Engine{Redis: rdb, Sales: wire.SalesService(nil, rdb, nil), Signer: queue.NewSigner(priv), Scorer: &botdefence.Scorer{Redis: rdb}, JoinsPerMinute: perMin, Secret: wire.IdentitySecret()}
+		guests, _ := strconv.Atoi(os.Getenv("QUEUE_NEW_GUESTS_PER_MINUTE"))
+		engine := &queue.Engine{Redis: rdb, Sales: wire.SalesService(nil, rdb, nil), Signer: queue.NewSigner(priv), Scorer: &botdefence.Scorer{Redis: rdb}, JoinsPerMinute: perMin, NewGuestsPerMinute: guests, Secret: wire.IdentitySecret()}
 		go (&queue.Admitter{Engine: engine, Log: log}).Run(ctx)
 		h := &queue.HTTP{Engine: engine, Verifier: verifier, Log: log}
 		extra = h.Routes

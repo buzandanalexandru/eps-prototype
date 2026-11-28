@@ -62,6 +62,8 @@ gateway:
   passKeys: [QUEUE_PASS_PRIVATE_KEY, QUEUE_PASS_PUBLIC_KEY]
   # Waiting-room joins per client address per minute (design D-5); a /24 gets 20 times this.
   queueJoinsPerMinute: 10
+  # New guest places per address per minute (guest identities are free to make: review D-f).
+  queueNewGuestsPerMinute: 5
   ingress:
     enabled: true
     host: gw

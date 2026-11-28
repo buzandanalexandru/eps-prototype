@@ -66,6 +66,14 @@ A pool SHALL be shown sold out only when no stock is free and no holds remain; w
 - **THEN** the shop shows "All tickets are held right now; some may come back"
 - Test: services/internal/inventory/soldout_test.go
 
+### Requirement: Takes over step 4's stock
+After the upgrade from step 4's single counters, the engine SHALL load each event's stock from the orders on first use, never from step 4's counters, and live holds taken before the upgrade SHALL still be paid.
+
+#### Scenario: Live hold from before the upgrade
+- **WHEN** Redis holds step 4's counters with 6 sold and 4 held of 10, and one of the held orders is paid after the upgrade
+- **THEN** it is paid with its stock, no new hold is taken, and step 4's keys are removed
+- Test: services/internal/inventory/upgrade_test.go
+
 ### Requirement: Reconciler repairs drift
 The system SHALL compare the shard counters with the paid sales in the database every 15 seconds and correct any difference seen in two rounds in a row, recording each correction. If the database shows more sold than the counters can account for, the pool SHALL stop taking new holds and an alert SHALL be raised.
 
@@ -85,6 +93,6 @@ The system SHALL compare the shard counters with the paid sales in the database 
 - Test: services/internal/inventory/reconciler_test.go
 
 #### Scenario: Throughput
-- **WHEN** k6 drives holds and commits against one core instance
+- **WHEN** k6 drives holds and cancels against one core instance (a target measured on the cluster in steps 6 and 12; on the 4-core sandbox: never an oversell, 500 holds a second at p95 32 ms, saturation near 900)
 - **THEN** it sustains at least 1,000 holds per second with p95 under 50 ms and no oversell
 - Test: load/inventory.js
